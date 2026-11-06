@@ -1,0 +1,27 @@
+{
+  "site": {
+    "title": "AI 论文解读",
+    "tagline": "按技术演进的顺序，一篇一篇读懂今天的大模型是怎么来的。每篇一页：文字讲透，图画清楚。",
+    "author": "tianyihan"
+  },
+  "papers": [
+    {"id": "001", "slug": "001-nplm", "short": "NPLM", "title": "A Neural Probabilistic Language Model", "year": 2003, "authors": "Bengio 等", "oneliner": "给每个词一个坐标，再用平滑的函数猜下一个词。", "status": "published", "date": "2026-11-06"},
+    {"id": "002", "slug": "002-seq2seq", "short": "Seq2Seq", "title": "Sequence to Sequence Learning with Neural Networks", "year": 2014, "authors": "Sutskever 等", "oneliner": "", "status": "planned"},
+    {"id": "003", "slug": "003-bahdanau-attention", "short": "Bahdanau Attention", "title": "Neural Machine Translation by Jointly Learning to Align and Translate", "year": 2014, "authors": "Bahdanau 等", "oneliner": "", "status": "planned"},
+    {"id": "004", "slug": "004-transformer", "short": "Transformer", "title": "Attention Is All You Need", "year": 2017, "authors": "Vaswani 等", "oneliner": "", "status": "planned"},
+    {"id": "005", "slug": "005-adam", "short": "Adam", "title": "Adam: A Method for Stochastic Optimization", "year": 2014, "authors": "Kingma, Ba", "oneliner": "", "status": "planned"},
+    {"id": "006", "slug": "006-gpt-1", "short": "GPT-1", "title": "Improving Language Understanding by Generative Pre-Training", "year": 2018, "authors": "Radford 等", "oneliner": "", "status": "planned"},
+    {"id": "007", "slug": "007-gpt-2", "short": "GPT-2", "title": "Language Models are Unsupervised Multitask Learners", "year": 2019, "authors": "Radford 等", "oneliner": "", "status": "planned"},
+    {"id": "008", "slug": "008-bert", "short": "BERT", "title": "BERT: Pre-training of Deep Bidirectional Transformers", "year": 2018, "authors": "Devlin 等", "oneliner": "", "status": "planned"},
+    {"id": "009", "slug": "009-scaling-laws", "short": "Scaling Laws", "title": "Scaling Laws for Neural Language Models", "year": 2020, "authors": "Kaplan 等", "oneliner": "", "status": "planned"},
+    {"id": "010", "slug": "010-chinchilla", "short": "Chinchilla", "title": "Training Compute-Optimal Large Language Models", "year": 2022, "authors": "Hoffmann 等", "oneliner": "", "status": "planned"},
+    {"id": "011", "slug": "011-gpt-3", "short": "GPT-3", "title": "Language Models are Few-Shot Learners", "year": 2020, "authors": "Brown 等", "oneliner": "", "status": "planned"},
+    {"id": "012", "slug": "012-codex", "short": "Codex", "title": "Evaluating Large Language Models Trained on Code", "year": 2021, "authors": "Chen 等", "oneliner": "", "status": "planned"},
+    {"id": "013", "slug": "013-rag", "short": "RAG", "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks", "year": 2020, "authors": "Lewis 等", "oneliner": "", "status": "planned"},
+    {"id": "014", "slug": "014-lora", "short": "LoRA", "title": "LoRA: Low-Rank Adaptation of Large Language Models", "year": 2021, "authors": "Hu 等", "oneliner": "", "status": "planned"},
+    {"id": "015", "slug": "015-human-preferences", "short": "RLHF 起源", "title": "Deep Reinforcement Learning from Human Preferences", "year": 2017, "authors": "Christiano 等", "oneliner": "", "status": "planned"},
+    {"id": "016", "slug": "016-ppo", "short": "PPO", "title": "Proximal Policy Optimization Algorithms", "year": 2017, "authors": "Schulman 等", "oneliner": "", "status": "planned"},
+    {"id": "017", "slug": "017-alignment-lab", "short": "Alignment Laboratory", "title": "A General Language Assistant as a Laboratory for Alignment", "year": 2021, "authors": "Askell 等", "oneliner": "", "status": "planned"},
+    {"id": "018", "slug": "018-instructgpt", "short": "InstructGPT", "title": "Training Language Models to Follow Instructions with Human Feedback", "year": 2022, "authors": "Ouyang 等", "oneliner": "", "status": "planned"}
+  ]
+}

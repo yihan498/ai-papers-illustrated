@@ -1,0 +1,1144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NPLM 图解</title>
+<meta name="description" content="Bengio 2003《A Neural Probabilistic Language Model》图解：词向量 + 神经网络预测下一个词。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文（NPLM，连续/向量），赭 = 旧方法（n-gram，离散/计数）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6;min-width:520px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+
+<main class="wrap">
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　001</nav>
+  <h1 style="margin-top:14px">预测下一个词</h1>
+  <p class="lede">Bengio 等人 2003 年的论文《A Neural Probabilistic Language Model》做了一件事：<b>给每个词学一个向量，再用神经网络根据前几个词的向量，预测下一个词。</b>这是第一次证明神经网络做语言模型，在大规模数据上能赢过当时最强的统计方法。今天所有大模型的「嵌入层 + 预测下一个词」，都是从这里开始的。</p>
+  <div class="meta">
+    <span>Yoshua Bengio 等 · JMLR 2003</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的方法（连续的向量）</span>
+    <span class="key"><i class="sw o"></i>赭色：旧方法 n-gram（离散的计数）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · 语言模型每一步在做的事</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 250" role="img" aria-label="已知前文那只黑，模型给词表里每个词打一个概率：猫0.30，狗0.20，兔0.08，车0.02，跑0.01，其余词分完剩下的概率。">
+      <rect class="softS" x="20" y="40" width="76" height="52" rx="8"/><text class="lg" x="58" y="73" text-anchor="middle">那只</text>
+      <rect class="softS" x="106" y="40" width="64" height="52" rx="8"/><text class="lg" x="138" y="73" text-anchor="middle">黑</text>
+      <rect class="newT dash" x="180" y="40" width="64" height="52" rx="8"/><text class="lg tn" x="212" y="73" text-anchor="middle">？</text>
+      <text class="m sm" x="20" y="118">已知的前文</text><text class="m sm" x="244" y="118" text-anchor="end">要猜的词</text>
+      <line class="mutS" x1="258" y1="66" x2="300" y2="66" marker-end="url(#ah)"/>
+      <text class="m sm" x="318" y="14">模型输出：词表里每个词一个概率</text>
+      <g>
+        <text x="350" y="42" text-anchor="end">猫</text><rect class="new hit" x="360" y="26" width="240" height="22" rx="4"><title>猫：0.30</title></rect><text class="mo sm" x="608" y="42">0.30</text>
+        <text x="350" y="82" text-anchor="end">狗</text><rect class="new hit" x="360" y="66" width="160" height="22" rx="4"><title>狗：0.20</title></rect><text class="mo sm" x="528" y="82">0.20</text>
+        <text x="350" y="122" text-anchor="end">兔</text><rect class="new hit" x="360" y="106" width="64" height="22" rx="4"><title>兔：0.08</title></rect><text class="mo sm" x="432" y="122">0.08</text>
+        <text x="350" y="162" text-anchor="end">车</text><rect class="new hit" x="360" y="146" width="16" height="22" rx="4"><title>车：0.02</title></rect><text class="mo sm" x="384" y="162">0.02</text>
+        <text x="350" y="202" text-anchor="end">跑</text><rect class="new hit" x="360" y="186" width="8" height="22" rx="3"><title>跑：0.01</title></rect><text class="mo sm" x="376" y="202">0.01</text>
+      </g>
+      <line class="ln" x1="360" y1="20" x2="360" y2="214"/>
+      <text class="m sm" x="360" y="238">……其余 17,959 个词各分到一点，全部加起来等于 1</text>
+    </svg>
+    </div>
+    <figcaption>模型不会直接说出「猫」。它每一步输出的是<b>整个词表上的一组概率</b>，最后挑哪个词，是后面「解码」的事。（示意数字）</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>读这篇需要的地基</a>
+    <a href="#s2"><span>2</span>要打的敌人：维度灾难</a>
+    <a href="#s3"><span>3</span>方法：向量 + 平滑网络</a>
+    <a href="#s39"><span>3.9</span>2003 年怎么训练得动</a>
+    <a href="#s4"><span>4</span>实验结果</a>
+    <a href="#s6"><span>5–7</span>后来，以及下一篇</a>
+  </nav>
+</header>
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>读这篇需要的地基</h2>
+<p>这一节按「语言模型是什么 → 它的单位 token → 旧方法 n-gram → 怎么训练、怎么打分 → 神经网络是什么 → 参数是怎么调的」的顺序走。地基打好，第 3 节的方法就是水到渠成。</p>
+
+<h3><span class="no">1.1</span>语言模型：一台条件概率预测机</h3>
+<p>语言模型给一句话打概率分。做法是把整句拆成一连串「已知前面的词，下一个词是什么」，再乘起来。这叫<b>链式法则</b>：</p>
+<div class="formula">P(整句) = P(w₁) · P(w₂ | w₁) · P(w₃ | w₁, w₂) · …</div>
+
+<figure class="fig">
+  <span class="tag">图 1 · 链式法则：一次猜整句，拆成一次猜一个词</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="一句话被拆成四步，每一步前文多一个词，模型只猜下一个词，四步的概率相乘就是整句的概率。">
+    <text class="m sm" x="20" y="14">灰 = 已知前文　　蓝 = 这一步要猜的词</text>
+    <g>
+      <rect class="newT" x="20" y="28" width="64" height="34" rx="6"/><text x="52" y="50" text-anchor="middle">那只</text>
+      <text class="mo" x="340" y="50">P(那只)</text>
+    </g>
+    <g>
+      <rect class="softS" x="20" y="78" width="64" height="34" rx="6"/><text x="52" y="100" text-anchor="middle">那只</text>
+      <rect class="newT" x="92" y="78" width="64" height="34" rx="6"/><text x="124" y="100" text-anchor="middle">黑</text>
+      <text class="m" x="318" y="100">×</text><text class="mo" x="340" y="100">P(黑 | 那只)</text>
+    </g>
+    <g>
+      <rect class="softS" x="20" y="128" width="64" height="34" rx="6"/><text x="52" y="150" text-anchor="middle">那只</text>
+      <rect class="softS" x="92" y="128" width="64" height="34" rx="6"/><text x="124" y="150" text-anchor="middle">黑</text>
+      <rect class="newT" x="164" y="128" width="64" height="34" rx="6"/><text x="196" y="150" text-anchor="middle">猫</text>
+      <text class="m" x="318" y="150">×</text><text class="mo" x="340" y="150">P(猫 | 那只, 黑)</text>
+    </g>
+    <g>
+      <rect class="softS" x="20" y="178" width="64" height="34" rx="6"/><text x="52" y="200" text-anchor="middle">那只</text>
+      <rect class="softS" x="92" y="178" width="64" height="34" rx="6"/><text x="124" y="200" text-anchor="middle">黑</text>
+      <rect class="softS" x="164" y="178" width="64" height="34" rx="6"/><text x="196" y="200" text-anchor="middle">猫</text>
+      <rect class="newT" x="236" y="178" width="64" height="34" rx="6"/><text x="268" y="200" text-anchor="middle">在</text>
+      <text class="m" x="318" y="200">×</text><text class="mo" x="340" y="200">P(在 | 那只, 黑, 猫)</text>
+    </g>
+    <line class="ln" x1="540" y1="34" x2="540" y2="208"/>
+    <text class="m sm" x="556" y="112">四行相乘</text><text class="m sm" x="556" y="130">= 整句的概率</text>
+  </svg>
+  </div>
+  <figcaption>这一步拆分是<b>精确的</b>，没有任何近似。所以语言模型的核心任务只剩一件：估计 P(下一个词 | 前面所有词)。今天的 GPT 做的也是这件事。</figcaption>
+</figure>
+
+<p>三个容易混的点：</p>
+<ul>
+  <li><b>输出是一组概率，不是一个词。</b>见图 0。从分布里挑词是后续「采样 / 解码」的工作。</li>
+  <li><b>训练和使用是两个阶段。</b>训练时用数据反复调参数；训练好以后参数就固定了，使用时不会边用边学。</li>
+  <li><b>它不是严格意义上的贝叶斯推理。</b>贝叶斯推理特指「先有先验信念，看到证据后更新成后验」。本文的模型没有这个过程，它直接学一个条件概率函数，用的是<b>最大似然估计</b>（1.4）。后来有研究把大模型的「上下文学习」解释成一种隐式的贝叶斯推理，那是对现象的理论解读，不是模型的设计原理。</li>
+</ul>
+
+<h3><span class="no">1.2</span>token：模型眼里的「一个单位」</h3>
+<p><b>token 是分词器切出来、在模型词表里有一个编号的离散单位。</b>分词器把文本切成片段，每个片段对应一个整数编号；模型读进去的、预测出来的，都是这些编号。</p>
+<p>关键在于 token 不是语言学单位，不等于「字」也不等于「词」。它是工程上为了平衡「词表大小」和「序列长度」切出来的，切法由算法从大量文本里统计决定，每个模型各不相同。</p>
+
+<figure class="fig">
+  <span class="tag">图 2 · 同一个词 unhappiness 的三种切法</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 206" role="img" aria-label="按词切成一整块，按字符切成十一块，按子词切成 un、happi、ness 三块，后者是今天的主流。">
+    <text class="b" x="20" y="48">按词</text><text class="m sm" x="20" y="66">本文的做法</text>
+    <rect class="softS" x="110" y="26" width="200" height="40" rx="6"/><text class="mo" x="210" y="51" text-anchor="middle">unhappiness</text>
+    <text class="m sm" x="440" y="44">一块有完整含义</text><text class="m sm" x="440" y="62">但词表巨大，生词只能标「未知」</text>
+
+    <text class="b" x="20" y="108">按字符</text>
+    <g class="mo">
+      <rect class="softS" x="110" y="86" width="22" height="40" rx="4"/><text x="121" y="111" text-anchor="middle">u</text>
+      <rect class="softS" x="136" y="86" width="22" height="40" rx="4"/><text x="147" y="111" text-anchor="middle">n</text>
+      <rect class="softS" x="162" y="86" width="22" height="40" rx="4"/><text x="173" y="111" text-anchor="middle">h</text>
+      <rect class="softS" x="188" y="86" width="22" height="40" rx="4"/><text x="199" y="111" text-anchor="middle">a</text>
+      <rect class="softS" x="214" y="86" width="22" height="40" rx="4"/><text x="225" y="111" text-anchor="middle">p</text>
+      <rect class="softS" x="240" y="86" width="22" height="40" rx="4"/><text x="251" y="111" text-anchor="middle">p</text>
+      <rect class="softS" x="266" y="86" width="22" height="40" rx="4"/><text x="277" y="111" text-anchor="middle">i</text>
+      <rect class="softS" x="292" y="86" width="22" height="40" rx="4"/><text x="303" y="111" text-anchor="middle">n</text>
+      <rect class="softS" x="318" y="86" width="22" height="40" rx="4"/><text x="329" y="111" text-anchor="middle">e</text>
+      <rect class="softS" x="344" y="86" width="22" height="40" rx="4"/><text x="355" y="111" text-anchor="middle">s</text>
+      <rect class="softS" x="370" y="86" width="22" height="40" rx="4"/><text x="381" y="111" text-anchor="middle">s</text>
+    </g>
+    <text class="m sm" x="440" y="104">词表很小，永远没有生词</text><text class="m sm" x="440" y="122">但序列太长，单个字母几乎没含义</text>
+
+    <text class="b" x="20" y="168">按子词</text><text class="m sm" x="20" y="186">今天的主流</text>
+    <g class="mo">
+      <rect class="newT" x="110" y="146" width="52" height="40" rx="6"/><text x="136" y="171" text-anchor="middle">un</text>
+      <rect class="newT" x="168" y="146" width="84" height="40" rx="6"/><text x="210" y="171" text-anchor="middle">happi</text>
+      <rect class="newT" x="258" y="146" width="70" height="40" rx="6"/><text x="293" y="171" text-anchor="middle">ness</text>
+    </g>
+    <text class="m sm" x="440" y="164">常见词整块保留，罕见词拆成常见片段</text><text class="m sm" x="440" y="182">切法对人不一定直观</text>
+  </svg>
+  </div>
+  <figcaption>子词是两头的折中：<b>不会遇到生词，序列也不会太长。</b></figcaption>
+</figure>
+
+<p>子词最常见的算法是 <b>BPE（字节对编码）</b>：从单个字符开始，反复把语料里<b>最常挨在一起出现的两个片段合并</b>成一个新单位，直到词表达到预定大小。高频词因此被合并成一个完整 token，低频词保持拆开。</p>
+
+<figure class="fig">
+  <span class="tag">图 3 · BPE 怎么一步步合并出 token</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 180" role="img" aria-label="lower 从五个字母开始，依次合并 l 和 o、lo 和 w、e 和 r，最后变成 low 和 er 两个 token。">
+    <g class="mo">
+      <rect class="softS" x="20" y="12" width="30" height="30" rx="5"/><text x="35" y="32" text-anchor="middle">l</text>
+      <rect class="softS" x="56" y="12" width="30" height="30" rx="5"/><text x="71" y="32" text-anchor="middle">o</text>
+      <rect class="softS" x="92" y="12" width="30" height="30" rx="5"/><text x="107" y="32" text-anchor="middle">w</text>
+      <rect class="softS" x="128" y="12" width="30" height="30" rx="5"/><text x="143" y="32" text-anchor="middle">e</text>
+      <rect class="softS" x="164" y="12" width="30" height="30" rx="5"/><text x="179" y="32" text-anchor="middle">r</text>
+
+      <rect class="newT" x="20" y="54" width="44" height="30" rx="5"/><text x="42" y="74" text-anchor="middle">lo</text>
+      <rect class="softS" x="70" y="54" width="30" height="30" rx="5"/><text x="85" y="74" text-anchor="middle">w</text>
+      <rect class="softS" x="106" y="54" width="30" height="30" rx="5"/><text x="121" y="74" text-anchor="middle">e</text>
+      <rect class="softS" x="142" y="54" width="30" height="30" rx="5"/><text x="157" y="74" text-anchor="middle">r</text>
+
+      <rect class="newT" x="20" y="96" width="58" height="30" rx="5"/><text x="49" y="116" text-anchor="middle">low</text>
+      <rect class="softS" x="84" y="96" width="30" height="30" rx="5"/><text x="99" y="116" text-anchor="middle">e</text>
+      <rect class="softS" x="120" y="96" width="30" height="30" rx="5"/><text x="135" y="116" text-anchor="middle">r</text>
+
+      <rect class="softS" x="20" y="138" width="58" height="30" rx="5"/><text x="49" y="158" text-anchor="middle">low</text>
+      <rect class="newT" x="84" y="138" width="44" height="30" rx="5"/><text x="106" y="158" text-anchor="middle">er</text>
+    </g>
+    <text class="m" x="260" y="32">起点：每个字符一块</text>
+    <text class="m" x="260" y="74">第 1 次合并：l + o 在语料里最常相邻</text>
+    <text class="m" x="260" y="116">第 2 次合并：lo + w</text>
+    <text class="m" x="260" y="158">第 3 次合并：e + r → 得到 low · er</text>
+  </svg>
+  </div>
+  <figcaption>每一轮只做一件事：找到语料里出现次数最多的相邻一对，把它们粘成一块。（示意过程）</figcaption>
+</figure>
+
+<p>粗略换算：英文约 1 个 token ≈ 0.75 个单词；中文一个字通常是 1 到 2 个 token，取决于分词器。今天主流大模型的词表大约 5 万到 20 多万。本文用的单位还是「词」，词表 1.7 万，罕见词全部并成一个「未知」符号，这是按词切的代价（子词在第 007 篇 GPT-2 展开）。</p>
+
+<h3><span class="no">1.3</span>n-gram：用「数次数」做语言模型</h3>
+<h4>做法：截断 + 数次数</h4>
+<p>n-gram 有两个动作，经常被混成一件事。<b>① 截断</b>（马尔可夫假设）：只看最近 n−1 个词，更早的全部忽略。三元组（trigram）只看前 2 个词。<b>② 数次数</b>：概率直接用频次比：</p>
+<div class="formula">P(猫 | 那只, 黑) = 「那只黑猫」出现的次数 ÷ 「那只黑」出现的次数</div>
+
+<figure class="fig">
+  <span class="tag">图 4 · n-gram 的全部家当：一张频次表</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 250" role="img" aria-label="一张频次表，行是前两个词，列是下一个词。那只黑后面跟猫12次，跟狸0次，所以狸的概率是0。">
+    <text class="m sm" x="150" y="30" text-anchor="end">前文 ↓ ／ 下一个词 →</text>
+    <text class="b" x="200" y="30" text-anchor="middle">猫</text><text class="b" x="280" y="30" text-anchor="middle">狗</text><text class="b" x="360" y="30" text-anchor="middle">狸</text><text class="b" x="440" y="30" text-anchor="middle">车</text>
+    <text x="150" y="70" text-anchor="end">那只 黑</text><text x="150" y="114" text-anchor="end">那只 白</text><text x="150" y="158" text-anchor="end">一只 黑</text>
+    <g class="mo">
+      <rect class="card" x="162" y="44" width="76" height="40" rx="4"/><text x="200" y="70" text-anchor="middle">12</text>
+      <rect class="card" x="242" y="44" width="76" height="40" rx="4"/><text x="280" y="70" text-anchor="middle">5</text>
+      <rect class="oldT" x="322" y="44" width="76" height="40" rx="4"/><text class="b" x="360" y="70" text-anchor="middle">0</text>
+      <rect class="card" x="402" y="44" width="76" height="40" rx="4"/><text x="440" y="70" text-anchor="middle">3</text>
+      <rect class="card" x="162" y="88" width="76" height="40" rx="4"/><text x="200" y="114" text-anchor="middle">4</text>
+      <rect class="card" x="242" y="88" width="76" height="40" rx="4"/><text x="280" y="114" text-anchor="middle">9</text>
+      <rect class="card" x="322" y="88" width="76" height="40" rx="4"/><text x="360" y="114" text-anchor="middle">0</text>
+      <rect class="card" x="402" y="88" width="76" height="40" rx="4"/><text x="440" y="114" text-anchor="middle">0</text>
+      <rect class="card" x="162" y="132" width="76" height="40" rx="4"/><text x="200" y="158" text-anchor="middle">7</text>
+      <rect class="card" x="242" y="132" width="76" height="40" rx="4"/><text x="280" y="158" text-anchor="middle">6</text>
+      <rect class="card" x="322" y="132" width="76" height="40" rx="4"/><text x="360" y="158" text-anchor="middle">0</text>
+      <rect class="card" x="402" y="132" width="76" height="40" rx="4"/><text x="440" y="158" text-anchor="middle">1</text>
+    </g>
+    <text class="mo sm" x="500" y="62">P(猫 | 那只黑)</text><text class="mo sm" x="500" y="80">= 12 ÷ 20 = 0.60</text>
+    <text class="mo sm to" x="500" y="118">P(狸 | 那只黑)</text><text class="mo sm to" x="500" y="136">= 0 ÷ 20 = 0</text>
+    <text class="m sm" x="162" y="204">表里每一格都是一个独立的整数，「猫」那列和「狗」那列之间没有任何联系。</text>
+    <text class="m sm" x="162" y="224">训练里没见过的组合，概率就是 0。</text>
+  </svg>
+  </div>
+  <figcaption>整个模型就是一张巨大的频次表。次数是整数，每个组合都是孤立的一格，这就是它<b>「不连续」</b>的根源（对比 3.6 的平滑函数）。（示意数字）</figcaption>
+</figure>
+
+<h4>它有明显缺陷，为什么统治了约 30 年？</h4>
+<ol>
+  <li><b>数学上它就是标准答案。</b>如果模型的形式就是一张频次表，那么让训练数据概率最大的那张表，恰好就是频次比。不用迭代训练，数一遍就是最优解。</li>
+  <li><b>算力友好。</b>1970–80 年代的计算机很弱。数次数只扫一遍语料，使用时查表，几乎不用算。对比本文：2003 年的神经网络用 40 个 CPU 跑了 3 周。</li>
+  <li><b>任务刚好匹配。</b>语言模型最早服务于语音识别，要从几个「听起来像」的候选里挑出「更像一句话」的那个，看前两个词就够用。</li>
+  <li><b>数据越多越好，可解释，好调试。</b>哪个概率有问题，翻表就能查到原因。2007 年 Google 在万亿词级语料上用极简的回退方法，效果依然很好。</li>
+  <li><b>没有更好的替代。</b>神经网络当时又慢又难训，一直到本文才证明它能赢。</li>
+</ol>
+<p class="punch">n-gram 是<em>在当时的算力下最划算的选择</em>，不是因为人们没看见它的缺陷。</p>
+
+<h4>回退 / 插值：给截断打补丁</h4>
+<p>测试时遇到「那只黑<b>狸</b>」这种训练里没见过的组合，按频次公式概率是 0。一个词是 0，整句就是 0，显然不合理。补救的办法是一层层往下退：</p>
+
+<figure class="fig">
+  <span class="tag">图 5 · 回退：没见过，就退一层</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 220" role="img" aria-label="三元组那只黑狸见过0次，退到二元组黑狸也见过0次，再退到一元组狸，出现过35次，用它的频率。">
+    <rect class="oldT" x="20" y="20" width="190" height="60" rx="8"/>
+    <text class="b" x="36" y="45">三元：那只 黑 → 狸</text><text class="mo sm to" x="36" y="66">见过 0 次</text>
+    <rect class="oldT" x="245" y="80" width="190" height="60" rx="8"/>
+    <text class="b" x="261" y="105">二元：黑 → 狸</text><text class="mo sm to" x="261" y="126">见过 0 次</text>
+    <rect class="newT" x="470" y="140" width="190" height="60" rx="8"/>
+    <text class="b" x="486" y="165">一元：狸</text><text class="mo sm tn" x="486" y="186">出现过 35 次，用它</text>
+    <path class="mutS" d="M210 50 H228 V110 H241" marker-end="url(#ah)"/>
+    <path class="mutS" d="M435 110 H453 V170 H466" marker-end="url(#ah)"/>
+    <text class="m sm" x="236" y="40">退一层</text>
+    <text class="m sm" x="461" y="100">再退一层</text>
+  </svg>
+  </div>
+  <figcaption><b>回退（back-off）</b>是一层层二选一；<b>插值（interpolation）</b>是几层按权重混着用。原文 4.1 节的基线就是插值：P̂ = α₀·(1/|V|) + α₁·P(一元) + α₂·P(二元) + α₃·P(三元)。上下文见得多就信三元（α₃ 大），见得少就多信低阶。（示意数字）</figcaption>
+</figure>
+
+<div class="note"><span class="lab">两个「平滑」</span>这些补丁统称「平滑（smoothing）」，意思是给没见过的组合匀一点概率。它和 3.6 节的「平滑函数」是<b>两个不同的意思</b>，别混。</div>
+
+<h4>Kneser-Ney：把「数次数」做到极致</h4>
+<p>本文表格里最强的 n-gram 对手就是它（准确说是改进版 Modified Kneser-Ney）。它在普通回退上做了两个改进。</p>
+<p><b>改进一：打折。</b>每个见过的组合，次数先减一个固定的小数 D（约 0.75），省下来的概率分给没见过的组合。为什么减固定值？统计发现，训练里出现 c 次的组合，在新数据里平均只出现约 c − 0.75 次，见过的组合都被系统性地高估了一点。</p>
+<p><b>改进二（精髓）：回退时不看「出现了多少次」，看「跟在多少种不同的词后面出现过」。</b>这叫延续概率。看一个例子：要预测「reading ___」，假设训练里恰好没见过 reading glasses，只能回退到一元组。</p>
+
+<figure class="fig">
+  <span class="tag">图 6 · 高频不等于「容易出现在新地方」</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 320" role="img" aria-label="glasses 出现50次，跟在40种不同的词后面；Francisco 出现100次，但只跟在 San 后面。普通回退看次数会选 Francisco，Kneser-Ney 看前文种类会选 glasses。">
+    <text class="b" x="20" y="24">glasses：出现 50 次</text><text class="m sm" x="20" y="42">跟在 40 种不同的词后面</text>
+    <g class="mo sm">
+      <text x="90" y="74" text-anchor="end">my</text><text x="90" y="100" text-anchor="end">sun</text><text x="90" y="126" text-anchor="end">safety</text>
+      <text x="90" y="152" text-anchor="end">wine</text><text x="90" y="178" text-anchor="end">his</text><text x="90" y="204" text-anchor="end">dark</text>
+    </g>
+    <text class="m sm" x="90" y="232" text-anchor="end">…另 34 种</text>
+    <g class="newS" style="stroke-width:1.3">
+      <line x1="98" y1="70" x2="214" y2="140"/><line x1="98" y1="96" x2="214" y2="142"/><line x1="98" y1="122" x2="214" y2="144"/>
+      <line x1="98" y1="148" x2="214" y2="146"/><line x1="98" y1="174" x2="214" y2="148"/><line x1="98" y1="200" x2="214" y2="150"/>
+      <line x1="98" y1="228" x2="214" y2="152"/>
+    </g>
+    <rect class="newT" x="214" y="124" width="96" height="44" rx="8"/><text class="mo b" x="262" y="151" text-anchor="middle">glasses</text>
+
+    <line class="ln" x1="340" y1="16" x2="340" y2="250"/>
+
+    <text class="b" x="370" y="24">Francisco：出现 100 次</text><text class="m sm" x="370" y="42">每一次都跟在 San 后面</text>
+    <rect class="oldT" x="380" y="124" width="64" height="44" rx="8"/><text class="mo b" x="412" y="151" text-anchor="middle">San</text>
+    <line class="oldS" x1="444" y1="146" x2="540" y2="146" style="stroke-width:7"/>
+    <text class="mo sm" x="492" y="134" text-anchor="middle">100 次</text>
+    <rect class="oldT" x="540" y="124" width="116" height="44" rx="8"/><text class="mo b" x="598" y="151" text-anchor="middle">Francisco</text>
+    <text class="m sm" x="380" y="200">离开 San，它几乎不出现</text>
+
+    <rect class="soft" x="20" y="262" width="640" height="48" rx="8"/>
+    <text class="sm" x="36" y="282">普通回退看次数：Francisco 100 &gt; glasses 50 → 推荐「reading Francisco」，荒唐</text>
+    <text class="sm b" x="36" y="300">Kneser-Ney 看前文种类：glasses 40 &gt; Francisco 1 → 推荐「reading glasses」</text>
+  </svg>
+  </div>
+  <figcaption>只有在<b>陌生的上下文</b>里才会用到回退。这时该问的是「这个词有多大可能出现在一个新地方」。一个曾经跟在很多种词后面的词，最可能出现在新上下文里。</figcaption>
+</figure>
+
+<p>以二元组为例，KN 的公式结构是这样（理解结构即可）：</p>
+<div class="formula">P_KN(w | v) = max(count(v,w) − D, 0) / count(v)　+　λ(v) · P_延续(w)</div>
+<ul>
+  <li>第一项：见过的组合，打完折后的频率。</li>
+  <li>P_延续(w) = 跟在 w 前面的不同词有几种 ÷ 所有不同二元组的总数。</li>
+  <li>λ(v)：第一项打折省下来的概率，正好分给第二项，保证总和等于 1。Modified KN 还给出现 1 次、2 次、3 次及以上的组合分别设不同的 D。</li>
+</ul>
+<p class="punch">KN 已经把数次数这条路做到了头，但它仍然<em>不知道猫和狗相似</em>。这就是本文换一条路的理由。</p>
+
+<h3><span class="no">1.4</span>训练目标：最大化对数似然</h3>
+<p>原文第 2 节的目标函数：</p>
+<div class="formula">L = (1/T) Σₜ log f(wₜ, wₜ₋₁, …; θ) + R(θ)　　训练 = 找让 L 最大的参数 θ</div>
+<p><b>似然</b>：把训练语料当成已经发生的事实，问「按这个模型，这份语料出现的概率有多大」。它等于模型给每个位置的真实词所打概率的连乘。好的模型应该觉得真实发生的事「很正常」，也就是<b>对真实语言不意外</b>。数据足够多时，最大似然能让模型的分布逼近真实语言的分布。</p>
+
+<figure class="fig">
+  <span class="tag">图 7 · 为什么要取对数：连乘会把数字乘没</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 280" role="img" aria-label="三个概率0.5、0.2、0.1连乘，结果从0.5缩到0.01；取对数后变成三段长度相加，总长负4.60。">
+    <text class="b" x="20" y="28">连乘：越乘越小</text>
+    <circle class="new" cx="140" cy="76" r="28"/><text class="mo sm" x="140" y="124" text-anchor="middle">0.5</text>
+    <circle class="new" cx="290" cy="76" r="12.6"/><text class="mo sm" x="290" y="124" text-anchor="middle">0.1</text>
+    <circle class="new" cx="420" cy="76" r="4"/><text class="mo sm" x="420" y="124" text-anchor="middle">0.01</text>
+    <line class="mutS" x1="178" y1="76" x2="266" y2="76" marker-end="url(#ah)"/><text class="mo sm m" x="222" y="66" text-anchor="middle">× 0.2</text>
+    <line class="mutS" x1="312" y1="76" x2="404" y2="76" marker-end="url(#ah)"/><text class="mo sm m" x="358" y="66" text-anchor="middle">× 0.1</text>
+    <text class="m sm" x="470" y="70">1400 万个这样的数连乘</text><text class="m sm" x="470" y="88">计算机里直接变成 0</text>
+
+    <line class="ln" x1="20" y1="146" x2="660" y2="146"/>
+    <text class="b" x="20" y="176">取对数：连乘变连加</text>
+    <rect class="new" x="120" y="212" width="67" height="24" rx="3"/>
+    <rect class="new" x="191" y="212" width="159" height="24" rx="3" style="opacity:.72"/>
+    <rect class="new" x="354" y="212" width="226" height="24" rx="3" style="opacity:.5"/>
+    <text class="mo sm" x="153" y="206" text-anchor="middle">−0.69</text>
+    <text class="mo sm" x="270" y="206" text-anchor="middle">−1.61</text>
+    <text class="mo sm" x="467" y="206" text-anchor="middle">−2.30</text>
+    <text class="mo sm m" x="120" y="256" text-anchor="middle">0</text><text class="mo sm m" x="220" y="256" text-anchor="middle">−1</text><text class="mo sm m" x="320" y="256" text-anchor="middle">−2</text><text class="mo sm m" x="420" y="256" text-anchor="middle">−3</text><text class="mo sm m" x="520" y="256" text-anchor="middle">−4</text>
+    <text class="mo sm b" x="588" y="229">= −4.60</text>
+    <text class="m sm" x="120" y="274">训练 = 调参数，让这根条往 0 缩短（0 表示每个真实词都拿到了概率 1）</text>
+  </svg>
+  </div>
+  <figcaption>一段 3 个词的语料，模型给真实词的概率是 0.5、0.2、0.1。似然 = 0.01，对数似然 = ln0.5 + ln0.2 + ln0.1 ≈ <b>−4.60</b>。</figcaption>
+</figure>
+
+<p>取对数的三个理由：</p>
+<ol>
+  <li><b>防止数值下溢</b>：log(a×b) = log a + log b，连乘变连加，数字不会小到存不下。</li>
+  <li><b>最优解不变</b>：log 单调递增，让似然最大和让对数似然最大是同一组参数。</li>
+  <li><b>可以逐个样本优化</b>：求和以后每个位置各贡献一项，正好适合随机梯度下降一次只看一个样本（1.7）。</li>
+</ol>
+<p><b>同一件事的三种说法</b>：平均<b>负</b>对数似然 = <b>损失</b>（也叫交叉熵），「最大化对数似然」就是「最小化损失」；exp(损失) = <b>困惑度</b>（1.5）。式子里的 R(θ) 是权重衰减：惩罚过大的权重，防止模型死记硬背训练集（Brown 用 10⁻⁴，AP News 用 10⁻⁵）。</p>
+
+<h3><span class="no">1.5</span>困惑度：是考试分数，不是导航</h3>
+<p>困惑度 = exp(测试集上每个词平均的负对数概率)。它和 1.4 是同一个量，只是在<b>测试集</b>上算。直觉上，困惑度 100 意味着模型在每个位置平均相当于「在 100 个词里均匀瞎猜」。越低越好。</p>
+
+<figure class="fig">
+  <span class="tag">图 8 · 困惑度的直觉，以及它为什么重罚「自信地猜错」</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="左边一百个格子里只有一个是对的，代表困惑度一百；右边三种情况的损失：自信猜对0.11，犹豫2.30，自信猜错6.91。">
+    <g id="grid100">
+      <!-- 10×10 grid generated statically -->
+    </g>
+    <text class="m sm" x="30" y="236">困惑度 100 ≈ 每一步都像</text><text class="m sm" x="30" y="254">在 100 个词里盲抽一个</text>
+
+    <text class="b" x="262" y="30">只看真实答案拿到了多少概率</text>
+    <text class="m sm" x="262" y="48">−log P（损失），越短越好</text>
+    <text class="sm" x="400" y="88" text-anchor="end">自信且猜对　P = 0.9</text>
+    <rect class="new hit" x="410" y="72" width="4" height="24" rx="2"><title>自信且猜对：−log 0.9 = 0.11</title></rect><text class="mo sm" x="422" y="88">0.11</text>
+    <text class="sm" x="400" y="138" text-anchor="end">犹豫　P = 0.1</text>
+    <rect class="mutF hit" x="410" y="122" width="83" height="24" rx="4"><title>犹豫：−log 0.1 = 2.30</title></rect><text class="mo sm" x="501" y="138">2.30</text>
+    <text class="sm" x="400" y="188" text-anchor="end">自信但猜错　P = 0.001</text>
+    <rect class="old hit" x="410" y="172" width="249" height="24" rx="4"><title>自信但猜错：−log 0.001 = 6.91</title></rect><text class="mo sm on" x="650" y="188" text-anchor="end">6.91 重罚</text>
+    <text class="m sm" x="262" y="230">「自信但猜错」= 把 0.99 给了别的词，</text>
+    <text class="m sm" x="262" y="248">真实的词只拿到 0.001</text>
+  </svg>
+  </div>
+  <figcaption>两个要点：① 困惑度只说明模型<b>现在</b>有多好，不说明参数该往哪调，告诉方向的是<b>梯度</b>（1.7）。② 低困惑度 = <b>对正确答案有把握</b>，不只是「自信」。</figcaption>
+</figure>
+
+<h3><span class="no">1.6</span>神经网络</h3>
+<h4>从生物神经元到计算机</h4>
+<p>生物神经元：树突接收其他神经元的信号，不同连接（突触）强弱不同；细胞体把信号汇总，超过阈值就「放电」，沿轴突传给下一批神经元。人工神经元把这件事抽象成了数学。</p>
+
+<figure class="fig">
+  <span class="tag">图 9 · 借来的是思路，不是生物细节</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 270" role="img" aria-label="左边是生物神经元：树突接收、细胞体汇总、轴突传出；右边是人工神经元：输入乘权重后求和，再经过 tanh 输出。">
+    <text class="b" x="20" y="24">生物神经元</text>
+    <g class="ink" style="stroke-width:1.8">
+      <path d="M40 70 L100 110 M30 120 L96 128 M44 190 L100 150 M80 52 L112 104 M60 225 L112 158"/>
+      <path d="M30 98 L52 86 M38 205 L58 182"/>
+      <line x1="180" y1="132" x2="290" y2="132"/>
+      <path d="M290 132 L312 112 M290 132 L314 132 M290 132 L312 152"/>
+    </g>
+    <circle class="softS" cx="148" cy="132" r="34" style="stroke:var(--ink);stroke-width:1.8"/>
+    <circle class="inkF" cx="148" cy="132" r="7"/>
+    <text class="m sm" x="20" y="252">树突：接收</text>
+    <text class="m sm" x="148" y="190" text-anchor="middle">细胞体：汇总</text>
+    <text class="m sm" x="236" y="120" text-anchor="middle">轴突：放电传出</text>
+
+    <line class="mutS dash" x1="330" y1="132" x2="370" y2="132" marker-end="url(#ah)"/>
+    <text class="m sm" x="350" y="120" text-anchor="middle">抽象</text>
+
+    <text class="b" x="390" y="24">人工神经元</text>
+    <circle class="card" cx="404" cy="72" r="16"/><text class="mo" x="404" y="77" text-anchor="middle">x₁</text>
+    <circle class="card" cx="404" cy="132" r="16"/><text class="mo" x="404" y="137" text-anchor="middle">x₂</text>
+    <circle class="card" cx="404" cy="192" r="16"/><text class="mo" x="404" y="197" text-anchor="middle">x₃</text>
+    <line class="newS" x1="420" y1="78" x2="502" y2="122" style="stroke-width:3.2"/>
+    <line class="newS" x1="420" y1="132" x2="500" y2="132" style="stroke-width:1.2"/>
+    <line class="newS" x1="420" y1="186" x2="502" y2="142" style="stroke-width:2.2"/>
+    <text class="mo sm" x="456" y="88">w₁</text><text class="mo sm" x="456" y="126">w₂</text><text class="mo sm" x="456" y="184">w₃</text>
+    <circle class="newT" cx="524" cy="132" r="24"/><text class="xl" x="524" y="140" text-anchor="middle">Σ</text>
+    <line class="mutS" x1="548" y1="132" x2="566" y2="132" marker-end="url(#ah)"/>
+    <rect class="newT" x="568" y="112" width="58" height="40" rx="6"/><text class="mo" x="597" y="137" text-anchor="middle">tanh</text>
+    <line class="mutS" x1="626" y1="132" x2="660" y2="132" marker-end="url(#ah)"/>
+    <text class="m sm" x="404" y="232">线越粗 = 权重越大</text>
+    <text class="m sm" x="404" y="252">输出 = tanh(w₁x₁ + w₂x₂ + w₃x₃ + b)</text>
+  </svg>
+  </div>
+  <figcaption>真正被借用的是三个抽象想法：<b>很多简单单元组合起来能做复杂计算；知识存在连接的强弱里；学习就是调整连接强度。</b>今天的神经网络和大脑关系已经很弱，它能工作靠的是数学：可微函数的组合 + 梯度优化 + 万能逼近能力。</figcaption>
+</figure>
+
+<figure class="fig">
+  <span class="tag">图 10 · 从 1943 到本文</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 210" role="img" aria-label="时间线：1943 年 M-P 神经元，1949 年 Hebb 学习规则，1958 年感知机，1969 年进入寒冬，1986 年反向传播推广，2003 年本文。">
+    <rect class="soft" x="315" y="88" width="162" height="24" rx="4"/>
+    <text class="m sm" x="396" y="104" text-anchor="middle">神经网络寒冬</text>
+    <line class="ink" x1="40" y1="100" x2="650" y2="100" style="stroke-width:1.2"/>
+    <g>
+      <circle class="inkF" cx="68" cy="100" r="5"/><line class="ln" x1="68" y1="94" x2="68" y2="66"/>
+      <text class="mo sm b" x="60" y="34">1943</text><text class="sm" x="60" y="50">M-P 神经元</text><text class="m sm" x="60" y="64">加权求和 + 阈值</text>
+      <circle class="inkF" cx="126" cy="100" r="5"/><line class="ln" x1="126" y1="106" x2="126" y2="132"/>
+      <text class="mo sm b" x="126" y="148" text-anchor="middle">1949</text><text class="sm" x="126" y="164" text-anchor="middle">Hebb 规则</text><text class="m sm" x="126" y="180" text-anchor="middle">学习 = 调连接</text>
+      <circle class="inkF" cx="211" cy="100" r="5"/><line class="ln" x1="211" y1="94" x2="211" y2="66"/>
+      <text class="mo sm b" x="211" y="34" text-anchor="middle">1958</text><text class="sm" x="211" y="50" text-anchor="middle">感知机</text><text class="m sm" x="211" y="64" text-anchor="middle">自动学权重</text>
+      <circle class="inkF" cx="315" cy="100" r="5"/><line class="ln" x1="315" y1="106" x2="315" y2="132"/>
+      <text class="mo sm b" x="315" y="148" text-anchor="middle">1969</text><text class="sm" x="315" y="164" text-anchor="middle">Minsky 证明</text><text class="m sm" x="315" y="180" text-anchor="middle">单层解不了异或</text>
+      <circle class="inkF" cx="477" cy="100" r="5"/><line class="ln" x1="477" y1="94" x2="477" y2="66"/>
+      <text class="mo sm b" x="477" y="34" text-anchor="middle">1986</text><text class="sm" x="477" y="50" text-anchor="middle">反向传播推广</text><text class="m sm" x="477" y="64" text-anchor="middle">多层网络能训了</text>
+      <circle class="new" cx="638" cy="100" r="7"/><line class="ln" x1="638" y1="108" x2="638" y2="132"/>
+      <text class="mo sm b tn" x="650" y="148" text-anchor="end">2003</text><text class="sm b" x="650" y="164" text-anchor="end">本文 NPLM</text><text class="m sm" x="650" y="180" text-anchor="end">神经网络赢了 n-gram</text>
+    </g>
+  </svg>
+  </div>
+  <figcaption>1943 年的 M-P 模型证明神经元组合能实现「与、或、非」，这是神经网络和计算机联系起来的起点。</figcaption>
+</figure>
+
+<p>一个关键的分叉：生物神经元的放电是<b>阶跃式</b>的，0 或 1，会跳变。人工神经网络把它换成了 tanh 这种<b>平滑的 S 形曲线</b>。</p>
+
+<figure class="fig">
+  <span class="tag">图 11 · 把「开关」换成「旋钮」</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 210" role="img" aria-label="左边阶跃函数在阈值处突然跳变，没法求梯度；右边 tanh 曲线处处平滑，可以求梯度。">
+    <text class="b" x="40" y="20">阶跃：生物神经元</text>
+    <line class="ln" x1="40" y1="100" x2="300" y2="100"/><line class="ln" x1="170" y1="36" x2="170" y2="164"/>
+    <path class="oldS" d="M40 150 H170" style="stroke-width:2.5"/><path class="oldS dash" d="M170 150 V50" style="stroke-width:1.4"/><path class="oldS" d="M170 50 H300" style="stroke-width:2.5"/>
+    <text class="m sm" x="40" y="188">在阈值处突然跳变</text><text class="sm to" x="40" y="204">跳变点没有坡度 → 没法求梯度</text>
+
+    <text class="b" x="380" y="20">tanh：人工神经元</text>
+    <line class="ln" x1="380" y1="100" x2="640" y2="100"/><line class="ln" x1="510" y1="36" x2="510" y2="164"/>
+    <polyline class="newS" style="stroke-width:2.5" points="380,149.8 423.3,148.2 445,145.3 466.7,138.1 488.3,123.1 510,100 531.7,76.9 553.3,61.9 575,54.7 596.7,51.8 640,50.2"/>
+    <text class="mo sm m" x="646" y="54">+1</text><text class="mo sm m" x="646" y="152">−1</text>
+    <text class="m sm" x="380" y="188">输入变一点，输出只变一点</text><text class="sm tn" x="380" y="204">处处有坡度 → 能用反向传播训练</text>
+  </svg>
+  </div>
+  <figcaption>阶跃函数没法求梯度，平滑曲线可以，这样才能用反向传播训练（1.7、3.6）。</figcaption>
+</figure>
+
+<h4>计算单元和层</h4>
+<p><b>神经元</b>：输出 = tanh(w₁x₁ + w₂x₂ + … + b)。权重 w 表示每个输入有多重要，偏置 b 是基准线，它们都是<b>要学的参数</b>。很多神经元并排是一层，一层的输出作为下一层的输入，叠起来就是网络。</p>
+<p><b>为什么必须有非线性</b>：每层只做加权求和的话，叠 100 层在数学上也等价于 1 层。加了 tanh 这种「弯曲」，网络才能拟合复杂的关系。理论上，一个足够宽的隐藏层可以逼近任意连续函数。</p>
+<p><b>网络 = 可调的函数</b>：给定一组参数，网络就是一个确定的函数；改了参数就换了一个函数。训练，就是在所有可能的函数里找最贴合数据的那一个。</p>
+<div class="tbl"><table>
+  <thead><tr><th>层（积木）</th><th>做什么</th><th>首次出现</th></tr></thead>
+  <tbody>
+    <tr><td><b>嵌入层</b></td><td>把词的编号变成向量：按编号查表，取出那一行（3.3）</td><td>本文</td></tr>
+    <tr><td><b>全连接层</b></td><td>加权求和 y = Wx + b，每个输出都连着每个输入</td><td>本文</td></tr>
+    <tr><td><b>激活函数</b></td><td>tanh、ReLU 等非线性变换</td><td>本文</td></tr>
+    <tr><td><b>输出层 + softmax</b></td><td>给词表里每个词打分，再变成概率</td><td>本文</td></tr>
+    <tr><td>循环层 RNN / LSTM</td><td>逐个读入序列，带着「记忆」往前走</td><td>第 002 篇</td></tr>
+    <tr><td>注意力层</td><td>让每个位置去「看」其他所有位置</td><td>第 003、004 篇</td></tr>
+    <tr><td>归一化层</td><td>把数值拉回稳定范围，让深层网络好训</td><td>第 004 篇</td></tr>
+  </tbody>
+</table></div>
+<p>「隐藏层」不是一种新积木，而是<b>按位置起的名字</b>：夹在输入和输出之间的层都叫隐藏层（3.5）。</p>
+
+<h3><span class="no">1.7</span>反向传播 + 随机梯度下降：参数是怎么调的</h3>
+<p>类比：<b>蒙眼下山</b>。山的高度是损失，你的位置是模型所有参数的当前取值。你看不见整座山，只能用脚感觉脚下的坡。</p>
+
+<figure class="fig">
+  <span class="tag">图 12 · 蒙眼下山</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 290" role="img" aria-label="左边一个蒙眼的人站在损失曲线的山坡上，只能感觉脚下的坡度，可能停在局部低洼；右边等高线图上，全量梯度走平滑路径，随机梯度下降走曲折但便宜的路径，都到达最低点。">
+    <text class="b" x="20" y="22">一维剖面：只能感觉脚下</text>
+    <text class="m sm" x="20" y="44">损失 ↑</text>
+    <path class="ink" d="M20 60 C60 60 80 170 110 170 C140 170 150 110 180 110 C210 110 230 232 270 232 C305 232 330 90 355 64" style="stroke-width:2"/>
+    <!-- person -->
+    <g>
+      <circle class="card" cx="201" cy="98" r="8" style="stroke:var(--ink);stroke-width:1.6"/>
+      <rect class="inkF" x="193" y="94" width="16" height="4" rx="1.5"/>
+      <line class="ink" x1="201" y1="106" x2="201" y2="120"/>
+      <line class="ink" x1="201" y1="120" x2="196" y2="129"/><line class="ink" x1="201" y1="120" x2="206" y2="130"/>
+      <line class="ink" x1="201" y1="111" x2="192" y2="116"/><line class="ink" x1="201" y1="111" x2="210" y2="116"/>
+    </g>
+    <line class="newS" x1="210" y1="134" x2="232" y2="176" marker-end="url(#ahN)" style="stroke-width:2.4"/>
+    <text class="sm tn b" x="222" y="74">脚下的坡度 = 梯度 ↘</text>
+    <text class="m sm" x="110" y="190" text-anchor="middle">局部低洼</text><text class="m sm" x="110" y="205" text-anchor="middle">可能停在这</text>
+    <text class="m sm" x="270" y="252" text-anchor="middle">真正的最低点</text><text class="m sm" x="270" y="267" text-anchor="middle">（他看不见）</text>
+
+    <line class="ln" x1="378" y1="14" x2="378" y2="280"/>
+    <text class="b" x="398" y="22">俯视等高线：两种走法</text>
+    <ellipse class="ln" cx="540" cy="140" rx="128" ry="86"/>
+    <ellipse class="ln" cx="540" cy="140" rx="90" ry="60"/>
+    <ellipse class="ln" cx="540" cy="140" rx="52" ry="34"/>
+    <ellipse class="ln" cx="540" cy="140" rx="20" ry="13"/>
+    <polyline class="newS" style="stroke-width:2.4" points="424,72 462,96 494,116 520,130 540,140"/>
+    <polyline class="oldS" style="stroke-width:2" points="660,88 626,128 636,98 600,140 610,112 576,152 586,128 556,152 540,140"/>
+    <circle class="inkF" cx="540" cy="140" r="4"/>
+    <line class="newS" x1="400" y1="250" x2="428" y2="250" style="stroke-width:2.4"/><text class="sm" x="436" y="254">全量梯度：方向准，但每步要算全部数据</text>
+    <line class="oldS" x1="400" y1="272" x2="428" y2="272"/><text class="sm" x="436" y="276">SGD：方向有噪声，但每步很便宜</text>
+  </svg>
+  </div>
+  <figcaption>即使梯度算得再精确，也<b>看不到最优解在哪</b>：它只说明脚下这一点往哪边最陡。所以无论如何都得一步步走，而且可能停在局部低洼。神经网络的「山」形状极其复杂，没法一步算出最优参数。</figcaption>
+</figure>
+
+<div class="tbl"><table>
+  <thead><tr><th>概念</th><th>下山类比</th><th>实际含义</th></tr></thead>
+  <tbody>
+    <tr><td><b>梯度</b></td><td>脚下哪个方向最陡</td><td>每个参数各一个数：该调大还是调小、调多少。参数有几百万个，梯度就有几百万个数</td></tr>
+    <tr><td><b>反向传播</b></td><td>一次性算出每个方向的坡度</td><td>高效计算梯度的方法：从输出层开始，用链式法则一层层往回推每个参数的「责任」，一直推到最前面的词向量 C</td></tr>
+    <tr><td><b>SGD</b></td><td>摸一下脚下就迈一步</td><td>每次只用一个或一小批样本估计方向，然后迈一步</td></tr>
+    <tr><td><b>学习率 ε</b></td><td>步子多大</td><td>本文初始 10⁻³，之后逐渐减小</td></tr>
+  </tbody>
+</table></div>
+
+<div class="note"><span class="lab">贵的不是反向传播</span>反向传播很高效，算一次梯度的成本和正向算一次输出差不多。真正贵的是：严格的梯度要把<b>全部训练数据</b>（AP News 1400 万个位置）都算一遍再平均，才能迈一步。SGD 只抽一个样本估个大概就走。有噪声，但平均下来方向是对的，迈 1400 万小步远比算 1 次精确梯度划算。噪声有时还能帮模型跳出不好的局部低点。</div>
+
+<p><b>谁在调权重？是算法，不是人。</b>人决定的是<b>超参数</b>和设计：网络几层、隐藏层多少个神经元（h=60）、词向量几维（m=100）、看几个词（n=6）、学习率、训练几轮、用什么数据和损失函数。算法自动学的是<b>参数</b>：词向量矩阵 C 的每一个数，所有权重 H、U、W 和偏置 b、d。本文的超参数是「试几次，看验证集上的困惑度」选出来的。</p>
+
+<p><b>一个小例子</b>：前文是「那只黑」，真实的下一个词是「猫」。</p>
+<ol>
+  <li>模型现在给「猫」0.2，损失 = −log 0.2 ≈ 1.61。</li>
+  <li>反向传播算出：把输出层「猫」那一行的权重调大一点，把「黑」的词向量往某个方向挪一点，「猫」的概率就会升高。</li>
+  <li>SGD 按这个方向自动迈一小步。下次再遇到同样的前文，「猫」变成 0.25，损失降到约 1.39。</li>
+  <li>对几千万个样本重复这个过程，就是训练。</li>
+</ol>
+<p>原文的更新公式是 θ ← θ + ε · ∂log P(wₜ|前文)/∂θ，用加号是因为让对数似然往上爬（梯度上升），等价于让损失往下走。整个方法有一个前提：<b>网络必须是平滑（可求导）的函数</b>，否则梯度根本不存在。反向传播和 SGD 不产生平滑，它们<b>依赖</b>平滑才能工作。</p>
+
+<h3><span class="no">1.8</span>softmax</h3>
+<p>把一组任意实数 y₁…yₖ 变成概率：pᵢ = e^{yᵢ} / Σⱼ e^{yⱼ}。结果全为正、总和为 1，原来的大小顺序不变。语言模型里 k = 词表大小，所以输出层的计算量很大（3.9）。</p>
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>要打的敌人：维度灾难</h2>
+<p>原文开头说要「建模连续 10 个词的<b>联合分布</b>」，意思是给<b>所有可能的 10 词序列</b>，每一种都分配一个概率。想象一张巨表，每一行是一种 10 个词的排列。词表 10 万个词时，第 1 个位置 10⁵ 种选择，第 2 个位置也是 10⁵ 种……一共 (10⁵)¹⁰ = <b>10⁵⁰ 行</b>。</p>
+
+<figure class="fig">
+  <span class="tag">图 13 · 你手里的数据，和要填的表，差了 43 个零</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 238" role="img" aria-label="对数刻度：AP News 训练语料约 10 的 7 次方个词，前 5 个词的组合约 10 的 21 次方，10 词序列约 10 的 50 次方，和地球上的原子数同一量级。">
+    <g class="ln">
+      <line x1="220" y1="18" x2="220" y2="196"/><line x1="308" y1="18" x2="308" y2="196"/><line x1="396" y1="18" x2="396" y2="196"/>
+      <line x1="484" y1="18" x2="484" y2="196"/><line x1="572" y1="18" x2="572" y2="196"/><line x1="660" y1="18" x2="660" y2="196"/>
+    </g>
+    <text x="210" y="44" text-anchor="end">AP News 训练语料</text>
+    <rect class="new hit" x="220" y="26" width="63" height="26" rx="4"><title>训练语料约 1400 万个词 ≈ 10⁷</title></rect><text class="mo sm" x="291" y="44">1.4×10⁷</text>
+    <text x="210" y="89" text-anchor="end">前 5 个词的组合</text>
+    <rect class="mutF hit" x="220" y="71" width="187" height="26" rx="4"><title>17,964⁵ ≈ 1.9×10²¹</title></rect><text class="mo sm" x="415" y="89">1.9×10²¹</text>
+    <text x="210" y="134" text-anchor="end">10 词序列（10 万词表）</text>
+    <rect class="old hit" x="220" y="116" width="440" height="26" rx="4"><title>(10⁵)¹⁰ = 10⁵⁰</title></rect><text class="mo sm on" x="652" y="134" text-anchor="end">10⁵⁰</text>
+    <text x="210" y="179" text-anchor="end">地球上的原子</text>
+    <rect class="mutF hit" x="220" y="161" width="440" height="26" rx="4" style="opacity:.55"><title>地球原子数 ≈ 10⁵⁰ 量级</title></rect><text class="mo sm" x="652" y="179" text-anchor="end">≈10⁵⁰</text>
+    <g class="mo sm m">
+      <text x="220" y="214" text-anchor="middle">10⁰</text><text x="308" y="214" text-anchor="middle">10¹⁰</text><text x="396" y="214" text-anchor="middle">10²⁰</text>
+      <text x="484" y="214" text-anchor="middle">10³⁰</text><text x="572" y="214" text-anchor="middle">10⁴⁰</text><text x="660" y="214" text-anchor="middle">10⁵⁰</text>
+    </g>
+    <text class="m sm" x="220" y="234">横轴是对数刻度：每一格 = 多 10 个零</text>
+  </svg>
+  </div>
+  <figcaption>这张表既存不下，也不可能有足够的数据去填：绝大多数行一辈子都不会在语料里出现。测试时遇到的句子，大概率训练集里从没出现过一模一样的。这就是<b>维度灾难</b>：变量一多，组合数指数爆炸，数据永远不够。</figcaption>
+</figure>
+
+<p>化解分两步。<b>第一步</b>，链式法则拆开（1.1），把「一次猜整句」变成「一次猜一个词」，这一步是精确的。<b>第二步</b>，P(第 10 个词 | 前 9 个词) 仍然稀疏：n-gram 的办法是截断成只看前 2 个词，再用回退补洞；本文的办法是用<b>词向量 + 神经网络</b>，让没见过的组合也能借用相似组合的经验。</p>
+<p>所以 n-gram 有两个硬伤：</p>
+<ol>
+  <li><b>看不远</b>：实际只用前 1–2 个词，再长数据就太稀疏。</li>
+  <li><b>不懂「相似」</b>：见过「The cat is walking in the bedroom」，对「A dog was running in a room」毫无帮助。在 n-gram 眼里，cat 和 dog 是频次表里两个不相干的格子。Kneser-Ney 也解决不了。</li>
+</ol>
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>方法：向量 + 平滑网络</h2>
+<p>原文 1.1 节的三步走：</p>
+<ol>
+  <li>给词表里每个词分配一个 <b>m 维实数向量</b>（词向量 / 分布式表示）；</li>
+  <li>用这些向量来表达「下一个词」的概率函数；</li>
+  <li><b>词向量和概率函数一起学。</b></li>
+</ol>
+
+<h3><span class="no">3.2</span>「m 维实数向量」：给每个词一张坐标卡</h3>
+<p>就是一串 m 个小数，可以看成 m 维空间里的一个坐标点。m=4 时：猫 = [0.21, −1.30, 0.05, 0.88]，狗 = [0.19, −1.25, 0.10, 0.80]，跑 = [−0.90, 0.40, 1.20, −0.30]。猫和狗挨得很近，跑离得远。</p>
+
+<figure class="fig">
+  <span class="tag">图 14 · 坐标 vs 编号：只有坐标能表达「近」</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 300" role="img" aria-label="左边是词向量空间的二维示意，猫狗兔马聚在一起，卧室房间客厅聚在一起，走跑跳聚在一起；右边是编号，512 苹果和 513 政府挨着但意思毫无关系。">
+    <text class="b" x="20" y="22">词向量空间（压到二维的示意）</text>
+    <rect class="card" x="20" y="34" width="410" height="250" rx="8"/>
+    <ellipse class="soft" cx="125" cy="100" rx="70" ry="40"/>
+    <ellipse class="soft" cx="320" cy="215" rx="62" ry="38"/>
+    <ellipse class="soft" cx="118" cy="232" rx="58" ry="34"/>
+    <ellipse class="soft" cx="330" cy="92" rx="58" ry="34"/>
+    <g>
+      <circle class="new ring" cx="108" cy="90" r="5"/><text x="116" y="86">猫</text>
+      <circle class="new ring" cx="130" cy="110" r="5"/><text x="138" y="114">狗</text>
+      <circle class="new ring" cx="90" cy="118" r="5"/><text x="66" y="124">兔</text>
+      <circle class="new ring" cx="160" cy="80" r="5"/><text x="168" y="84">马</text>
+      <circle class="new ring" cx="300" cy="205" r="5"/><text x="308" y="201">卧室</text>
+      <circle class="new ring" cx="332" cy="222" r="5"/><text x="340" y="226">房间</text>
+      <circle class="new ring" cx="290" cy="236" r="5"/><text x="254" y="250">客厅</text>
+      <circle class="new ring" cx="104" cy="226" r="5"/><text x="112" y="222">走</text>
+      <circle class="new ring" cx="132" cy="242" r="5"/><text x="140" y="246">跑</text>
+      <circle class="new ring" cx="92" cy="252" r="5"/><text x="66" y="262">跳</text>
+      <circle class="new ring" cx="318" cy="84" r="5"/><text x="326" y="80">那只</text>
+      <circle class="new ring" cx="344" cy="98" r="5"/><text x="352" y="102">一只</text>
+      <circle class="new ring" cx="310" cy="106" r="5"/><text x="274" y="118">这只</text>
+    </g>
+    <text class="m sm" x="200" y="62">动物</text><text class="m sm" x="380" y="62" text-anchor="end">量词短语</text>
+    <text class="m sm" x="384" y="270" text-anchor="end">地点</text><text class="m sm" x="182" y="272">动作</text>
+
+    <text class="b" x="460" y="22">编号（n-gram 眼里的词）</text>
+    <g class="mo">
+      <rect class="oldT" x="460" y="50" width="200" height="38" rx="6"/><text x="476" y="74">512</text><text x="540" y="74" style="font-family:var(--sans)">苹果</text>
+      <rect class="oldT" x="460" y="94" width="200" height="38" rx="6"/><text x="476" y="118">513</text><text x="540" y="118" style="font-family:var(--sans)">政府</text>
+      <rect class="oldT" x="460" y="138" width="200" height="38" rx="6"/><text x="476" y="162">514</text><text x="540" y="162" style="font-family:var(--sans)">跑</text>
+    </g>
+    <text class="m sm" x="460" y="208">编号挨着 ≠ 意思相近</text>
+    <text class="m sm" x="460" y="226">编号只是索引，没有距离可言</text>
+    <text class="m sm" x="460" y="262">坐标连续，「距离近 = 意思近」</text>
+    <text class="m sm" x="460" y="280">才有意义</text>
+  </svg>
+  </div>
+  <figcaption>每一维的含义<b>不是人规定的</b>，不是「第 1 维 = 是不是动物」，而是训练中自动学出来的。单看某一维通常读不懂，但整体上相似的词会聚到一起。（二维示意，真实是 30–100 维）</figcaption>
+</figure>
+
+<p><b>m 远小于词表</b>：本文 m 取 30、60、100，词表约 1.7 万。这是在强迫模型<b>压缩</b>：用少数几个维度概括词与词的共性，压缩逼出了泛化。</p>
+
+<h3><span class="no">3.3</span>矩阵 C：存所有坐标卡的那张表（嵌入层）</h3>
+<p>先把词表排好序，每个词一个整数编号（AP News 词表 |V| = 17,964）。矩阵 C 是一张 |V| 行 × m 列的表，<b>第 i 行就是第 i 号词的向量</b>。</p>
+
+<figure class="fig">
+  <span class="tag">图 15 · 查表：拿编号取出那一行，没有任何计算</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="词 cat 先变成编号 2051，再去矩阵 C 里取出第 2051 行，得到 cat 的向量。">
+    <rect class="card" x="20" y="60" width="110" height="40" rx="8"/><text class="lg mo" x="75" y="86" text-anchor="middle">cat</text>
+    <line class="mutS" x1="75" y1="100" x2="75" y2="126" marker-end="url(#ah)"/>
+    <rect class="newT" x="20" y="130" width="110" height="40" rx="8"/><text class="mo b" x="75" y="156" text-anchor="middle">#2051</text>
+    <text class="m sm" x="75" y="190" text-anchor="middle">查编号</text>
+    <path class="newS" d="M130 150 H222" marker-end="url(#ahN)"/>
+
+    <text class="mo sm m" x="320" y="28" text-anchor="middle">维1</text><text class="mo sm m" x="370" y="28" text-anchor="middle">维2</text><text class="mo sm m" x="420" y="28" text-anchor="middle">维3</text><text class="mo sm m" x="465" y="28" text-anchor="middle">…</text><text class="mo sm m" x="505" y="28" text-anchor="middle">维m</text>
+    <rect class="card" x="228" y="38" width="300" height="186" rx="6"/>
+    <g class="mo sm">
+      <text class="m" x="238" y="60">1</text><text x="268" y="60">the</text><text x="320" y="60" text-anchor="middle">0.30</text><text x="370" y="60" text-anchor="middle">−0.10</text><text x="420" y="60" text-anchor="middle">0.70</text><text x="465" y="60" text-anchor="middle">…</text>
+      <text class="m" x="238" y="90">2</text><text x="268" y="90">a</text><text x="320" y="90" text-anchor="middle">0.30</text><text x="370" y="90" text-anchor="middle">−0.20</text><text x="420" y="90" text-anchor="middle">0.60</text><text x="465" y="90" text-anchor="middle">…</text>
+      <text class="m" x="320" y="118" text-anchor="middle">⋮</text>
+      <rect class="newT" x="232" y="134" width="292" height="30" rx="4"/>
+      <text class="b" x="238" y="154">2051</text><text class="b" x="280" y="154">cat</text><text class="b" x="320" y="154" text-anchor="middle">0.21</text><text class="b" x="370" y="154" text-anchor="middle">−1.30</text><text class="b" x="420" y="154" text-anchor="middle">0.05</text><text class="b" x="465" y="154" text-anchor="middle">…</text>
+      <text class="m" x="320" y="184" text-anchor="middle">⋮</text>
+      <text class="m" x="238" y="212">17964</text><text x="290" y="212">…</text>
+    </g>
+    <path class="newS" d="M528 149 H556" marker-end="url(#ahN)"/>
+    <text class="sm b" x="562" y="144">cat 的坐标卡</text><text class="m sm" x="562" y="162">m 个数</text>
+    <text class="m sm" x="228" y="248">矩阵 C：|V| = 17,964 行 × m 列；开始随机，训练中不断被修改</text>
+  </svg>
+  </div>
+  <figcaption>这一步就是<b>嵌入层</b>，网络的第一层，负责把离散的编号变成连续的向量。前 n−1 个词各查一次，得到 n−1 个向量，首尾拼接成网络的输入。<b>所有位置共用同一张 C</b>：cat 出现在第 1 个还是第 5 个位置，查到的都是同一行。今天大模型的 embedding 层就是这张表，只是词表 10 万以上，每行几千维。</figcaption>
+</figure>
+
+<h3><span class="no">3.4</span>表示 / 特征，以及为什么「一起学」是关键</h3>
+<p><b>特征</b>是描述一个对象的一组数字，比如一套房子 = [面积 90, 3 个房间, 楼龄 10 年]。<b>表示</b>是对象在模型内部被编码成的那组数字。本文之前，NLP 的特征大多是<b>人设计的</b>：这个词是不是名词、首字母是否大写、以 -ing 结尾吗。这叫特征工程，很耗人力，也受限于人能想到什么。本文的词向量是<b>学出来的表示</b>，原文叫它 word feature vector：每个数都是特征，但含义由数据决定。</p>
+<div class="tbl"><table>
+  <thead><tr><th>之前的方法</th><th>有没有词的表示</th><th>怎么得到</th></tr></thead>
+  <tbody>
+    <tr><td>普通 n-gram</td><td><b>完全没有</b>，词只是符号</td><td>只学概率表（数频次）</td></tr>
+    <tr><td>类别 n-gram（如 Brown 聚类）</td><td>有，但是离散类别（「猫」属于第 37 类）</td><td><b>先</b>单独聚类，<b>再</b>算概率，分两步</td></tr>
+    <tr><td>LSA 类向量</td><td>有连续向量</td><td>从共现统计<b>单独算好，然后固定</b></td></tr>
+  </tbody>
+</table></div>
+
+<figure class="fig">
+  <span class="tag">图 16 · 「一起学」：每处理一个训练样本，转一圈</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 220" role="img" aria-label="一个循环：用当前词向量和网络预测下一个词，和真实词对比得到损失，反向传播把误差传回去，网络权重和词向量同时被调整。测试集不参与这个循环。">
+    <rect class="newT" x="20" y="30" width="170" height="62" rx="10"/><text class="b" x="105" y="56" text-anchor="middle">词向量 C + 网络</text><text class="m sm" x="105" y="76" text-anchor="middle">当前这一版</text>
+    <rect class="card" x="250" y="30" width="170" height="62" rx="10"/><text class="b" x="335" y="56" text-anchor="middle">预测下一个词</text><text class="m sm" x="335" y="76" text-anchor="middle">给「猫」0.2</text>
+    <rect class="card" x="480" y="30" width="180" height="62" rx="10"/><text class="b" x="570" y="56" text-anchor="middle">和真实词对比</text><text class="m sm" x="570" y="76" text-anchor="middle">损失 = 1.61</text>
+    <line class="mutS" x1="190" y1="61" x2="246" y2="61" marker-end="url(#ah)"/>
+    <line class="mutS" x1="420" y1="61" x2="476" y2="61" marker-end="url(#ah)"/>
+    <path class="newS" d="M570 92 V140 H105 V96" marker-end="url(#ahN)" style="stroke-width:2.4"/>
+    <text class="sm b tn" x="338" y="132" text-anchor="middle">反向传播：网络权重和这几个词的向量，同时被调整</text>
+    <rect class="oldT dash" x="20" y="168" width="250" height="38" rx="8"/><text class="sm" x="36" y="192">测试集：不进这个循环，只在最后打分</text>
+    <text class="m sm" x="300" y="192">挑超参数用第三份数据：验证集</text>
+  </svg>
+  </div>
+  <figcaption>几千万个样本下来，词向量被慢慢塑造成<b>最有利于预测下一个词</b>的样子；更好的词向量又让网络预测更准。调整用的是<b>训练集</b>上的误差。拿测试集调参数，就像考前偷看考卷，分数不再可信（Brown：80 万词训练、20 万词验证、约 18 万词测试）。</figcaption>
+</figure>
+
+<p>作者做过对照：先用共现矩阵的主成分（类似 LSA）当固定词向量，结果不好。这证明<b>联合学习</b>才是关键。这个思想后来成了深度学习的核心信条：<b>表示不要人工设计、不要单独预处理，而是和任务一起端到端地学。</b></p>
+
+<h3><span class="no">3.5</span>网络结构与隐藏层</h3>
+<p>下面是 AP News 上的配置：n=6（看前 5 个词），m=100，h=60。</p>
+
+<figure class="fig">
+  <span class="tag">图 17 · 从 5 个词到 17,964 个概率，数字一路变化</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 420" role="img" aria-label="网络结构：5 个前文词各查一次共用的矩阵 C，拼成 500 个数，进入 60 个神经元的 tanh 隐藏层，再到 17,964 个分数的输出层，最后 softmax 变成概率；还有一条可选的直连 W 从输入跳到输出。">
+    <g>
+      <rect class="softS" x="80" y="14" width="80" height="36" rx="6"/><text x="120" y="37" text-anchor="middle">那只</text>
+      <rect class="softS" x="176" y="14" width="80" height="36" rx="6"/><text x="216" y="37" text-anchor="middle">黑</text>
+      <rect class="softS" x="272" y="14" width="80" height="36" rx="6"/><text x="312" y="37" text-anchor="middle">猫</text>
+      <rect class="softS" x="368" y="14" width="80" height="36" rx="6"/><text x="408" y="37" text-anchor="middle">在</text>
+      <rect class="softS" x="464" y="14" width="80" height="36" rx="6"/><text x="504" y="37" text-anchor="middle">卧室</text>
+      <text class="m sm" x="560" y="37">前 5 个词</text>
+    </g>
+    <g class="mutS">
+      <line x1="120" y1="50" x2="120" y2="70" marker-end="url(#ah)"/><line x1="216" y1="50" x2="216" y2="70" marker-end="url(#ah)"/><line x1="312" y1="50" x2="312" y2="70" marker-end="url(#ah)"/><line x1="408" y1="50" x2="408" y2="70" marker-end="url(#ah)"/><line x1="504" y1="50" x2="504" y2="70" marker-end="url(#ah)"/>
+    </g>
+    <rect class="newT" x="80" y="74" width="464" height="36" rx="6"/><text class="sm b" x="312" y="97" text-anchor="middle">嵌入层：5 次查同一张表 C（共用参数）</text>
+    <g class="mutS">
+      <line x1="120" y1="110" x2="120" y2="130" marker-end="url(#ah)"/><line x1="216" y1="110" x2="216" y2="130" marker-end="url(#ah)"/><line x1="312" y1="110" x2="312" y2="130" marker-end="url(#ah)"/><line x1="408" y1="110" x2="408" y2="130" marker-end="url(#ah)"/><line x1="504" y1="110" x2="504" y2="130" marker-end="url(#ah)"/>
+    </g>
+    <g class="mo sm">
+      <rect class="card" x="80" y="134" width="90" height="30" rx="3"/><text x="125" y="154" text-anchor="middle">100</text>
+      <rect class="card" x="173" y="134" width="90" height="30" rx="3"/><text x="218" y="154" text-anchor="middle">100</text>
+      <rect class="card" x="266" y="134" width="90" height="30" rx="3"/><text x="311" y="154" text-anchor="middle">100</text>
+      <rect class="card" x="359" y="134" width="90" height="30" rx="3"/><text x="404" y="154" text-anchor="middle">100</text>
+      <rect class="card" x="452" y="134" width="92" height="30" rx="3"/><text x="498" y="154" text-anchor="middle">100</text>
+    </g>
+    <text class="m sm" x="20" y="154">输入 x</text><text class="mo sm b" x="312" y="182" text-anchor="middle">拼接：500 个数</text>
+    <line class="mutS" x1="312" y1="190" x2="312" y2="212" marker-end="url(#ah)"/><text class="mo sm m" x="322" y="206">× H</text>
+    <rect class="newT" x="200" y="216" width="224" height="42" rx="8"/><text class="b" x="312" y="236" text-anchor="middle">隐藏层 tanh</text><text class="mo sm" x="312" y="252" text-anchor="middle">60 个数</text>
+    <text class="m sm" x="436" y="236">「这段话在说什么」</text><text class="m sm" x="436" y="252">的浓缩概括</text>
+    <line class="mutS" x1="312" y1="258" x2="312" y2="282" marker-end="url(#ah)"/><text class="mo sm m" x="322" y="276">× U</text>
+    <rect class="card" x="40" y="286" width="560" height="42" rx="8"/><text class="b" x="320" y="306" text-anchor="middle">输出层：17,964 个分数（每个词一个）</text><text class="sm to" x="320" y="322" text-anchor="middle">99.7% 的计算量在这里</text>
+    <line class="mutS" x1="312" y1="328" x2="312" y2="352" marker-end="url(#ah)"/>
+    <rect class="new" x="180" y="356" width="264" height="42" rx="8"/><text class="b on" x="312" y="376" text-anchor="middle">softmax</text><text class="sm on" x="312" y="392" text-anchor="middle">17,964 个加起来 = 1 的概率</text>
+    <path class="mutS dash" d="M544 149 H630 V300 H604" marker-end="url(#ah)"/>
+    <text class="m sm" x="638" y="216">直连 W</text><text class="m sm" x="638" y="232">（可选）</text>
+  </svg>
+  </div>
+  <figcaption>所有参数 θ = (b, d, W, U, H, C) 全部用反向传播 + SGD 一起学。原文说「实际上有两个隐藏层」，指的是嵌入层 C（只查表，没有非线性）加上 tanh 层；平常说的「本文的隐藏层」指 tanh 那一层。</figcaption>
+</figure>
+
+<p><b>隐藏层具体是什么</b>：它夹在输入和输出之间，值既不是输入数据，也不是要预测的答案，训练数据里没有它的「标准答案」，该输出什么完全由训练决定。本文的 60 个神经元，每个都接收全部 500 个数，做一次加权求和再过 tanh，输出一个数：aₖ = tanh(dₖ + Hₖ · x)。可以把它想成<b>加工车间</b>：输入是原材料（5 个词的坐标），隐藏层提炼出「这段话现在在说什么、接下来该接什么类型的词」，输出层再给每个候选词打分。</p>
+<p><b>为什么需要它</b>：没有隐藏层，输出只是词向量的加权求和，表达不了「词与词的组合效果」。原文 Table 1 证实了这一点：有隐藏层的 MLP1 测试困惑度 268，没有隐藏层的 MLP3 是 310。<b>直连 W</b> 让词向量跳过隐藏层直接连到输出，论文发现去掉它泛化更好，但训练慢一倍。</p>
+
+<h3><span class="no">3.6</span>为什么有效：平滑函数</h3>
+<p><b>平滑函数：输入变一点点，输出也只变一点点，不会突然跳变。</b>调温旋钮转一点，水温只变一点，这是平滑的；电灯开关只有开和关，不平滑。数学上，平滑函数在每一点都能求出变化率（梯度）。网络里的加权求和、tanh、softmax 全是平滑的，平滑函数一层层套起来仍然平滑，所以整个网络从「词向量」到「概率」是一个平滑函数。</p>
+
+<figure class="fig">
+  <span class="tag">图 18 · 猫和狗差 0.02，输出也只差 0.018</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="左边曲线 tanh(2x)：猫的向量0.50输出0.762，狗的向量0.48输出0.744，几乎重合；右边 n-gram 查表，猫0.3，狗没见过是0，直接跳变。">
+    <text class="b" x="40" y="20">NPLM：平滑函数</text>
+    <text class="mo sm m" x="40" y="38">分数 = tanh(2 × 词向量)</text>
+    <line class="ln" x1="40" y1="130" x2="340" y2="130"/><line class="ln" x1="190" y1="46" x2="190" y2="226"/>
+    <polyline class="mutS" style="stroke-width:2" points="40,219.6 90,216.8 115,211.5 140,198.6 165,171.6 190,130 215,88.4 240,61.4 265,48.5 290,43.2 340,40.4"/>
+    <line class="newS dash" x1="240" y1="61" x2="240" y2="130" style="stroke-width:1.2"/>
+    <circle class="new ring" cx="238" cy="63" r="6"/><circle class="new ring" cx="241" cy="61" r="6" style="opacity:.75"/>
+    <line class="ln" x1="246" y1="70" x2="270" y2="110"/>
+    <text class="sm" x="262" y="124">猫 0.50 → <tspan class="mo b">0.762</tspan></text>
+    <text class="sm" x="262" y="142">狗 0.48 → <tspan class="mo b">0.744</tspan></text>
+    <text class="m sm" x="40" y="250">两个点几乎重合：输入近 → 输出近</text>
+
+    <line class="ln" x1="380" y1="16" x2="380" y2="250"/>
+    <text class="b" x="410" y="20">n-gram：查表</text>
+    <text class="mo sm m" x="410" y="38">每个词一个独立的格子</text>
+    <line class="ln" x1="420" y1="200" x2="650" y2="200"/>
+    <rect class="old hit" x="450" y="80" width="64" height="120" rx="4"><title>猫：0.3</title></rect>
+    <text class="mo sm" x="482" y="72" text-anchor="middle">0.3</text><text x="482" y="220" text-anchor="middle">猫</text>
+    <rect class="oldT dash" x="560" y="196" width="64" height="4" rx="1"/>
+    <text class="mo sm b to" x="592" y="186" text-anchor="middle">0</text><text x="592" y="220" text-anchor="middle">狗</text>
+    <text class="m sm" x="410" y="250">狗没见过就是 0，直接跳变</text>
+  </svg>
+  </div>
+  <figcaption>把网络简化成一维：分数 = tanh(2 × 词向量)。猫的向量 0.50 → 0.762，狗的向量 0.48 → 0.744。<b>两个向量只差 0.02，输出也只差 0.018。</b></figcaption>
+</figure>
+
+<p>平滑在本文里起了两个作用。<b>作用一：泛化</b>（原文「Why does it work?」）。训练后猫和狗的向量很接近；网络是平滑函数；所以把输入里「猫」换成「狗」，输出概率也只变一点。</p>
+
+<figure class="fig">
+  <span class="tag">图 19 · 见过一句，照顾到一整片「邻居句子」</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 212" role="img" aria-label="训练句 The cat is walking in the bedroom，每个词都可以换成向量相近的词，如 A、dog、was、running、a、room，六个位置各两种选择，共 64 句，模型都会觉得合理。">
+    <text class="m sm" x="20" y="22">训练里见过的句子</text>
+    <g class="mo">
+      <rect class="card" x="20" y="32" width="54" height="34" rx="6"/><text x="47" y="54" text-anchor="middle">The</text>
+      <rect class="card" x="84" y="32" width="54" height="34" rx="6"/><text x="111" y="54" text-anchor="middle">cat</text>
+      <rect class="card" x="148" y="32" width="50" height="34" rx="6"/><text x="173" y="54" text-anchor="middle">is</text>
+      <rect class="card" x="208" y="32" width="86" height="34" rx="6"/><text x="251" y="54" text-anchor="middle">walking</text>
+      <rect class="card" x="304" y="32" width="40" height="34" rx="6"/><text x="324" y="54" text-anchor="middle">in</text>
+      <rect class="card" x="354" y="32" width="50" height="34" rx="6"/><text x="379" y="54" text-anchor="middle">the</text>
+      <rect class="card" x="414" y="32" width="88" height="34" rx="6"/><text x="458" y="54" text-anchor="middle">bedroom</text>
+
+      <rect class="newT" x="20" y="100" width="54" height="34" rx="6"/><text x="47" y="122" text-anchor="middle">A</text>
+      <rect class="newT" x="84" y="100" width="54" height="34" rx="6"/><text x="111" y="122" text-anchor="middle">dog</text>
+      <rect class="newT" x="148" y="100" width="50" height="34" rx="6"/><text x="173" y="122" text-anchor="middle">was</text>
+      <rect class="newT" x="208" y="100" width="86" height="34" rx="6"/><text x="251" y="122" text-anchor="middle">running</text>
+      <rect class="newT" x="354" y="100" width="50" height="34" rx="6"/><text x="379" y="122" text-anchor="middle">a</text>
+      <rect class="newT" x="414" y="100" width="88" height="34" rx="6"/><text x="458" y="122" text-anchor="middle">room</text>
+    </g>
+    <g class="mutS" style="stroke-width:1.2">
+      <line x1="47" y1="70" x2="47" y2="96" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <line x1="111" y1="70" x2="111" y2="96" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <line x1="173" y1="70" x2="173" y2="96" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <line x1="251" y1="70" x2="251" y2="96" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <line x1="379" y1="70" x2="379" y2="96" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <line x1="458" y1="70" x2="458" y2="96" marker-start="url(#ah)" marker-end="url(#ah)"/>
+    </g>
+    <text class="m sm" x="20" y="156">换成向量相近的词</text>
+    <text class="ser" x="590" y="88" text-anchor="middle" style="font-size:40px">2⁶</text>
+    <text class="mo b" x="590" y="116" text-anchor="middle">= 64 句</text>
+    <text class="m sm" x="590" y="136" text-anchor="middle">都被判为「挺合理」</text>
+    <text class="m sm" x="20" y="196">每一列任选一个，组合出的句子大多从没出现过，模型照样给它们高概率。</text>
+  </svg>
+  </div>
+  <figcaption>训练里见过「The <b>cat</b> is walking in the bedroom」，模型给「A <b>dog</b> was running in a room」的概率<b>自动</b>也会高。一句训练数据，就照顾到了组合爆炸数量的邻居。</figcaption>
+</figure>
+
+<p><b>作用二：可训练。</b>平滑才能求梯度，有梯度才能用反向传播 + SGD（1.7），这也是人工神经元把阶跃换成 tanh 的原因。</p>
+<p><b>词向量和网络，缺一不可。</b>词向量提供「距离」：谁和谁相近；平滑的网络保证「距离近 → 输出近」。只有词向量、没有平滑函数，相近不会变成概率相近；只有平滑函数、输入却是互不相关的编号，也没有「相近」可言。两者组合起来才产生泛化。</p>
+<p>用原文的视角再看一遍：训练时概率集中在见过的句子上，泛化就是把这些概率<b>分一部分给附近的句子</b>。关键在「附近」怎么定义。n-gram 认为和训练句<b>共享短片段</b>的算附近；NPLM 认为在<b>词向量空间里挨得近</b>的算附近，也就是由相似的词组成的句子。后者更符合语言的实际。</p>
+<div class="note"><span class="lab">平滑的代价</span>相近的词会被同等对待，有时这会出错。「好」和「坏」经常出现在完全相同的位置（「这部电影很__」），词向量可能非常接近，模型就不容易区分它们。这是词向量的已知局限。</div>
+<p class="punch">作者的原话：<em>用维度灾难自己的武器打败它。</em>组合爆炸本来是敌人，现在变成了「一句话能泛化到指数级多的句子」。</p>
+
+<h3><span class="no">3.7</span>为什么参数量不是一个量级</h3>
+<p><b>n-gram：每多看一个词，表格大小 × |V|。</b>它要为每一种前文组合单独存一组概率。看前 5 个词时，可能的上下文有 17,964⁵ ≈ 1.9 × 10²¹ 种，每种还要给 17,964 个候选词各存一个概率，约 3 × 10²⁵ 格。实际只存见过的组合，但问题在于格子越多，每一格分到的数据越少。</p>
+<p><b>NPLM：每多看一个词，只多几列权重。</b>原文给出的总参数量是 |V|(1 + nm + h) + h(1 + (n−1)m)，代入 AP News 配置，合计约 <b>1190 万</b>。再多看 1 个词，H 只多 100 列（6,000 个参数），有直连 W 再多约 180 万。是加法，不是乘法。</p>
+
+<figure class="fig">
+  <span class="tag">图 20 · 看的词越多，两者的差距越拉越大（对数刻度）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 292" role="img" aria-label="对数刻度折线图：看 1 到 5 个前文词时，n-gram 的格子数从 3.2 乘 10 的 8 次方涨到 3.4 乘 10 的 25 次方；NPLM 的参数量从 469 万只涨到 1190 万，几乎是一条平线。">
+    <g class="ln">
+      <line x1="80" y1="240" x2="600" y2="240"/><line x1="80" y1="198" x2="600" y2="198"/><line x1="80" y1="156" x2="600" y2="156"/>
+      <line x1="80" y1="114" x2="600" y2="114"/><line x1="80" y1="72" x2="600" y2="72"/><line x1="80" y1="30" x2="600" y2="30"/>
+    </g>
+    <g class="mo sm m">
+      <text x="72" y="244" text-anchor="end">10⁶</text><text x="72" y="202" text-anchor="end">10¹⁰</text><text x="72" y="160" text-anchor="end">10¹⁴</text>
+      <text x="72" y="118" text-anchor="end">10¹⁸</text><text x="72" y="76" text-anchor="end">10²²</text><text x="72" y="34" text-anchor="end">10²⁶</text>
+    </g>
+    <g class="sm m">
+      <text x="100" y="262" text-anchor="middle">1</text><text x="215" y="262" text-anchor="middle">2</text><text x="330" y="262" text-anchor="middle">3</text><text x="445" y="262" text-anchor="middle">4</text><text x="560" y="262" text-anchor="middle">5</text>
+      <text x="330" y="284" text-anchor="middle">看前几个词</text>
+    </g>
+    <polyline class="oldS" style="stroke-width:2" points="100,213.6 215,169 330,124.3 445,79.7 560,34.9"/>
+    <polyline class="newS" style="stroke-width:2" points="100,233 215,231.5 330,230.3 445,229.5 560,228.7"/>
+    <g>
+      <circle class="old ring hit" cx="100" cy="213.6" r="5"><title>n-gram，看 1 个词：3.2×10⁸ 格</title></circle>
+      <circle class="old ring hit" cx="215" cy="169" r="5"><title>n-gram，看 2 个词：5.8×10¹² 格</title></circle>
+      <circle class="old ring hit" cx="330" cy="124.3" r="5"><title>n-gram，看 3 个词：1.0×10¹⁷ 格</title></circle>
+      <circle class="old ring hit" cx="445" cy="79.7" r="5"><title>n-gram，看 4 个词：1.9×10²¹ 格</title></circle>
+      <circle class="old ring hit" cx="560" cy="34.9" r="5"><title>n-gram，看 5 个词：3.4×10²⁵ 格</title></circle>
+      <circle class="new ring hit" cx="100" cy="233" r="5"><title>NPLM，看 1 个词：约 469 万参数</title></circle>
+      <circle class="new ring hit" cx="215" cy="231.5" r="5"><title>NPLM，看 2 个词：约 650 万参数</title></circle>
+      <circle class="new ring hit" cx="330" cy="230.3" r="5"><title>NPLM，看 3 个词：约 829 万参数</title></circle>
+      <circle class="new ring hit" cx="445" cy="229.5" r="5"><title>NPLM，看 4 个词：约 1010 万参数</title></circle>
+      <circle class="new ring hit" cx="560" cy="228.7" r="5"><title>NPLM，看 5 个词：约 1190 万参数</title></circle>
+    </g>
+    <text class="sm b" x="572" y="40">n-gram</text><text class="mo sm" x="572" y="56">3×10²⁵ 格</text>
+    <text class="sm b" x="572" y="216">NPLM</text><text class="mo sm" x="572" y="232">1190 万</text>
+    <g class="sm"><rect class="old" x="96" y="6" width="12" height="12" rx="3"/><text x="114" y="17">n-gram 要存的格子（每次 × 17,964）</text>
+      <rect class="new" x="360" y="6" width="12" height="12" rx="3"/><text x="378" y="17">NPLM 参数量（每次只加一点）</text></g>
+  </svg>
+  </div>
+  <figcaption>根本原因是<b>参数共享</b>。n-gram 里「那只黑猫」和「那只白猫」是两格，各管各的；NPLM 里「猫」的向量只有一份，在任何上下文、任何位置都用它，隐藏层的权重也对所有上下文通用。（AP News 配置：|V|=17,964，m=100，h=60，含直连 W）</figcaption>
+</figure>
+
+<div class="tbl"><table>
+  <thead><tr><th></th><th>n-gram</th><th>NPLM</th></tr></thead>
+  <tbody>
+    <tr><td>词的表示</td><td>离散符号（编号）</td><td>连续向量</td></tr>
+    <tr><td>泛化方式</td><td>拼接见过的短片段 + 回退 / KN</td><td>相似词共享概率（平滑函数）</td></tr>
+    <tr><td>参数量随上下文长度</td><td>指数增长</td><td><b>线性</b>增长</td></tr>
+    <tr><td>训练</td><td>数一遍次数</td><td>迭代优化几周</td></tr>
+    <tr><td>计算量</td><td>很小（查表）</td><td>很大（softmax 要算全词表）</td></tr>
+  </tbody>
+</table></div>
+
+<h3 id="s39"><span class="no">3.9</span>工程方案：2003 年怎么训练得动</h3>
+<p>瓶颈在输出层。每处理一个样本，都要给 17,964 个词逐一打分，每个分数是一次几百维的加权求和。原文估算一个样本约 1000 万次乘加，其中 <b>99.7% 花在输出层</b>。AP News 一轮 1400 万个样本，单机算不动。</p>
+<p>原文讨论了两种并行方式，用「批改试卷」打比方：参数是标准答案，样本是试卷。</p>
+<ul>
+  <li><b>数据并行（共享内存机器）</b>：每个老师批不同的试卷，大家共用墙上同一份标准答案。第一版加了「锁」，一个人改答案时别人得等，结果大部分时间在排队。改成<b>异步</b>后谁都可以随时写，偶尔有人的修改被覆盖也无所谓，带来一点噪声，几乎不影响训练。但大型共享内存机器很贵。</li>
+  <li><b>参数并行（CPU 集群，本文主要用的）</b>：每个老师只批<b>某几道题</b>，所有试卷都要过每个老师的手。集群间每次交换全部参数（近 100MB）太慢，所以把输出层按词表切块。</li>
+</ul>
+
+<figure class="fig">
+  <span class="tag">图 21 · 64 个 CPU 各管 280 个词，只交换几个数</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 300" role="img" aria-label="一个样本 99.7% 的计算在输出层；64 个 CPU 每个负责约 280 个词的打分，各自算出部分和，通过 Allreduce 汇总成总和 S 并发回每台，各自除以 S 得到正确的概率。">
+    <text class="sm b" x="20" y="18">一个样本的计算量</text>
+    <rect class="new" x="20" y="28" width="636" height="22" rx="4"/><rect class="mutF" x="658" y="28" width="4" height="22" rx="1"/>
+    <text class="sm on" x="32" y="44">输出层 99.7%</text><text class="sm m" x="660" y="66" text-anchor="end">嵌入 + 隐藏层 0.3%：每台 CPU 各自重算，比传结果更省时间</text>
+
+    <g>
+      <rect class="card" x="20" y="92" width="108" height="64" rx="8"/><text class="b" x="74" y="116" text-anchor="middle">CPU 1</text><text class="mo sm m" x="74" y="136" text-anchor="middle">词 1–280</text>
+      <rect class="card" x="140" y="92" width="108" height="64" rx="8"/><text class="b" x="194" y="116" text-anchor="middle">CPU 2</text><text class="mo sm m" x="194" y="136" text-anchor="middle">词 281–560</text>
+      <rect class="card" x="260" y="92" width="108" height="64" rx="8"/><text class="b" x="314" y="116" text-anchor="middle">CPU 3</text><text class="mo sm m" x="314" y="136" text-anchor="middle">词 561–840</text>
+      <text class="lg m" x="410" y="130" text-anchor="middle">…</text>
+      <rect class="card" x="452" y="92" width="208" height="64" rx="8"/><text class="b" x="556" y="116" text-anchor="middle">CPU 64</text><text class="mo sm m" x="556" y="136" text-anchor="middle">词 17,685–17,964</text>
+    </g>
+    <g class="mo sm">
+      <text x="74" y="178" text-anchor="middle">s₁</text><text x="194" y="178" text-anchor="middle">s₂</text><text x="314" y="178" text-anchor="middle">s₃</text><text x="556" y="178" text-anchor="middle">s₆₄</text>
+    </g>
+    <g class="mutS">
+      <line x1="74" y1="184" x2="74" y2="206" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <line x1="194" y1="184" x2="194" y2="206" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <line x1="314" y1="184" x2="314" y2="206" marker-start="url(#ah)" marker-end="url(#ah)"/>
+      <line x1="556" y1="184" x2="556" y2="206" marker-start="url(#ah)" marker-end="url(#ah)"/>
+    </g>
+    <rect class="newT" x="20" y="210" width="640" height="40" rx="8"/>
+    <text class="sm b" x="340" y="235" text-anchor="middle">Allreduce：S = s₁ + s₂ + … + s₆₄，每台都拿到同一个 S</text>
+    <text class="m sm" x="20" y="278">每台用 S 去除自己那 280 个分数 → 得到正确的 softmax 概率（分母必须是全词表的总和）</text>
+  </svg>
+  </div>
+  <figcaption>s 是每台 CPU 自己那 280 个词的 e^分数 之和。每个样本只需传几个数和两个短向量（60 维、500 维），<b>通信只占总时间的 1/15</b>，几乎是完美加速。硬件：64 个 Athlon 1.2GHz（32 台双核）+ Myrinet 高速网络。</figcaption>
+</figure>
+
+<p>一个样本的完整流程：</p>
+<ol>
+  <li>每个 CPU 各自算一遍嵌入层和隐藏层（只占 0.3%）。</li>
+  <li>每个 CPU 给自己负责的约 280 个词打分、取指数，求出这部分的和 sᵢ。</li>
+  <li>Allreduce：所有 CPU 把 sᵢ 汇总成 S，每个 CPU 都拿到 S。（每人手里一个数，操作结束后每人都知道总和。）</li>
+  <li>每个 CPU 用 S 去除自己的分数，得到正确的概率。</li>
+  <li>反向时，每个 CPU 在本地更新自己负责的输出权重，不用通信；同时算出对隐藏层和词向量的那部分梯度，再用一次 Allreduce 汇总。</li>
+  <li>每个 CPU 拿到相同的汇总梯度，各自更新隐藏层和词向量。大家拿到的数一样，更新后的结果也一样。</li>
+</ol>
+<p>两个细节：<b>防止数值溢出</b>，softmax 要算 e^y，y 稍大（比如 1000）就超出表示范围，办法是先减去最大值 Q 再算 e^(y−Q)，结果不变、数值安全，并行时要多一次 Allreduce 找全局最大值。<b>网络慢的时候</b>，攒 K 个样本再通信一次（mini-batch），代价是 K 太大时收敛变慢。</p>
+<p>作者还提出了更根本的提速方向：<b>层次化 softmax</b>（先猜词属于哪一类，再在类里猜，计算量从 |V| 降到约 log|V|）和<b>重要性采样</b>（每次只算一部分词来近似整体，另一篇论文用它提速了 100 倍）。这两种思路后来都被 word2vec 采用了。</p>
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>实验结果</h2>
+
+<figure class="fig">
+  <span class="tag">图 22 · 测试困惑度，越低越好</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 292" role="img" aria-label="柱状图：Brown 数据集上最好的 n-gram 困惑度 312，NPLM 252，降低约 24%；AP News 上 Kneser-Ney 117，NPLM 109，降低约 8%。">
+    <g class="ln"><line x1="60" y1="230" x2="620" y2="230"/><line x1="60" y1="172.9" x2="620" y2="172.9"/><line x1="60" y1="115.7" x2="620" y2="115.7"/><line x1="60" y1="58.6" x2="620" y2="58.6"/></g>
+    <g class="mo sm m"><text x="52" y="234" text-anchor="end">0</text><text x="52" y="177" text-anchor="end">100</text><text x="52" y="120" text-anchor="end">200</text><text x="52" y="63" text-anchor="end">300</text></g>
+    <path class="old hit" d="M110 230 V55.7 Q110 51.7 114 51.7 H162 Q166 51.7 166 55.7 V230 Z"><title>Brown · 最好的 n-gram（类别 n-gram，500 类）：312</title></path>
+    <path class="new hit" d="M170 230 V90 Q170 86 174 86 H222 Q226 86 226 90 V230 Z"><title>Brown · NPLM（MLP10，与三元组混合）：252</title></path>
+    <path class="old hit" d="M410 230 V167.1 Q410 163.1 414 163.1 H462 Q466 163.1 466 167.1 V230 Z"><title>AP News · Kneser-Ney 5-gram：117</title></path>
+    <path class="new hit" d="M470 230 V171.7 Q470 167.7 474 167.7 H522 Q526 167.7 526 171.7 V230 Z"><title>AP News · NPLM：109</title></path>
+    <g class="mo sm b"><text x="138" y="44" text-anchor="middle">312</text><text x="198" y="78" text-anchor="middle">252</text><text x="438" y="155" text-anchor="middle">117</text><text x="498" y="160" text-anchor="middle">109</text></g>
+    <text class="b" x="168" y="254" text-anchor="middle">Brown（约 100 万词）</text><text class="mo sm" x="168" y="272" text-anchor="middle">降低约 24%</text>
+    <text class="b" x="468" y="254" text-anchor="middle">AP News（约 1400 万词）</text><text class="mo sm" x="468" y="272" text-anchor="middle">降低约 8%</text>
+    <g class="sm"><rect class="old" x="420" y="8" width="12" height="12" rx="3"/><text x="438" y="19">最好的 n-gram</text><rect class="new" x="548" y="8" width="12" height="12" rx="3"/><text x="566" y="19">NPLM</text></g>
+  </svg>
+  </div>
+  <figcaption>Brown 上的对手是类别 n-gram（500 类），NPLM 是 MLP10 与三元组混合；AP News 上的对手是 Kneser-Ney 5-gram。出处：原文 Table 1、Table 2。</figcaption>
+</figure>
+
+<ul>
+  <li><b>神经网络能用上更长的上下文</b>：Brown 上把上下文从 2 个词加到 4 个，神经网络变好，n-gram 不变。</li>
+  <li><b>隐藏层有用</b>：MLP1（有隐藏层）268 vs MLP3（无隐藏层）310。</li>
+  <li><b>和三元组简单平均，总能再降一点</b>，说明两者犯错的地方不同。</li>
+  <li><b>代价很大</b>：AP News 上 40 个 CPU 跑了 3 周，只跑了 5 轮。</li>
+</ul>
+<p>作者自己承认的局限：太慢（→ 层次化 softmax、重要性采样）；上下文窗口固定（→ 建议用循环神经网络）；<b>一词多义</b>，每个词只有一个向量，「bank」（银行 / 河岸）分不开。</p>
+
+<h2 id="s5"><span class="no">5</span>当时的技术背景（2003）</h2>
+<ul>
+  <li>语言模型的主流是 <b>n-gram + 平滑</b>，Kneser-Ney 最强，语音识别、机器翻译都靠它，常用工具是 SRILM。</li>
+  <li>神经网络处于低谷：没有 GPU 训练，没有大数据集，深层网络训不动，多数人认为它慢且不实用。</li>
+  <li>词向量的思想不新：Hinton 1986 年就提出了「分布式表示」，信息检索里也有 LSA。本文的突破在于<b>联合训练词向量和语言模型，并在大规模数据上打败了 n-gram</b>。</li>
+</ul>
+
+<h2 id="s6"><span class="no">6</span>后来发展到什么程度</h2>
+
+<figure class="fig">
+  <span class="tag">图 23 · 从 2003 年到今天，留下了什么</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="时间线：2003 年 NPLM，2010 年 RNNLM，2013 年 word2vec，2014 年 Seq2Seq，2017 年 Transformer，2018 年 BERT 和 GPT，到今天的大模型。今天还保留着嵌入层、预测下一个 token、softmax 输出层和困惑度。">
+    <line class="ink" x1="40" y1="96" x2="650" y2="96" style="stroke-width:1.2"/>
+    <circle class="new" cx="40" cy="96" r="7"/>
+    <text class="mo sm b tn" x="34" y="34">2003</text><text class="sm b" x="34" y="50">NPLM</text><text class="m sm" x="34" y="66">本文</text>
+    <circle class="inkF" cx="222" cy="96" r="5"/><line class="ln" x1="222" y1="102" x2="222" y2="122"/>
+    <text class="mo sm b" x="222" y="138" text-anchor="middle">2010</text><text class="sm" x="222" y="154" text-anchor="middle">RNNLM</text><text class="m sm" x="222" y="170" text-anchor="middle">固定窗口 → 循环</text>
+    <circle class="inkF" cx="300" cy="96" r="5"/><line class="ln" x1="300" y1="90" x2="300" y2="72"/>
+    <text class="mo sm b" x="300" y="34" text-anchor="middle">2013</text><text class="sm" x="300" y="50" text-anchor="middle">word2vec</text><text class="m sm" x="300" y="66" text-anchor="middle">专门学词向量</text>
+    <circle class="inkF" cx="326" cy="96" r="5"/><line class="ln" x1="326" y1="102" x2="326" y2="122"/>
+    <text class="mo sm b" x="340" y="138" text-anchor="start">2014</text><text class="sm" x="340" y="154">Seq2Seq</text><text class="m sm" x="340" y="170">第 002 篇</text>
+    <circle class="inkF" cx="404" cy="96" r="5"/><line class="ln" x1="404" y1="90" x2="404" y2="72"/>
+    <text class="mo sm b" x="420" y="34" text-anchor="start">2017</text><text class="sm" x="420" y="50">Transformer</text><text class="m sm" x="420" y="66">第 004 篇</text>
+    <circle class="inkF" cx="430" cy="96" r="5"/><line class="ln" x1="430" y1="102" x2="430" y2="122"/>
+    <text class="mo sm b" x="456" y="138">2018</text><text class="sm" x="456" y="154">BERT / GPT</text><text class="m sm" x="456" y="170">一词多义解决</text>
+    <circle class="inkF" cx="650" cy="96" r="5"/>
+    <text class="mo sm b" x="650" y="34" text-anchor="end">今天</text><text class="sm" x="650" y="50" text-anchor="end">大模型</text>
+
+    <text class="sm b" x="20" y="206">今天的大模型里还留着的：</text>
+    <rect class="newT" x="20" y="218" width="148" height="32" rx="6"/><text class="sm" x="94" y="239" text-anchor="middle">嵌入层 = 矩阵 C</text>
+    <rect class="newT" x="178" y="218" width="178" height="32" rx="6"/><text class="sm" x="267" y="239" text-anchor="middle">目标：预测下一个 token</text>
+    <rect class="newT" x="366" y="218" width="140" height="32" rx="6"/><text class="sm" x="436" y="239" text-anchor="middle">softmax 输出层</text>
+    <rect class="newT" x="516" y="218" width="144" height="32" rx="6"/><text class="sm" x="588" y="239" text-anchor="middle">困惑度这把尺子</text>
+  </svg>
+  </div>
+  <figcaption>2013 年的 word2vec 把 NPLM 大幅简化（去掉隐藏层，用负采样或层次 softmax 解决 softmax 瓶颈），「king − man + woman ≈ queen」让它广为人知。2018 年 ELMo / BERT / GPT 引入<b>上下文相关的表示</b>：同一个词在不同句子里向量不同。</figcaption>
+</figure>
+
+<ul>
+  <li><b>词 → 子词 token</b>：BPE 等子词切分解决了罕见词和未知词的问题（1.2，第 007 篇）。</li>
+  <li><b>训练目标没变</b>：仍是「预测下一个 token、最大化对数似然」，GPT 系列和本文相同。</li>
+  <li><b>softmax 依然开销大</b>，但 GPU 足够强，十几万 token 的词表可以直接全量计算。</li>
+  <li><b>Allreduce 式的参数切分</b>，在今天大模型的分布式训练里仍能看到影子：把一层的参数切到多张 GPU 上。</li>
+  <li>本文 5.1 节让输出词也用向量表示，后来大模型常见的 <b>embedding 权重共享</b>（weight tying）是同一个思路。</li>
+  <li><b>不同之处</b>：「前 n−1 个词的固定窗口」已被 Transformer 的注意力取代，今天的上下文可达几十万 token。</li>
+</ul>
+
+<h2 id="s7"><span class="no">7</span>前后篇衔接</h2>
+<p><b>继承自</b>：n-gram 语言模型，以及 Hinton 的分布式表示思想。</p>
+<p><b>留下的问题</b>：</p>
+<ul>
+  <li>固定窗口、看不远 → RNN / LSTM（第 002 篇用的就是 LSTM）</li>
+  <li>只能预测下一个词，不能把一个序列变成另一个序列 → <b>第 002 篇 Seq2Seq</b></li>
+  <li>一词多义 → 第 006、008 篇</li>
+  <li>按词切分有未知词问题 → 第 007 篇</li>
+</ul>
+<p class="punch">一句话带走：<em>给每个词一个坐标，再用一个平滑的函数去猜下一个词。</em>相似的词挨得近，猜出来的概率也就相近。</p>
+
+<footer>
+  AI 论文解读 · 001 · 原文：Bengio, Ducharme, Vincent, Jauvin. <i>A Neural Probabilistic Language Model.</i> JMLR 3 (2003) 1137–1155。<br>
+  图中标「示意」的数字是为了讲清机制编的例子；实验数字、参数量、硬件配置均出自原文。
+</footer>
+</main>
+
+<script>
+// 图 8 的 10×10 格子：静态内容，用脚本生成以免手写一百个方块
+(function(){
+  var g=document.getElementById('grid100'); if(!g) return;
+  var ns='http://www.w3.org/2000/svg';
+  for(var r=0;r<10;r++){for(var c=0;c<10;c++){
+    var el=document.createElementNS(ns,'rect');
+    el.setAttribute('x',30+c*19);el.setAttribute('y',30+r*19);
+    el.setAttribute('width',15);el.setAttribute('height',15);el.setAttribute('rx',3);
+    el.setAttribute('class',(r===3&&c===6)?'new':'softS');
+    g.appendChild(el);
+  }}
+})();
+</script>
+</body>
+</html>
