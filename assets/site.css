@@ -68,6 +68,26 @@ h1{font-family:var(--serif);font-weight:900;font-size:clamp(44px,9vw,72px);line-
 .d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
 .d .mutF{fill:var(--mut)}
 
+/* 宽屏：介绍在左、阅读地图在右，首屏两栏并排，不让地图单独占一大段纵向空间。
+   .top 比正文宽，从 760 的正文栏里向两边撑开 */
+@media (min-width:1080px){
+  .top{width:min(1240px,calc(100vw - 64px));margin-left:50%;transform:translateX(-50%);
+    display:grid;grid-template-columns:minmax(340px,5fr) 7fr;gap:56px;align-items:center}
+  .top h1{font-size:clamp(48px,4.6vw,64px)}
+  .top .lede{font-size:17px}
+  .top .atlas{margin-top:0}
+  .top .atlas .sec-head{border-bottom-width:1px;border-color:var(--line)}
+  .top .atlas .sec-head h2{font-size:18px}
+  .top .map-box{margin-top:14px}
+  .top .map-cap{font-size:13.5px}
+  /* 地图缩到约六成显示，SVG 里的字按比例放大一点，保证还看得清 */
+  .top .map .nm{font-size:19px}
+  .top .map .nm .id{font-size:15px}
+  .top .map .lit .nm{font-size:23px}
+  .top .map .start-t{font-size:17px}
+  .top + .sec{margin-top:104px}
+}
+
 /* 页脚 */
 footer{margin-top:88px;padding-top:20px;border-top:1px solid var(--line);font-size:14px;color:var(--mut)}
 footer p{margin:0}

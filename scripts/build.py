@@ -197,6 +197,7 @@ def render(data):
 </head>
 <body>
 <main class="wrap">
+  <div class="top">
   <header class="hero">
     <h1 class="rv">{esc(s["title"])}</h1>
     <p class="lede rv">{lede}</p>
@@ -204,7 +205,7 @@ def render(data):
     {start}
   </header>
 
-  <section class="sec rv">
+  <section class="sec atlas rv">
     <div class="sec-head"><h2>阅读地图</h2><span class="cnt">已点亮 {len(pubs)} / {len(papers)}</span></div>
     <div class="map-box">
       {read_map(papers)}
@@ -212,6 +213,7 @@ def render(data):
     <p class="map-hint">← 左右拖动看整张地图 →</p>
     <p class="map-cap">每读完一篇，地图上就点亮一个地方。亮着的可以点进去看，暗着的还没走到。</p>
   </section>
+  </div>
 
   <section class="sec rv">
     <div class="sec-head"><h2>已发布</h2><span class="cnt">{len(pubs)} 篇{f" · 最近更新 {esc(last)}" if last else ""}</span></div>
