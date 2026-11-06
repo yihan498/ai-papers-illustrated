@@ -1,0 +1,12 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="词向量空间示意：猫、狗、兔靠在一起，卧室、房间靠在一起">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <path class="ln" d="M24 156 H220 M24 156 V20"/>
+  <circle class="newT" cx="74" cy="66" r="34" style="stroke-dasharray:4 3"/>
+  <circle class="new" cx="62" cy="56" r="5"/><text x="70" y="52" class="sm">猫</text>
+  <circle class="new" cx="80" cy="76" r="5"/><text x="88" y="80" class="sm">狗</text>
+  <circle class="new" cx="56" cy="84" r="5"/><text x="34" y="100" class="sm">兔</text>
+  <circle class="softS" cx="170" cy="118" r="28" style="stroke-dasharray:4 3"/>
+  <circle class="mutF" cx="160" cy="112" r="5"/><text x="168" y="108" class="sm m">卧室</text>
+  <circle class="mutF" cx="178" cy="128" r="5"/><text x="186" y="132" class="sm m">房间</text>
+  <text x="212" y="40" class="mo sm m" text-anchor="end">词 → 坐标</text>
+</svg>

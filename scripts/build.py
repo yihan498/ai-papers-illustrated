@@ -34,29 +34,105 @@ def check(data):
     return errs
 
 
-def row(p):
-    pub = p["status"] == "published"
-    inner = (
-        f'<span class="no">{esc(p["id"])}</span>'
-        f'<span class="main"><span class="short">{esc(p["short"])}</span>'
-        f'<span class="full">{esc(p["title"])}</span>'
+def check_chapters(data):
+    errs = []
+    chs = data["site"].get("chapters", [])
+    nos = [c["no"] for c in chs]
+    if nos != list(range(1, len(nos) + 1)):
+        errs.append("site.chapters 的章号必须从 1 开始连续递增")
+    seq = [p.get("chapter") for p in data["papers"]]
+    if any(c not in nos for c in seq):
+        errs.append("有论文的 chapter 不在 site.chapters 里")
+    elif seq != sorted(seq):
+        errs.append("同一章的论文在 papers.json 里必须连续，且按章号排列")
+    return errs
+
+
+def thumb(p):
+    f = ROOT / "papers" / p["slug"] / "thumb.svg"
+    if not f.exists():
+        return ""
+    svg = f.read_text(encoding="utf-8").strip()
+    svg = svg.replace(' xmlns="http://www.w3.org/2000/svg"', "")
+    return f'<div class="thumb">{svg}</div>'
+
+
+def card(p):
+    href = f'papers/{esc(p["slug"])}/index.html'
+    return (
+        f'<li id="p-{esc(p["id"])}" class="pub"><a class="card" href="{href}">'
+        + thumb(p)
+        + '<span class="body">'
+        f'<span class="meta">{esc(p["id"])} · {esc(p["year"])} · {esc(p["authors"])}</span>'
+        f'<span class="short">{esc(p["short"])}</span>'
         + (f'<span class="one">{esc(p["oneliner"])}</span>' if p.get("oneliner") else "")
-        + '</span>'
-        f'<span class="side"><span class="yr">{esc(p["year"])}</span>'
-        f'<span class="au">{esc(p["authors"])}</span>'
-        + ('' if pub else '<span class="soon">待更新</span>')
-        + '</span>'
+        + f'<span class="full">{esc(p["title"])}</span>'
+        '<span class="go">读这篇 →</span>'
+        '</span></a></li>'
     )
-    if pub:
-        return f'<li class="pub"><a href="papers/{esc(p["slug"])}/index.html">{inner}</a></li>'
-    return f'<li class="plan">{inner}</li>'
+
+
+def plan(p):
+    return (
+        f'<li id="p-{esc(p["id"])}" class="plan" title="{esc(p["title"])} · {esc(p["authors"])}">'
+        '<span class="dot" aria-hidden="true"></span>'
+        f'<span class="no">{esc(p["id"])}</span>'
+        f'<span class="short">{esc(p["short"])}</span>'
+        f'<span class="yr">{esc(p["year"])}</span></li>'
+    )
+
+
+def spine(chapters, papers):
+    """连载主线：每篇一个点，按章分段。实心 = 已发布，空心 = 计划中。坐标全部由数据算出。"""
+    W, x0, gap, chgap, y = 720, 14, 34, 34, 34
+    xs, x, prev = {}, x0, None
+    for p in papers:
+        if prev is not None:
+            x += gap + (chgap if p["chapter"] != prev else 0)
+        xs[p["id"]] = x
+        prev = p["chapter"]
+    scale = (W - 2 * x0) / (x - x0)
+    for k in xs:
+        xs[k] = x0 + (xs[k] - x0) * scale
+    out = [f'<line class="ln" x1="{x0}" y1="{y}" x2="{W - x0}" y2="{y}"/>']
+    for c in chapters:
+        mem = [xs[p["id"]] for p in papers if p["chapter"] == c["no"]]
+        mid = (min(mem) + max(mem)) / 2
+        out.append(f'<text class="mo sm m" x="{mid:.1f}" y="{y + 32}" text-anchor="middle">{c["no"]:02d}</text>')
+    for p in papers:
+        cx = xs[p["id"]]
+        tip = f'<title>{esc(p["id"])} {esc(p["short"])}</title>'
+        if p["status"] == "published":
+            out.append(f'<a href="papers/{esc(p["slug"])}/index.html"><circle class="new" cx="{cx:.1f}" cy="{y}" r="7"/>{tip}</a>')
+            out.append(f'<text class="ser sm" x="{cx:.1f}" y="{y - 16}" text-anchor="{"start" if cx < 60 else "middle"}">{esc(p["short"])}</text>')
+        else:
+            out.append(f'<a href="#p-{esc(p["id"])}"><circle class="hole" cx="{cx:.1f}" cy="{y}" r="5.5"/>{tip}</a>')
+    n_pub = sum(p["status"] == "published" for p in papers)
+    label = f"连载进度：共 {len(papers)} 篇，分 {len(chapters)} 章，已发布 {n_pub} 篇"
+    return (f'<svg class="d spine" viewBox="0 0 {W} 76" role="img" aria-label="{label}">'
+            + "".join(out) + "</svg>")
 
 
 def render(data):
     s = data["site"]
     papers = data["papers"]
-    n_pub = sum(p["status"] == "published" for p in papers)
-    rows = "\n".join(row(p) for p in papers)
+    chapters = s["chapters"]
+    pubs = [p for p in papers if p["status"] == "published"]
+    n_pub = len(pubs)
+    last = max((p.get("date", "") for p in pubs), default="")
+    first = pubs[0] if pubs else None
+    lede = "".join(f"<span>{esc(x)}。</span>" for x in s["tagline"].split("。") if x.strip())
+    sections = []
+    for c in chapters:
+        items = [p for p in papers if p["chapter"] == c["no"]]
+        lis = "\n".join(card(p) if p["status"] == "published" else plan(p) for p in items)
+        sections.append(
+            f'<section class="ch"><h2><span class="cno">{c["no"]:02d}</span>{esc(c["title"])}</h2>'
+            f'<ol class="list">\n{lis}\n</ol></section>'
+        )
+    about = "".join(f"<p>{esc(x)}</p>" for x in s.get("about", []))
+    start = (f'<a class="start" href="papers/{esc(first["slug"])}/index.html">从第一篇开始：{esc(first["id"])} {esc(first["short"])} →</a>'
+             if first else "")
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -71,15 +147,23 @@ def render(data):
 </head>
 <body>
 <main class="wrap">
-  <header>
-    <div class="eyebrow">Paper by paper · 已更新 {n_pub} 篇</div>
+  <header class="hero">
+    <div class="eyebrow"><span>连载中</span> · <span>已发布 {n_pub} 篇 / 共 {len(papers)} 篇</span>{f" · <span>最近更新 {esc(last)}</span>" if last else ""}</div>
     <h1>{esc(s["title"])}</h1>
-    <p class="lede">{esc(s["tagline"])}</p>
+    <p class="lede">{lede}</p>
+    <figure class="spine-fig">
+      {spine(chapters, papers)}
+      <figcaption><span class="k"><i class="kd on"></i>已发布</span><span class="k"><i class="kd"></i>计划中</span></figcaption>
+    </figure>
+    {start}
   </header>
-  <ol class="list">
-{rows}
-  </ol>
-  <footer>{esc(s["author"])} · 每篇的数字和结论都对照原文核过；标「示意」的是为了讲清机制编的例子。</footer>
+  {"<section class='about'>" + about + "</section>" if about else ""}
+{chr(10).join(sections)}
+  <footer>
+    <p class="legend"><span class="sw n"></span> 蓝色是这篇提出的新方法，<span class="sw o"></span> 赭色是它要替代的旧方法。图都是手写的 SVG。</p>
+    <p class="verify">每篇的数字和结论都对照原文核过；标「示意」的是为了讲清机制编的例子。</p>
+    <p class="by">{esc(s["author"])}{f' · <a href="{esc(s["repo"])}">源码</a>' if s.get("repo") else ""}</p>
+  </footer>
 </main>
 </body>
 </html>
@@ -88,7 +172,7 @@ def render(data):
 
 def main():
     data = json.loads((ROOT / "papers.json").read_text(encoding="utf-8"))
-    errs = check(data)
+    errs = check(data) + check_chapters(data)
     if errs:
         print("FAIL\n  " + "\n  ".join(errs))
         sys.exit(1)
