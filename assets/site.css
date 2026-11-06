@@ -1,4 +1,4 @@
-/* 首页样式。token 与论文页一致：蓝 = 新方法 / 本站强调色；赭 = 旧方法，首页只在页脚「读法」里出现一次。
+/* 首页样式。token 与论文页一致：蓝 = 新方法 / 本站强调色。
    结构：介绍（这个网站是什么）→ 已发布（卡片）→ 接下来要读的（紧凑列表）→ 页脚 */
 :root{
   --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
@@ -72,9 +72,6 @@ h1{font-family:var(--serif);font-weight:900;font-size:clamp(44px,9vw,72px);line-
 footer{margin-top:88px;padding-top:20px;border-top:1px solid var(--line);font-size:14px;color:var(--mut)}
 footer p{margin:0}
 footer p+p{margin-top:8px}
-.verify{color:var(--ink)}
-.sw{width:11px;height:11px;border-radius:3px;display:inline-block;vertical-align:-1px}
-.sw.n{background:var(--new)} .sw.o{background:var(--old)}
 .by a{color:var(--mut)}
 
 @media (max-width:560px){

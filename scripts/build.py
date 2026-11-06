@@ -115,8 +115,6 @@ def render(data):
   </section>
 
   <footer>
-    <p class="legend"><span class="sw n"></span> 蓝色是这篇提出的新方法，<span class="sw o"></span> 赭色是它要替代的旧方法。图都是手写的 SVG。</p>
-    <p class="verify">每篇的数字和结论都对照原文核过；标「示意」的是为了讲清机制编的例子。</p>
     <p class="by">{esc(s["author"])}{f' · <a href="{esc(s["repo"])}">源码</a>' if s.get("repo") else ""}</p>
   </footer>
 </main>
