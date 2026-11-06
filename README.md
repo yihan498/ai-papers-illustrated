@@ -10,7 +10,7 @@ papers.json                唯一的数据源：系列信息 + 每篇论文的�
 index.html                 首页，由脚本生成，不要手改
 papers/<slug>/index.html   每篇一页，单文件、样式内联，可以单独打开
 papers/<slug>/thumb.svg     首页卡片缩略图（可选，240×180，只用 .d 类不写死颜色，构建时内联）
-assets/site.css            首页样式
+assets/site.css / site.js   首页样式和进场动画（首页的阅读地图由 build.py 按 papers.json 生成，不用手改）
 assets/paper-toc.css/.js   论文页的章节导航（宽屏左侧栏 / 手机「目录」按钮），从 h2/h3 自动生成
 scripts/build.py           生成首页 + 一致性检查
 .nojekyll                  让 GitHub Pages 原样发布
