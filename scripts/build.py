@@ -34,20 +34,6 @@ def check(data):
     return errs
 
 
-def check_chapters(data):
-    errs = []
-    chs = data["site"].get("chapters", [])
-    nos = [c["no"] for c in chs]
-    if nos != list(range(1, len(nos) + 1)):
-        errs.append("site.chapters 的章号必须从 1 开始连续递增")
-    seq = [p.get("chapter") for p in data["papers"]]
-    if any(c not in nos for c in seq):
-        errs.append("有论文的 chapter 不在 site.chapters 里")
-    elif seq != sorted(seq):
-        errs.append("同一章的论文在 papers.json 里必须连续，且按章号排列")
-    return errs
-
-
 def thumb(p):
     f = ROOT / "papers" / p["slug"] / "thumb.svg"
     if not f.exists():
@@ -74,65 +60,25 @@ def card(p):
 
 def plan(p):
     return (
-        f'<li id="p-{esc(p["id"])}" class="plan" title="{esc(p["title"])} · {esc(p["authors"])}">'
-        '<span class="dot" aria-hidden="true"></span>'
+        f'<li id="p-{esc(p["id"])}" title="{esc(p["title"])} · {esc(p["authors"])}">'
         f'<span class="no">{esc(p["id"])}</span>'
         f'<span class="short">{esc(p["short"])}</span>'
         f'<span class="yr">{esc(p["year"])}</span></li>'
     )
 
 
-def spine(chapters, papers):
-    """连载主线：每篇一个点，按章分段。实心 = 已发布，空心 = 计划中。坐标全部由数据算出。"""
-    W, x0, gap, chgap, y = 720, 14, 34, 34, 34
-    xs, x, prev = {}, x0, None
-    for p in papers:
-        if prev is not None:
-            x += gap + (chgap if p["chapter"] != prev else 0)
-        xs[p["id"]] = x
-        prev = p["chapter"]
-    scale = (W - 2 * x0) / (x - x0)
-    for k in xs:
-        xs[k] = x0 + (xs[k] - x0) * scale
-    out = [f'<line class="ln" x1="{x0}" y1="{y}" x2="{W - x0}" y2="{y}"/>']
-    for c in chapters:
-        mem = [xs[p["id"]] for p in papers if p["chapter"] == c["no"]]
-        mid = (min(mem) + max(mem)) / 2
-        out.append(f'<text class="mo sm m" x="{mid:.1f}" y="{y + 32}" text-anchor="middle">{c["no"]:02d}</text>')
-    for p in papers:
-        cx = xs[p["id"]]
-        tip = f'<title>{esc(p["id"])} {esc(p["short"])}</title>'
-        if p["status"] == "published":
-            out.append(f'<a href="papers/{esc(p["slug"])}/index.html"><circle class="new" cx="{cx:.1f}" cy="{y}" r="7"/>{tip}</a>')
-            out.append(f'<text class="ser sm" x="{cx:.1f}" y="{y - 16}" text-anchor="{"start" if cx < 60 else "middle"}">{esc(p["short"])}</text>')
-        else:
-            out.append(f'<a href="#p-{esc(p["id"])}"><circle class="hole" cx="{cx:.1f}" cy="{y}" r="5.5"/>{tip}</a>')
-    n_pub = sum(p["status"] == "published" for p in papers)
-    label = f"连载进度：共 {len(papers)} 篇，分 {len(chapters)} 章，已发布 {n_pub} 篇"
-    return (f'<svg class="d spine" viewBox="0 0 {W} 76" role="img" aria-label="{label}">'
-            + "".join(out) + "</svg>")
-
-
 def render(data):
     s = data["site"]
     papers = data["papers"]
-    chapters = s["chapters"]
     pubs = [p for p in papers if p["status"] == "published"]
-    n_pub = len(pubs)
+    todo = [p for p in papers if p["status"] != "published"]
     last = max((p.get("date", "") for p in pubs), default="")
     first = pubs[0] if pubs else None
     lede = "".join(f"<span>{esc(x)}。</span>" for x in s["tagline"].split("。") if x.strip())
-    sections = []
-    for c in chapters:
-        items = [p for p in papers if p["chapter"] == c["no"]]
-        lis = "\n".join(card(p) if p["status"] == "published" else plan(p) for p in items)
-        sections.append(
-            f'<section class="ch"><h2><span class="cno">{c["no"]:02d}</span>{esc(c["title"])}</h2>'
-            f'<ol class="list">\n{lis}\n</ol></section>'
-        )
     about = "".join(f"<p>{esc(x)}</p>" for x in s.get("about", []))
-    start = (f'<a class="start" href="papers/{esc(first["slug"])}/index.html">从第一篇开始：{esc(first["id"])} {esc(first["short"])} →</a>'
-             if first else "")
+    start = (f'<a class="start" href="papers/{esc(first["slug"])}/index.html">从第一篇读起 →</a>' if first else "")
+    cards = "\n".join(card(p) for p in pubs)
+    rows = "\n".join(plan(p) for p in todo)
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -148,17 +94,26 @@ def render(data):
 <body>
 <main class="wrap">
   <header class="hero">
-    <div class="eyebrow"><span>连载中</span> · <span>已发布 {n_pub} 篇 / 共 {len(papers)} 篇</span>{f" · <span>最近更新 {esc(last)}</span>" if last else ""}</div>
     <h1>{esc(s["title"])}</h1>
     <p class="lede">{lede}</p>
-    <figure class="spine-fig">
-      {spine(chapters, papers)}
-      <figcaption><span class="k"><i class="kd on"></i>已发布</span><span class="k"><i class="kd"></i>计划中</span></figcaption>
-    </figure>
+    {"<div class='about'>" + about + "</div>" if about else ""}
     {start}
   </header>
-  {"<section class='about'>" + about + "</section>" if about else ""}
-{chr(10).join(sections)}
+
+  <section class="sec">
+    <div class="sec-head"><h2>已发布</h2><span class="cnt">{len(pubs)} 篇{f" · 最近更新 {esc(last)}" if last else ""}</span></div>
+    <ol class="list">
+{cards}
+    </ol>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>接下来要读的</h2><span class="cnt">{len(todo)} 篇 · 按这个顺序陆续更新</span></div>
+    <ol class="todo">
+{rows}
+    </ol>
+  </section>
+
   <footer>
     <p class="legend"><span class="sw n"></span> 蓝色是这篇提出的新方法，<span class="sw o"></span> 赭色是它要替代的旧方法。图都是手写的 SVG。</p>
     <p class="verify">每篇的数字和结论都对照原文核过；标「示意」的是为了讲清机制编的例子。</p>
@@ -172,7 +127,7 @@ def render(data):
 
 def main():
     data = json.loads((ROOT / "papers.json").read_text(encoding="utf-8"))
-    errs = check(data) + check_chapters(data)
+    errs = check(data)
     if errs:
         print("FAIL\n  " + "\n  ".join(errs))
         sys.exit(1)
