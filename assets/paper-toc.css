@@ -1,6 +1,7 @@
-/* 论文页的章节导航。颜色沿用论文页自己定义的 --ink / --mut / --line / --new / --card / --bg。
+/* 论文页导航：左上角「← 主页」按钮 + 章节导航。颜色沿用论文页自己定义的 --ink / --mut / --line / --new / --card / --bg。
    宽屏（≥1220px）：正文左侧固定一栏，列出所有大节，当前大节自动展开小节并高亮。
-   窄屏：右下角「目录」按钮，点开是完整目录。 */
+   窄屏：右下角「目录」按钮，点开是完整目录。
+   「← 主页」固定在左上角，任何宽度都显示；正文顶部留白 56px，按钮不会压住页眉。 */
 main h2, main h3 { scroll-margin-top: 24px; }
 
 .ptoc { font-family: var(--sans); font-size: 13.5px; line-height: 1.5; }
@@ -15,12 +16,20 @@ main h2, main h3 { scroll-margin-top: 24px; }
 .ptoc .l2.on > a { background: var(--soft); }
 .ptoc .head { font-family: var(--mono); font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--mut); padding: 0 10px 10px; }
 
+/* 返回主页 */
+.pback { position: fixed; z-index: 20; top: max(12px, env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px));
+  display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px;
+  font-family: var(--sans); font-size: 13.5px; font-weight: 700; color: var(--ink); text-decoration: none;
+  background: var(--card); border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.pback:hover { color: var(--new); border-color: var(--new); }
+.pback:focus-visible { outline: 2px solid var(--new); outline-offset: 2px; }
+
 /* 宽屏侧栏 */
 .ptoc-side { display: none; }
 @media (min-width: 1220px) {
-  .ptoc-side { display: block; position: fixed; top: 40px; width: 210px;
+  .ptoc-side { display: block; position: fixed; top: 72px; width: 210px;
     left: max(16px, calc(50vw - 360px - 250px));
-    max-height: calc(100vh - 80px); overflow-y: auto; padding: 8px 0; scrollbar-width: thin; }
+    max-height: calc(100vh - 112px); overflow-y: auto; padding: 8px 0; scrollbar-width: thin; }
   .ptoc-side .l3 { display: none; }
   .ptoc-side .l3.open { display: block; }
   .ptoc-fab, .ptoc-sheet { display: none !important; }
@@ -39,4 +48,4 @@ main h2, main h3 { scroll-margin-top: 24px; }
 .ptoc-sheet a { padding-block: 8px; font-size: 14.5px; }
 .ptoc-sheet .l3 > a { font-size: 14px; }
 .ptoc-veil { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,.32); }
-@media print { .ptoc-side, .ptoc-fab, .ptoc-sheet, .ptoc-veil { display: none !important; } }
+@media print { .pback, .ptoc-side, .ptoc-fab, .ptoc-sheet, .ptoc-veil { display: none !important; } }

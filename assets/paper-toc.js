@@ -1,7 +1,16 @@
-// 论文页章节导航：从正文的 h2（大节）和 h3（小节）自动生成，不需要手写目录。
+// 论文页导航：左上角返回主页按钮 + 章节导航。章节导航从正文的 h2（大节）和 h3（小节）自动生成，不需要手写目录。
 // 标题的写法约定：<h2><span class="no">1</span>标题</h2>、<h3><span class="no">1.3</span>标题</h3>。
 // 没有 id 的标题按编号补一个稳定的 id（1.3 → s1-3），这样链接可以分享到具体小节。
 (function () {
+  // 左上角固定的「返回主页」按钮：滚到哪里都在。地址沿用页眉里的返回链接，没有就用 ../../index.html
+  var home = document.querySelector('header .eyebrow a');
+  var back = document.createElement('a');
+  back.className = 'pback';
+  back.href = home ? home.getAttribute('href') : '../../index.html';
+  back.textContent = '← 主页';
+  back.setAttribute('aria-label', '返回 AI 论文解读主页');
+  document.body.appendChild(back);
+
   var main = document.querySelector('main');
   if (!main) return;
   var heads = Array.prototype.slice.call(main.querySelectorAll('h2, h3'));
@@ -18,6 +27,9 @@
   var cur2 = null;
   items.forEach(function (it) { if (it.lvl === 2) cur2 = it; it.parent = it.lvl === 2 ? it : cur2; });
 
+  // 标题里可能有 <EOS> 这类文字，拼进 innerHTML 前要转义，否则会被当成标签吞掉
+  function esc(t) { return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
   function build(cls, title) {
     var nav = document.createElement('nav');
     nav.className = 'ptoc ' + cls;
@@ -25,7 +37,7 @@
     var html = '<div class="head">' + title + '</div><ol>';
     items.forEach(function (it) {
       html += '<li class="l' + it.lvl + '" data-id="' + it.id + '" data-p="' + (it.parent ? it.parent.id : '') + '">' +
-        '<a href="#' + it.id + '"><span class="n">' + it.no + '</span><span>' + it.label + '</span></a></li>';
+        '<a href="#' + it.id + '"><span class="n">' + esc(it.no) + '</span><span>' + esc(it.label) + '</span></a></li>';
     });
     nav.innerHTML = html + '</ol>';
     return nav;
