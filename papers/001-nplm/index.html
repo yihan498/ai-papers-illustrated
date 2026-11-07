@@ -789,7 +789,7 @@ html{scroll-behavior:smooth}
     <line class="mutS" x1="312" y1="328" x2="312" y2="352" marker-end="url(#ah)"/>
     <rect class="new" x="180" y="356" width="264" height="42" rx="8"/><text class="b on" x="312" y="376" text-anchor="middle">softmax</text><text class="sm on" x="312" y="392" text-anchor="middle">17,964 个加起来 = 1 的概率</text>
     <path class="mutS dash" d="M544 149 H630 V300 H604" marker-end="url(#ah)"/>
-    <text class="m sm" x="638" y="216">直连 W</text><text class="m sm" x="638" y="232">（可选）</text>
+    <text class="m sm" x="638" y="216">直连 W</text><text class="m sm" x="638" y="232">(可选)</text>
   </svg>
   </div>
   <figcaption>所有参数 θ = (b, d, W, U, H, C) 全部用反向传播 + SGD 一起学。原文说「实际上有两个隐藏层」，指的是嵌入层 C（只查表，没有非线性）加上 tanh 层；平常说的「本文的隐藏层」指 tanh 那一层。</figcaption>
