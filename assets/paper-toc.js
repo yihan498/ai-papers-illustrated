@@ -3,7 +3,7 @@
 // 没有 id 的标题按编号补一个稳定的 id（1.3 → s1-3），这样链接可以分享到具体小节。
 (function () {
   // 顶部细条（design-library 的 pageheader-06 粘性压缩页头）：常驻页面顶部，滚到哪里都看得见。
-  // 左边「‹ AI 论文解读」回主页，后面跟着本篇编号和标题。页眉里原来那行「← AI 论文解读 · 编号」和它重复，隐藏掉。
+  // 左边「‹ 主页」回首页，后面跟着本篇编号和标题。页眉里原来那行「← AI 论文解读 · 编号」和它重复，隐藏掉。
   var header = document.querySelector('header');
   var home = header && header.querySelector('.eyebrow a');
   var h1 = header && header.querySelector('h1');
@@ -11,7 +11,7 @@
   var num = eb ? (eb.textContent.split('·').pop() || '').trim() : '';
   var bar = document.createElement('div');
   bar.className = 'pbar';
-  bar.innerHTML = '<a class="pbar-home" href="#"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>AI 论文解读</a>' +
+  bar.innerHTML = '<a class="pbar-home" href="#"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>主页</a>' +
     '<span class="pbar-sep" aria-hidden="true">/</span><span class="pbar-t"></span>';
   bar.querySelector('a').href = home ? home.getAttribute('href') : '../../index.html';
   bar.querySelector('.pbar-t').textContent = (num ? num + ' · ' : '') + (h1 ? h1.textContent.trim() : document.title);
