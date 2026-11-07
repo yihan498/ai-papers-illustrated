@@ -1,7 +1,7 @@
 /* 论文页导航：顶部返回条 + 章节导航。颜色沿用论文页自己定义的 --ink / --mut / --line / --new / --card / --bg。
    宽屏（≥1220px）：正文左侧固定一栏，列出所有大节，当前大节自动展开小节并高亮。
    窄屏：右下角「目录」按钮，点开是完整目录。
-   顶部返回条：页眉滚出视野后才出现，任何宽度都有；宽屏侧栏从 72px 开始，不被它挡住。 */
+   顶部返回条：常驻顶部，任何宽度都有；宽屏侧栏从 72px 开始，不被它挡住。 */
 main h2, main h3 { scroll-margin-top: 64px; }
 
 .ptoc { font-family: var(--sans); font-size: 13.5px; line-height: 1.5; }
@@ -16,14 +16,12 @@ main h2, main h3 { scroll-margin-top: 64px; }
 .ptoc .l2.on > a { background: var(--soft); }
 .ptoc .head { font-family: var(--mono); font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--mut); padding: 0 10px 10px; }
 
-/* 顶部返回条：页眉滚出视野后滑入（design-library · pageheader-06 粘性压缩页头） */
+/* 顶部返回条：常驻顶部（design-library · pageheader-06 粘性压缩页头）。正文顶部留白 56px，细条 48px，不会压住标题 */
 .pbar { position: fixed; z-index: 20; top: 0; left: 0; right: 0; height: 48px;
   display: flex; align-items: center; gap: 10px; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px));
   font-family: var(--sans); font-size: 14px;
   background: color-mix(in srgb, var(--bg) 88%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--line);
-  transform: translateY(-100%); visibility: hidden; transition: transform .22s ease, visibility 0s .22s; }
-.pbar.show { transform: none; visibility: visible; transition: transform .22s ease; }
+  border-bottom: 1px solid var(--line); }
 .pbar-home { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 5px 10px 5px 4px; border-radius: 6px;
   color: var(--new); font-weight: 500; text-decoration: none; }
 .pbar-home svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -31,7 +29,6 @@ main h2, main h3 { scroll-margin-top: 64px; }
 .pbar-home:focus-visible { outline: 2px solid var(--new); outline-offset: 2px; }
 .pbar-sep { color: var(--line); flex: none; }
 .pbar-t { color: var(--mut); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-@media (prefers-reduced-motion: reduce) { .pbar, .pbar.show { transition: none; } }
 
 /* 宽屏侧栏 */
 .ptoc-side { display: none; }

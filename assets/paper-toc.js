@@ -2,8 +2,8 @@
 // 标题的写法约定：<h2><span class="no">1</span>标题</h2>、<h3><span class="no">1.3</span>标题</h3>。
 // 没有 id 的标题按编号补一个稳定的 id（1.3 → s1-3），这样链接可以分享到具体小节。
 (function () {
-  // 顶部细条（design-library 的 pageheader-06 粘性压缩页头）：页眉滚出视野后从顶部滑入，
-  // 左边「‹ AI 论文解读」回主页，后面跟着本篇编号和标题。页眉还在视野里时不显示，那里已有返回链接。
+  // 顶部细条（design-library 的 pageheader-06 粘性压缩页头）：常驻页面顶部，滚到哪里都看得见。
+  // 左边「‹ AI 论文解读」回主页，后面跟着本篇编号和标题。页眉里原来那行「← AI 论文解读 · 编号」和它重复，隐藏掉。
   var header = document.querySelector('header');
   var home = header && header.querySelector('.eyebrow a');
   var h1 = header && header.querySelector('h1');
@@ -16,11 +16,7 @@
   bar.querySelector('a').href = home ? home.getAttribute('href') : '../../index.html';
   bar.querySelector('.pbar-t').textContent = (num ? num + ' · ' : '') + (h1 ? h1.textContent.trim() : document.title);
   document.body.appendChild(bar);
-  if (header && 'IntersectionObserver' in window) {
-    new IntersectionObserver(function (es) { bar.classList.toggle('show', !es[0].isIntersecting); }).observe(header);
-  } else {
-    bar.classList.add('show');
-  }
+  if (eb) eb.hidden = true;
 
   var main = document.querySelector('main');
   if (!main) return;
