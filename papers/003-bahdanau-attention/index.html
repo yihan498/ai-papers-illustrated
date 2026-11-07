@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bahdanau 注意力 图解</title>
+<meta name="description" content="Bahdanau、Cho、Bengio 2014《Neural Machine Translation by Jointly Learning to Align and Translate》图解：翻译每个词时，回头看原文。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文（带注意力的 RNNsearch），赭 = 旧方法（固定向量的 RNNencdec）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.6;min-width:520px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+
+<main class="wrap">
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　003</nav>
+  <h1 style="margin-top:14px">翻译每个词时，回头看原文</h1>
+  <p class="lede">Bahdanau、Cho、Bengio 2014 年的论文《Neural Machine Translation by Jointly Learning to Align and Translate》做了一件事：<b>编码器不再把整句压成一个向量，而是给每个词留一个向量；解码器每写一个词，就自己决定回头看原文的哪几个词。</b>这个「边写边回头看」的机制，后来被叫作注意力。</p>
+  <div class="meta">
+    <span>Dzmitry Bahdanau, KyungHyun Cho, Yoshua Bengio · ICLR 2015</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的注意力模型（RNNsearch）</span>
+    <span class="key"><i class="sw o"></i>赭色：旧的固定向量方法（RNNencdec）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · 每个词一个向量，写每个词时按权重取（简化自原文 Figure 1）</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 284" role="img" aria-label="下方是原文的四个词 x1 到 x4，每个词上面有一前一后两个方向的 RNN，合起来得到每个词的向量 h1 到 h4。四个 h 用粗细不同的线连到一个加号，线越粗权重越大，加号得到上下文向量 c i。解码器的上一步状态 s i-1 决定权重，c i 和 s i-1 一起算出新状态 s i，再写出第 i 个词。">
+      <text class="b" x="20" y="14">编码器：每个词一个向量</text><text class="b" x="440" y="14">解码器：写第 i 个词</text>
+      <text class="sm tn" x="350" y="34" text-anchor="middle">sᵢ₋₁ 告诉加权求和：我写到哪了，该看哪里</text>
+      <path class="ln dash" d="M470 128 V 44 H 230 V 56" marker-end="url(#ah)" style="stroke:var(--mut)"/>
+      <circle class="card" cx="230" cy="72" r="14" style="stroke:var(--new);stroke-width:1.8"/><text class="lg tn" x="230" y="78" text-anchor="middle">+</text>
+      <line class="newS" x1="80" y1="122" x2="222" y2="85" style="stroke-width:1.5"/>
+      <line class="newS" x1="180" y1="122" x2="228" y2="86" style="stroke-width:6"/>
+      <line class="newS" x1="280" y1="122" x2="233" y2="86" style="stroke-width:3"/>
+      <line class="newS" x1="380" y1="122" x2="240" y2="84" style="stroke-width:1.5"/>
+      <text class="sm tn b" x="304" y="100">权重 α（线越粗，看得越多）</text>
+      <rect class="newT" x="50" y="124" width="60" height="26" rx="6"/><text class="mo" x="80" y="142" text-anchor="middle">h₁</text>
+      <rect class="newT" x="150" y="124" width="60" height="26" rx="6"/><text class="mo" x="180" y="142" text-anchor="middle">h₂</text>
+      <rect class="newT" x="250" y="124" width="60" height="26" rx="6"/><text class="mo" x="280" y="142" text-anchor="middle">h₃</text>
+      <rect class="newT" x="350" y="124" width="60" height="26" rx="6"/><text class="mo" x="380" y="142" text-anchor="middle">h₄</text>
+      <g class="mutS"><line x1="80" y1="170" x2="80" y2="152" marker-end="url(#ah)"/><line x1="180" y1="170" x2="180" y2="152" marker-end="url(#ah)"/><line x1="280" y1="170" x2="280" y2="152" marker-end="url(#ah)"/><line x1="380" y1="170" x2="380" y2="152" marker-end="url(#ah)"/></g>
+      <g>
+        <rect class="softS" x="43" y="172" width="74" height="22" rx="5"/><rect class="softS" x="143" y="172" width="74" height="22" rx="5"/><rect class="softS" x="243" y="172" width="74" height="22" rx="5"/><rect class="softS" x="343" y="172" width="74" height="22" rx="5"/>
+        <rect class="softS" x="43" y="198" width="74" height="22" rx="5"/><rect class="softS" x="143" y="198" width="74" height="22" rx="5"/><rect class="softS" x="243" y="198" width="74" height="22" rx="5"/><rect class="softS" x="343" y="198" width="74" height="22" rx="5"/>
+        <g class="sm" text-anchor="middle"><text x="80" y="188">→ 前向</text><text x="180" y="188">→ 前向</text><text x="280" y="188">→ 前向</text><text x="380" y="188">→ 前向</text>
+        <text x="80" y="214">← 后向</text><text x="180" y="214">← 后向</text><text x="280" y="214">← 后向</text><text x="380" y="214">← 后向</text></g>
+        <line class="mutS" x1="119" y1="183" x2="141" y2="183" marker-end="url(#ah)"/><line class="mutS" x1="219" y1="183" x2="241" y2="183" marker-end="url(#ah)"/><line class="mutS" x1="319" y1="183" x2="341" y2="183" marker-end="url(#ah)"/>
+        <line class="mutS" x1="141" y1="209" x2="119" y2="209" marker-end="url(#ah)"/><line class="mutS" x1="241" y1="209" x2="219" y2="209" marker-end="url(#ah)"/><line class="mutS" x1="341" y1="209" x2="319" y2="209" marker-end="url(#ah)"/>
+      </g>
+      <g class="mutS"><line x1="80" y1="248" x2="80" y2="224" marker-end="url(#ah)"/><line x1="180" y1="248" x2="180" y2="224" marker-end="url(#ah)"/><line x1="280" y1="248" x2="280" y2="224" marker-end="url(#ah)"/><line x1="380" y1="248" x2="380" y2="224" marker-end="url(#ah)"/></g>
+      <g class="lg" text-anchor="middle"><text x="80" y="270">x₁</text><text x="180" y="270">x₂</text><text x="280" y="270">x₃</text><text x="380" y="270">x₄</text></g>
+      <rect class="newT" x="330" y="54" width="64" height="36" rx="8" style="display:none"/>
+      <rect class="newT" x="440" y="130" width="60" height="30" rx="8"/><text class="mo" x="470" y="150" text-anchor="middle">sᵢ₋₁</text>
+      <rect class="newT" x="560" y="130" width="60" height="30" rx="8"/><text class="mo" x="590" y="150" text-anchor="middle">sᵢ</text>
+      <line class="newS" x1="502" y1="145" x2="556" y2="145" marker-end="url(#ahN)"/>
+      <rect class="new" x="530" y="60" width="64" height="34" rx="8"/><text class="mo on b" x="562" y="82" text-anchor="middle">cᵢ</text>
+      <line class="newS" x1="244" y1="72" x2="526" y2="72" marker-end="url(#ahN)"/>
+      <line class="newS" x1="562" y1="96" x2="562" y2="128" marker-end="url(#ahN)"/>
+      <line class="mutS" x1="590" y1="128" x2="590" y2="110" marker-end="url(#ah)" style="display:none"/>
+      <line class="newS" x1="590" y1="190" x2="590" y2="164" marker-start="url(#ahN)" style="display:none"/>
+      <line class="mutS" x1="590" y1="196" x2="590" y2="164" marker-start="url(#ah)"/>
+      <text class="lg tn" x="590" y="216" text-anchor="middle">yᵢ</text><text class="sm m" x="590" y="236" text-anchor="middle">写出的第 i 个词</text>
+    </svg>
+    </div>
+    <figcaption>002 里交接的是一个向量 v。这里交接的是<b>一排向量 h</b>，解码器每写一个词，都按不同的权重把它们加起来，得到这一步专用的 cᵢ。（权重粗细为示意）</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>引言：002 留下的瓶颈</a>
+    <a href="#s2"><span>2</span>模型：边写边回头看</a>
+    <a href="#s3"><span>3</span>实验：三个结论</a>
+    <a href="#s4"><span>4</span>相关工作</a>
+    <a href="#s5"><span>5</span>结论</a>
+    <a href="#after"><span>→</span>读完之后（原文之外）</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>主线是因果链</b>：002 的瓶颈是什么，为什么长句会垮，为什么要回头看，为什么要「软」，为什么要双向。每一步都先讲「为什么必须这样」。</li>
+      <li><b>公式</b>放在讲完直觉之后：先白话和小数字，再给精确写法，紧跟一张「每个符号是什么」的对照表，最后一句说这条式子在因果链里起什么作用。</li>
+      <li><b>📎 注解</b>是就地解释的概念，<b>🧭 延伸</b>是可以跳过的补充（GRU、maxout 的完整公式，实验细节）。</li>
+      <li>001 <a href="../001-nplm/index.html">NPLM</a>、002 <a href="../002-seq2seq/index.html">Seq2Seq</a> 讲过的概念（RNN、LSTM、梯度消失、softmax、BLEU、束搜索）这里只提一句。</li>
+    </ul>
+  </div>
+</header>
+
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>引言：002 留下的瓶颈</h2>
+
+<h3>写每个词，都只能看同一个向量</h3>
+<p>编码器-解码器的写法在 <a href="../002-seq2seq/index.html">002</a> 讲过：一个 RNN 把原文读完，压成一个固定长度的向量 v，另一个 RNN 只凭这个向量写出译文。</p>
+<figure class="fig">
+  <span class="tag">图 1 · 002 的做法和 003 的做法</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 256" role="img" aria-label="左边：原文五个词都汇聚到一个赭色的向量 v，译文三个词都从这同一个向量写出。右边：原文五个词各留一个向量 h，写某一个译文词时，从五个 h 取，线的粗细不同，第二个 h 最粗。">
+    <line class="ln" x1="340" y1="10" x2="340" y2="236"/>
+    <text class="b to" x="20" y="18">002：合上书再写</text><text class="b tn" x="360" y="18">003：开卷写</text>
+    <g><circle class="mutF" cx="50" cy="56" r="6"/><circle class="mutF" cx="90" cy="56" r="6"/><circle class="mutF" cx="130" cy="56" r="6"/><circle class="mutF" cx="170" cy="56" r="6"/><circle class="mutF" cx="210" cy="56" r="6"/></g>
+    <path class="ln" d="M50 62 L130 114 M90 62 L130 114 M130 62 L130 114 M170 62 L130 114 M210 62 L130 114"/>
+    <rect class="old" x="80" y="114" width="100" height="34" rx="8"/><text class="sm b on" x="130" y="136" text-anchor="middle">一个向量 v</text>
+    <path class="oldS" d="M130 148 L70 200 M130 148 L130 200 M130 148 L190 200" style="stroke-width:1.4"/>
+    <g><circle class="oldT" cx="70" cy="206" r="6"/><circle class="oldT" cx="130" cy="206" r="6"/><circle class="oldT" cx="190" cy="206" r="6"/></g>
+    <text class="m sm" x="232" y="60">原文</text><text class="m sm" x="232" y="210">译文</text>
+    <text class="m sm" x="20" y="250">整句挤进同一个向量，写每个词都用它</text>
+    <g><circle class="mutF" cx="400" cy="56" r="6"/><circle class="mutF" cx="440" cy="56" r="6"/><circle class="mutF" cx="480" cy="56" r="6"/><circle class="mutF" cx="520" cy="56" r="6"/><circle class="mutF" cx="560" cy="56" r="6"/></g>
+    <path class="ln" d="M400 62 V104 M440 62 V104 M480 62 V104 M520 62 V104 M560 62 V104"/>
+    <g><rect class="newT" x="386" y="104" width="28" height="24" rx="5"/><rect class="newT" x="426" y="104" width="28" height="24" rx="5"/><rect class="newT" x="466" y="104" width="28" height="24" rx="5"/><rect class="newT" x="506" y="104" width="28" height="24" rx="5"/><rect class="newT" x="546" y="104" width="28" height="24" rx="5"/></g>
+    <g class="sm" text-anchor="middle"><text x="400" y="121">h</text><text x="440" y="121">h</text><text x="480" y="121">h</text><text x="520" y="121">h</text><text x="560" y="121">h</text></g>
+    <path class="newS" d="M400 130 L478 198" style="stroke-width:1.4"/><path class="newS" d="M440 130 L479 198" style="stroke-width:5"/>
+    <path class="newS" d="M480 130 L480 198" style="stroke-width:2.5"/><path class="newS" d="M520 130 L481 198" style="stroke-width:1"/><path class="newS" d="M560 130 L482 198" style="stroke-width:1.6"/>
+    <circle class="new" cx="480" cy="206" r="7"/>
+    <text class="sm tn" x="548" y="192">写这个词时</text><text class="sm tn" x="548" y="210">各处看多少不同</text>
+    <text class="m sm" x="590" y="60">原文</text>
+    <text class="m sm" x="360" y="250">每个词的向量都留着，写的时候按需取</text>
+  </svg>
+  </div>
+  <figcaption>左边是 002：原文再长，也只剩中间那一个 v。右边是 003：原文有几个词就有几个向量，写某个词时，从中按需取，粗线表示看得多。（线的粗细为示意）</figcaption>
+</figure>
+<p>002 自己在结论里已经指出，这是信息瓶颈。003 要去掉的就是它。</p>
+
+<h3>为什么长句会垮</h3>
+<p>一个向量的大小是人事先定好的，不随句子变长。5 个词的句子和 30 个词的句子，要装进同样大的容器。</p>
+<figure class="fig">
+  <span class="tag">图 2 · 同样大的容器，装不同长的句子（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 196" role="img" aria-label="两个一样大的赭色框。上面的框里装 5 个词，每个词占一大块。下面的框里装 30 个词，每个词只占一条细缝。">
+    <text class="sm" x="10" y="62">5 个词</text><text class="sm" x="10" y="132">30 个词</text>
+    <rect class="oldS" x="110" y="34" width="300" height="46" rx="8"/>
+    <rect class="oldS" x="110" y="104" width="300" height="46" rx="8"/>
+    <rect class="oldT" x="112" y="36" width="56" height="42" rx="4"/><rect class="oldT" x="172" y="36" width="56" height="42" rx="4"/><rect class="oldT" x="232" y="36" width="56" height="42" rx="4"/><rect class="oldT" x="292" y="36" width="56" height="42" rx="4"/><rect class="oldT" x="352" y="36" width="56" height="42" rx="4"/><rect class="oldT" x="111" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="121" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="131" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="141" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="151" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="161" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="171" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="181" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="191" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="201" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="211" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="221" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="231" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="241" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="251" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="261" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="271" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="281" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="291" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="301" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="311" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="321" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="331" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="341" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="351" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="361" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="371" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="381" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="391" y="106" width="8" height="42" rx="1"/><rect class="oldT" x="401" y="106" width="8" height="42" rx="1"/>
+    <text class="sm" x="424" y="62">每个词分到一大块</text><text class="sm" x="424" y="132">每个词只剩一条缝</text>
+    <text class="sm to" x="424" y="82">细节装得下</text><text class="sm to" x="424" y="152">细节被挤掉，糊在一起</text>
+    <text class="sm m" x="260" y="184" text-anchor="middle">容器一样大：固定向量 v 的大小不随句子变长而变</text>
+  </svg>
+  </div>
+  <figcaption>这是示意，不是测量。真实的向量里没有「格子」，但道理一样：信息总量变多，容器不变，每个细节分到的空间就变小。</figcaption>
+</figure>
+<p>先分清哪些是事实，哪些是推测：</p>
+<ul>
+  <li><b>已有观察</b>：基本的编码器-解码器，翻译质量随句子变长快速下降（Cho 等 2014b 的结果，本文 Figure 2 又看到一次）。</li>
+  <li><b>作者的推测</b>：原因是固定向量这个瓶颈。原文用的词是 conjecture，推测。</li>
+  <li><b>本文要检验的</b>：去掉瓶颈后，长句应该变好。结果在第 3 节「结论二」。</li>
+</ul>
+<p>注意这仍然是间接证据：论文没有去量「固定向量里到底丢了多少信息」，只是看去掉瓶颈后长句是不是不再垮。</p>
+
+<h3>想补救，为什么都不够</h3>
+<p>下面是我补充的分析，不是论文的论点：</p>
+<ul>
+  <li><b>把向量做大</b>：参数更多、更难训练，而且大小仍然固定，比训练句更长的句子照样装不下。结构上还是「先全部挤进去，再慢慢取出来」。</li>
+  <li><b>倒序输入</b>（002 的技巧）：只是把原文开头的词挪近了，译文后半句离原文对应的部分依然很远。它缓解的是训练困难，瓶颈还在。</li>
+  <li><b>把长句切成短段分别翻译</b>：要硬性切分，切在哪里本身就是难题。原文摘要特意说，本文希望模型自己找相关部分，<b>不用显式切成硬段</b>。</li>
+</ul>
+<p>这几条排除之后，对新方法的要求就清楚了：</p>
+<ol>
+  <li><b>不能把整句压成一个向量。</b></li>
+  <li><b>看原文的哪里，要随「当前要写的词」而变。</b>写开头要看原文开头，写结尾要看原文结尾。</li>
+  <li><b>这个「选择」必须能用梯度训练</b>，否则没法和整个模型一起学。</li>
+</ol>
+<p>后面第 2 节的每个设计，都是在满足这三条之一。</p>
+
+<h3>本文的想法：开卷翻译</h3>
+<p>你翻一句长英文。002 的方式像是：把整句读一遍，<b>合上书</b>，凭脑子里一份固定大小的摘要往下写。句子越长，摘要越装不下。</p>
+<p class="punch">003 的方式是<em>开卷</em>：写每一个词时，眼睛回到原文，看着最相关的那几个词写。</p>
+<p>写 zone 时盯着 Area，写 l' 时盯着 the 和 man。看哪里，是模型<b>自己</b>学出来的，没有人告诉它。</p>
+<p>原文里这件事不叫注意力。标题和摘要用的词是 align（对齐）和 (soft-)search（软搜索），「attention」只在 3.1 节很轻地出现了一次（「直观上，这实现了一种注意力机制」），作为这类方法的统称是后来才通行的。</p>
+<p>原文第 1 节预告的结果有三条，后面第 3 节逐条看：</p>
+<ul>
+  <li>每个句长上都比不带注意力的旧模型好，<b>长句不再垮</b>；</li>
+  <li>用更短句子训练的带注意力模型（RNNsearch-30），甚至超过用更长句子训练的旧模型（RNNencdec-50）；</li>
+  <li>学到的「看哪里」可以画出来，和人的直觉一致。</li>
+</ul>
+
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>模型：边写边回头看</h2>
+<p>和 002 比，整个模型只改了一处：<b>解码器每一步用的原文摘要，从同一个 c 变成了每步一个 cᵢ</b>。其余（RNN 解码器、逐词猜、softmax、束搜索）都沿用。下面三小节依次回答：cᵢ 怎么取（3.1）、为什么取的方式必须是「软」的、编码器的向量为什么要双向（3.2）。</p>
+
+<h3><span class="no">3.1</span>解码器：每写一个词，现取一份摘要</h3>
+<figure class="fig">
+  <span class="tag">原文 Figure 1 · 模型结构</span>
+  <img class="orig narrow" src="orig-fig1.png" alt="原文 Figure 1：下方是 x1、x2、x3 到 xT 的输入词，每个词上方有前向和后向两个 RNN 方块，得到每个词的向量 h1 到 hT；这些向量通过标有 α t,1、α t,2、α t,3、α t,T 的线连到一个加号，加号再接到解码器的状态 s t-1 和 s t，旁边是写出的词 y t-1 和 y t。" loading="lazy" width="534" height="676">
+  <figcaption>这张图在说什么：<b>写第 t 个词 yₜ 时，解码器怎么用原文</b>。怎么看：从下往上读。最下面是原文的词 x₁…x_T；每个词上面两排方块是前向和后向两个 RNN，合起来得到每个词的向量 h；中间标 α 的线，是写这个词时对每个 h 的权重；「+」把它们按权重加起来；加起来的结果送进上面的解码器状态 s。最该盯的是那几条 α 线：线上的数每写一个词都不一样。图 0 是它的简化版。图源：Bahdanau, Cho, Bengio 2014 原文。</figcaption>
+</figure>
+
+<p>「按权重加起来」具体分三步：</p>
+<ol>
+  <li><b>打分</b>：解码器带着「我已经写到哪了」去问原文的每个词：现在，你和我有多相关？每个词得到一个分数 e。</li>
+  <li><b>变成权重</b>：把分数用 softmax（001 讲过）变成权重 α，全是正数，加起来等于 1。分数高的，权重大得多。</li>
+  <li><b>加权求和</b>：每个词的向量乘上自己的权重，加起来，得到这一步专用的摘要 cᵢ。</li>
+</ol>
+<figure class="fig">
+  <span class="tag">图 3 · 示意：打分 → 变成权重 → 加权求和（三个词，数字为示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 284" role="img" aria-label="三行，每行一个原文词，向量分别是 [1,0]、[0,1]、[0.5,0.5]。第一列打分：1.91、0、0.54。经过 softmax 得到权重 0.71、0.11、0.18，加起来为 1。第三列把每个向量乘上权重，相加得到 c 等于 [0.80, 0.20]，更靠近词 1 的向量。">
+    <text class="sm m" x="20" y="22">原文每个词的向量 h</text><text class="sm b" x="190" y="22">① 打分 e</text><text class="sm b tn" x="400" y="22">② 权重 α（和为 1）</text><text class="sm b" x="526" y="22">③ 按权重取</text>
+    <g>
+      <text class="b" x="20" y="68">词 1</text><text class="mo sm m" x="20" y="84">[1, 0]</text>
+      <text class="b" x="20" y="118">词 2</text><text class="mo sm m" x="20" y="134">[0, 1]</text>
+      <text class="b" x="20" y="168">词 3</text><text class="mo sm m" x="20" y="184">[0.5, 0.5]</text>
+    </g>
+    <g class="mutS"><line x1="116" y1="70" x2="182" y2="70" marker-end="url(#ah)"/><line x1="116" y1="120" x2="182" y2="120" marker-end="url(#ah)"/><line x1="116" y1="170" x2="182" y2="170" marker-end="url(#ah)"/></g>
+    <rect class="newT" x="190" y="60" width="76" height="20" rx="3"/><text class="mo sm" x="274" y="75">1.91</text>
+    <line class="mutS" x1="190" y1="108" x2="190" y2="132"/><text class="mo sm" x="200" y="125">0</text>
+    <rect class="newT" x="190" y="160" width="22" height="20" rx="3"/><text class="mo sm" x="220" y="175">0.54</text>
+    <g class="mutS"><line x1="312" y1="70" x2="392" y2="70" marker-end="url(#ah)"/><line x1="312" y1="120" x2="392" y2="120" marker-end="url(#ah)"/><line x1="312" y1="170" x2="392" y2="170" marker-end="url(#ah)"/></g>
+    <text class="sm m" x="352" y="112" text-anchor="middle">softmax</text>
+    <rect class="new" x="400" y="60" width="71" height="20" rx="3"/><text class="mo sm" x="479" y="75">0.71</text>
+    <rect class="new" x="400" y="110" width="11" height="20" rx="3"/><text class="mo sm" x="419" y="125">0.11</text>
+    <rect class="new" x="400" y="160" width="18" height="20" rx="3"/><text class="mo sm" x="426" y="175">0.18</text>
+    <text class="mo sm" x="526" y="75">0.71×[1, 0]</text><text class="mo sm" x="526" y="125">0.11×[0, 1]</text><text class="mo sm" x="526" y="175">0.18×[0.5, 0.5]</text>
+    <line class="ln" x1="526" y1="196" x2="660" y2="196"/>
+    <text class="mo sm tn b" x="526" y="218">c = [0.80, 0.20]</text>
+    <text class="sm m" x="20" y="256">c 更靠近词 1 的向量，因为词 1 的权重最大。</text>
+    <text class="sm m" x="20" y="274">下一步解码器的状态变了，分数和权重重新算，c 也就换了。</text>
+  </svg>
+  </div>
+  <figcaption>这是一次「看」的全过程。分数只差 1.4（1.91 对 0.54），权重却差了约 4 倍（0.71 对 0.18），因为 softmax 会放大差距。（示意数字，真实的向量有 2000 维）</figcaption>
+</figure>
+
+<p>上面的白话，原文用三个式子写：</p>
+<div class="formula">e<sub>ij</sub> = a( s<sub>i−1</sub>, h<sub>j</sub> )</div>
+<div class="formula">α<sub>ij</sub> = exp( e<sub>ij</sub> ) / Σ<sub>k</sub> exp( e<sub>ik</sub> )<span class="fsrc">（原文 Eq. 6，softmax）</span></div>
+<div class="formula">c<sub>i</sub> = Σ<sub>j</sub> α<sub>ij</sub> · h<sub>j</sub><span class="fsrc">（原文 Eq. 5，加权求和）</span></div>
+<p>打分用的那个函数 a，原文附录 A.1.2 给了它的具体形式：</p>
+<div class="formula">a( s<sub>i−1</sub>, h<sub>j</sub> ) = v<sub>a</sub><sup>T</sup> · tanh( W<sub>a</sub> s<sub>i−1</sub> + U<sub>a</sub> h<sub>j</sub> )<span class="fsrc">（附录 A.1.2）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th><th>对应图 3 里的</th></tr></thead>
+  <tbody>
+    <tr><td><code>i</code>、<code>j</code></td><td>i 是正在写的第 i 个译文词；j 是原文的第 j 个词</td><td>i 是整张图（每写一个词重来一次）；j 是三行</td></tr>
+    <tr><td><code>h<sub>j</sub></code></td><td>原文第 j 个词的向量（原文叫「标注」）</td><td>左边每行的 [1, 0] 之类</td></tr>
+    <tr><td><code>s<sub>i−1</sub></code></td><td>解码器上一步的状态，概括「我已经写了什么、还缺什么」</td><td>图里没画，它是打分时的「提问者」（图 0 的虚线）</td></tr>
+    <tr><td><code>e<sub>ij</sub></code></td><td>写第 i 个词时，原文第 j 个词有多相关的分数</td><td>① 列的 1.91、0、0.54</td></tr>
+    <tr><td><code>α<sub>ij</sub></code></td><td>softmax 之后的权重，全为正，每个 i 下加起来等于 1</td><td>② 列的 0.71、0.11、0.18</td></tr>
+    <tr><td><code>c<sub>i</sub></code></td><td>这一步专用的原文摘要，大小和一个 h 一样</td><td>③ 列最下面的 [0.80, 0.20]</td></tr>
+    <tr><td><code>a</code></td><td>打分的小网络，输入 s 和 h，输出一个数</td><td>① 列的计算过程（图里只画了结果）</td></tr>
+    <tr><td><code>W<sub>a</sub></code>、<code>U<sub>a</sub></code>、<code>v<sub>a</sub></code></td><td>这个小网络的参数：W、U 把 s 和 h 变到同一个空间再相加，v 把结果压成一个分数。都是学出来的</td><td>同上，在 ① 的计算里</td></tr>
+    <tr><td><code>tanh</code></td><td>弯一下的非线性函数（001 讲过）。没有它，两项相加还是线性的，表达力不够</td><td>同上</td></tr>
+  </tbody>
+</table></div>
+<p>有两处值得多想一下。第一，打分用的是<b>上一步</b>的状态 sᵢ₋₁，不是 sᵢ：因为 sᵢ 要靠 cᵢ 才能算出来，而 cᵢ 要靠打分，用 sᵢ 打分就循环了。第二，Uₐhⱼ 和 i 无关，所以每个原文词只需算一次，写每个词时只需新算 Wₐsᵢ₋₁，对齐模型本身并不贵，贵的是每个译文词都要和所有原文词算一遍。</p>
+<p><b>这三步在因果链里的作用：</b>让解码器每一步<b>自己决定看哪里</b>（要求 2），并且从打分到加权求和都是连续的数学运算，所以梯度能一路传回去（要求 3，下一小节）。</p>
+
+<p>取到 cᵢ 之后，解码器怎么用它？先看新旧的差别。002 里，每一步的条件里是同一个 c；003 里变成了每步各一个 cᵢ：</p>
+<div class="formula">002 / Cho：g( y<sub>t−1</sub>, s<sub>t</sub>, <b>c</b> )　　→　　003：g( y<sub>i−1</sub>, s<sub>i</sub>, <b>c<sub>i</sub></b> )</div>
+<p>完整写出来是原文的 Eq. 4：</p>
+<div class="formula">p( y<sub>i</sub> | y<sub>1</sub>, …, y<sub>i−1</sub>, x ) = g( y<sub>i−1</sub>, s<sub>i</sub>, c<sub>i</sub> )</div>
+<div class="formula">s<sub>i</sub> = f( s<sub>i−1</sub>, y<sub>i−1</sub>, c<sub>i</sub> )</div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th><th>对应图 0 里的</th></tr></thead>
+  <tbody>
+    <tr><td><code>y<sub>i</sub></code></td><td>要写出的第 i 个译文词</td><td>右下角的 yᵢ</td></tr>
+    <tr><td><code>x</code></td><td>整句原文（x₁…x<sub>T</sub>）</td><td>最下面一排</td></tr>
+    <tr><td><code>s<sub>i</sub></code></td><td>写完这个词之后，解码器的新笔记（隐藏状态）</td><td>右边的 sᵢ 方块</td></tr>
+    <tr><td><code>f</code></td><td>更新笔记的规则：旧笔记 + 上一个写出的词 + 这一步的摘要 → 新笔记。本文用 GRU</td><td>sᵢ₋₁ 到 sᵢ 的那根箭头</td></tr>
+    <tr><td><code>g</code></td><td>从这些材料算出「下一个词是谁」的概率分布（接 softmax），本文用 maxout 层</td><td>sᵢ 往上到 yᵢ 的那根线</td></tr>
+    <tr><td><code>c<sub>i</sub></code></td><td>这一步的原文摘要，<b>同时</b>参与更新笔记和选词</td><td>从加号流到解码器的那根粗线</td></tr>
+  </tbody>
+</table></div>
+<p><b>这两条式子的作用：</b>让 cᵢ 真正进入「写哪个词」的决策。整篇论文的核心改动，就是式子里 c 多了下标 i。如果把 cᵢ 固定成编码器最后一个状态，模型就退化回旧的 RNNencdec，所以旧模型是它的特例，两者能公平对比。</p>
+<p>式子里的 f 和 g 各有一个零件：<b>GRU</b> 是 LSTM 的精简版，用一个「旋钮」决定旧笔记保留多少、换成多少新内容，目的和 LSTM 一样，让信息和梯度传得更远。<b>maxout</b> 是输出层的一种激活函数：同时算几个候选，只取最大的那个。它们都是工程选择，不是本文的主角。需要精确写法的，看下面这个延伸。</p>
+<aside class="ext"><span class="alab">🧭 延伸 · GRU 和 maxout 的完整公式（给想看公式的人，跳过不影响理解）</span>
+<h4>GRU：f 里面是什么（原文附录 A.1.1，以解码器为例）</h4>
+<div class="formula">z<sub>i</sub> = σ( W<sub>z</sub> e(y<sub>i−1</sub>) + U<sub>z</sub> s<sub>i−1</sub> + C<sub>z</sub> c<sub>i</sub> )</div>
+<div class="formula">r<sub>i</sub> = σ( W<sub>r</sub> e(y<sub>i−1</sub>) + U<sub>r</sub> s<sub>i−1</sub> + C<sub>r</sub> c<sub>i</sub> )</div>
+<div class="formula">s̃<sub>i</sub> = tanh( W e(y<sub>i−1</sub>) + U [ r<sub>i</sub> ⊙ s<sub>i−1</sub> ] + C c<sub>i</sub> )</div>
+<div class="formula">s<sub>i</sub> = (1 − z<sub>i</sub>) ⊙ s<sub>i−1</sub> + z<sub>i</sub> ⊙ s̃<sub>i</sub></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th></tr></thead>
+  <tbody>
+    <tr><td><code>e(y<sub>i−1</sub>)</code></td><td>上一个写出的词的词向量（001 的「坐标卡」，620 维）</td></tr>
+    <tr><td><code>z<sub>i</sub></code>：更新门</td><td>0 到 1 的旋钮，决定每一维笔记「换成新的」的比例</td></tr>
+    <tr><td><code>r<sub>i</sub></code>：重置门</td><td>算新内容时，旧笔记参与多少</td></tr>
+    <tr><td><code>s̃<sub>i</sub></code></td><td>候选的新笔记</td></tr>
+    <tr><td><code>σ</code>、<code>⊙</code></td><td>σ 是输出 0 到 1 的 sigmoid；⊙ 是逐维相乘</td></tr>
+    <tr><td><code>C<sub>z</sub> c<sub>i</sub></code> 等</td><td>cᵢ 同时进入两个门和候选：「什么时候更新、更新什么」都能参考原文。编码器里没有 cᵢ，这几项去掉</td></tr>
+  </tbody>
+</table></div>
+<p>最后一行是关键：新笔记是旧笔记和候选的<b>加权平均</b>。示意：旧 [0.8, 0.8]，候选 [0.2, −0.5]，z = [0.1, 0.9]，新笔记 = [0.74, −0.37]。第一维几乎保留，第二维几乎换新。加法路径让梯度能传远，和 LSTM 的传送带同理。原文叫它 gated hidden unit，「GRU」是后来通行的名字。</p>
+<h4>maxout：g 里面是什么（原文附录 A.2.2）</h4>
+<div class="formula">t̃<sub>i</sub> = U<sub>o</sub> s<sub>i−1</sub> + V<sub>o</sub> E y<sub>i−1</sub> + C<sub>o</sub> c<sub>i</sub></div>
+<div class="formula">t<sub>i,j</sub> = max( t̃<sub>i,2j−1</sub> , t̃<sub>i,2j</sub> )</div>
+<div class="formula">p( y<sub>i</sub> | s<sub>i</sub>, y<sub>i−1</sub>, c<sub>i</sub> ) ∝ exp( y<sub>i</sub><sup>T</sup> W<sub>o</sub> t<sub>i</sub> )</div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th></tr></thead>
+  <tbody>
+    <tr><td><code>t̃<sub>i</sub></code></td><td>用「上一步笔记、上一个词、本步摘要」三样东西算出的 1000 维向量，说明选词时同时参考这三样</td></tr>
+    <tr><td><code>t<sub>i,j</sub></code></td><td>相邻两个数一组，取较大的，1000 维变成 500 维。示意：[0.3, −0.5, −1.0, −0.2] → [0.3, −0.2]</td></tr>
+    <tr><td><code>W<sub>o</sub></code> 与 <code>exp</code></td><td>再乘一个矩阵，对所有目标词做 softmax，得到每个词的概率</td></tr>
+  </tbody>
+</table></div>
+<p>这相当于从状态到词概率之间多放了一个隐藏层。原文没有单独做实验去检验 maxout 的贡献。</p>
+</aside>
+
+<h3>为什么要「软」：这样才能用梯度训练</h3>
+<p>「对齐」在传统统计翻译里早就有：先用统计模型推断「法文第 i 个词对应英文第 j 个词」。那是一个<b>硬</b>的选择，一个目标词只对应一个源词（或者没有）。</p>
+<aside class="anno"><span class="alab">📎 注解 · 为什么硬选择没法用梯度训练</span>
+<p>训练靠梯度：错了，就看「往哪个方向微调一点点，错误会变小」。硬选择是一个开关，只有「选这个」和「选那个」，没有中间状态。把选择从词 2 改到词 3，是一次跳变，不存在「往词 3 偏一点点」，梯度就没法告诉你该往哪边调。另外，硬对齐是隐藏的，没有标准答案，要对所有可能的对齐求和或采样，计算很复杂。</p>
+</aside>
+<figure class="fig">
+  <span class="tag">图 4 · 硬对齐是开关，软对齐是旋钮（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="左边是硬对齐：解码器只连到词 2，权重只有 1 和 0，赭色。右边是软对齐：解码器同时连到词 1、词 2、词 3，线粗细不同，权重分别是 0.2、0.6、0.2，蓝色。">
+    <line class="ln" x1="340" y1="10" x2="340" y2="200"/>
+    <text class="b to" x="20" y="18">硬对齐：只能选一个</text><text class="b tn" x="360" y="18">软对齐：都看，各看一点</text>
+    <circle class="old" cx="170" cy="56" r="9"/><text class="sm m" x="186" y="42">写这个词</text>
+    <path class="ln dash" d="M170 66 L72 142 M170 66 L268 142"/>
+    <line class="oldS" x1="170" y1="66" x2="170" y2="140" style="stroke-width:3.5" marker-end="url(#ahO)"/>
+    <text class="mo sm m" x="104" y="100" text-anchor="middle">0</text><text class="mo sm to b" x="180" y="106">1</text><text class="mo sm m" x="240" y="100" text-anchor="middle">0</text>
+    <g><circle class="mutF" cx="70" cy="150" r="7"/><circle class="mutF" cx="170" cy="150" r="7"/><circle class="mutF" cx="270" cy="150" r="7"/></g>
+    <g class="sm" text-anchor="middle"><text x="70" y="176">词 1</text><text x="170" y="176">词 2</text><text x="270" y="176">词 3</text></g>
+    <text class="sm to" x="20" y="212">只有 0 和 1，没有中间状态</text><text class="sm to" x="20" y="230">训练时不知道往哪边微调</text>
+    <circle class="new" cx="510" cy="56" r="9"/><text class="sm m" x="526" y="42">写这个词</text>
+    <path class="newS" d="M510 66 L412 142" style="stroke-width:2.5"/><path class="newS" d="M510 66 L510 142" style="stroke-width:7"/><path class="newS" d="M510 66 L608 142" style="stroke-width:2.5"/>
+    <text class="mo sm tn" x="450" y="96" text-anchor="middle">0.2</text><text class="mo sm tn b" x="524" y="106">0.6</text><text class="mo sm tn" x="574" y="96" text-anchor="middle">0.2</text>
+    <g><circle class="mutF" cx="410" cy="150" r="7"/><circle class="mutF" cx="510" cy="150" r="7"/><circle class="mutF" cx="610" cy="150" r="7"/></g>
+    <g class="sm" text-anchor="middle"><text x="410" y="176">词 1</text><text x="510" y="176">词 2</text><text x="610" y="176">词 3</text></g>
+    <text class="sm tn" x="360" y="212">权重可以连续变化</text><text class="sm tn" x="360" y="230">梯度能传回去，对齐和翻译一起学</text>
+  </svg>
+  </div>
+  <figcaption>左边只能选一个，右边每个词都分到一点。软的做法让每个权重都是连续可调的，所以「看哪里」这件事也能被梯度推着变好。（0.2、0.6、0.2 为示意）</figcaption>
+</figure>
+<p>003 的做法是：<b>不选一个，而是对所有源词都给一个权重</b>（就是图 3 里的 α）。这样 cᵢ 是 α 的连续函数，损失对 α 有梯度，一路反传给对齐小网络的参数。对齐不再是隐藏变量，训练时<b>没有任何「哪个词对哪个词」的标注</b>，它是为了把翻译译好，被顺便学出来的。</p>
+<p>原文还给了一个概率式的说法：把 αᵢⱼ 看成「写 yᵢ 时和 xⱼ 对齐的概率」，cᵢ 就是对所有可能对齐取的<b>期望</b>。硬对齐是以概率 1 选一个，软对齐是带着概率把所有候选平均一下。</p>
+<p>软对齐还有一个额外的好处。原文 5.2.1 举了 [the man] → [l'homme]：the 在法语里可以译成 le、la、les、l'，取决于<b>后面</b>那个词。硬对齐要把 the 单独对到 l'，只看 the 一个词做不出判断；软对齐写 l' 时可以同时看 the 和 man。它也自然处理源词、目标词数量不一样的情况，不用硬把某些词对到「空」。</p>
+<p>我补充的：论文<b>没有</b>和硬对齐的方案做过对照实验，「软优于硬」在本文里主要是设计层面的论证，不是实验结论。</p>
+
+<h3><span class="no">3.2</span>编码器：为什么要双向</h3>
+<p>cᵢ 是 hⱼ 的加权和，所以每个 hⱼ 最好把「这个词在整句里的意思」都带上。但普通 RNN 从左读到右，读到第 j 个词时，hⱼ 只知道前文。读到 man 时，它还不知道后面有没有 who 引导的从句。</p>
+<p>办法很朴素：<b>请两个人读。</b>一个从头读到尾，一个从尾读到头，然后把两个人对第 j 个词的笔记并排放在一起。</p>
+<figure class="fig">
+  <span class="tag">图 5 · 单向只看左边，双向左右都看（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 244" role="img" aria-label="左边单向：读 I love cats，读到 love 时只见到 I 和 love，cats 还没读到，love 的向量只含 I 和 love，赭色。右边双向：前向箭头从 I 到 love，后向箭头从 cats 到 love，love 的向量包含 I、love 和 cats，蓝色。底部说明：the man 译成 l'homme，要看到后面的 man，才知道 the 要写成 l'。">
+    <line class="ln" x1="340" y1="10" x2="340" y2="200"/>
+    <text class="b to" x="30" y="22">单向：只往左看</text><text class="b tn" x="360" y="22">双向：左右都看过</text>
+    <rect class="softS" x="30" y="44" width="70" height="36" rx="8"/><text class="b" x="65" y="68" text-anchor="middle">I</text>
+    <rect class="softS" x="140" y="44" width="70" height="36" rx="8"/><text class="b" x="175" y="68" text-anchor="middle">love</text>
+    <rect class="softS dash" x="250" y="44" width="70" height="36" rx="8"/><text class="m" x="285" y="68" text-anchor="middle">cats</text>
+    <line class="oldS" x1="102" y1="62" x2="138" y2="62" marker-end="url(#ahO)"/>
+    <text class="sm m" x="285" y="100" text-anchor="middle">还没读到</text>
+    <line class="oldS" x1="175" y1="82" x2="175" y2="136" marker-end="url(#ahO)"/>
+    <rect class="oldT" x="90" y="138" width="170" height="44" rx="8"/><text class="b sm" x="175" y="157" text-anchor="middle">love 的向量</text><text class="sm" x="175" y="173" text-anchor="middle">只含 I、love</text>
+    <rect class="softS" x="360" y="44" width="70" height="36" rx="8"/><text class="b" x="395" y="68" text-anchor="middle">I</text>
+    <rect class="softS" x="470" y="44" width="70" height="36" rx="8"/><text class="b" x="505" y="68" text-anchor="middle">love</text>
+    <rect class="softS" x="580" y="44" width="70" height="36" rx="8"/><text class="b" x="615" y="68" text-anchor="middle">cats</text>
+    <line class="newS" x1="432" y1="54" x2="468" y2="54" marker-end="url(#ahN)"/>
+    <line class="newS" x1="578" y1="70" x2="542" y2="70" marker-end="url(#ahN)"/>
+    <text class="sm tn" x="450" y="40" text-anchor="middle">前向</text><text class="sm tn" x="560" y="94" text-anchor="middle">后向</text>
+    <line class="newS" x1="505" y1="82" x2="505" y2="136" marker-end="url(#ahN)"/>
+    <rect class="newT" x="420" y="138" width="170" height="44" rx="8"/><text class="b sm" x="505" y="157" text-anchor="middle">love 的向量</text><text class="sm" x="505" y="173" text-anchor="middle">含 I、love、cats</text>
+    <text class="sm m" x="340" y="224" text-anchor="middle">为什么要看后文：the man 译成 l'homme，要看到后面的 man，才知道 the 要写成 l'</text>
+  </svg>
+  </div>
+  <figcaption>解码器不能这样做：它一个词一个词地写，后面的词还没写出来，没有「后文」可读。双向只能用在整句已知的编码器这一端。（双向 RNN 不是本文发明，1997 年已有，在语音识别里用过。）</figcaption>
+</figure>
+<p>精确写法是把两个方向的向量首尾拼起来：</p>
+<div class="formula">h<sub>j</sub> = [ 前向 h<sub>j</sub> ; 后向 h<sub>j</sub> ]</div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th><th>对应图 5 / 图 0 里的</th></tr></thead>
+  <tbody>
+    <tr><td><code>前向 h<sub>j</sub></code></td><td>从第 1 个词读到第 j 个词的笔记，只含前文</td><td>「前向」箭头那一排</td></tr>
+    <tr><td><code>后向 h<sub>j</sub></code></td><td>从最后一个词读回第 j 个词的笔记，只含后文</td><td>「后向」箭头那一排</td></tr>
+    <tr><td><code>[ ; ]</code></td><td>把两个向量首尾拼成一个更长的。各 1000 维，拼起来 hⱼ 是 2000 维</td><td>每个词上面的 h 方块</td></tr>
+  </tbody>
+</table></div>
+<p><b>这条式子的作用：</b>让每个 hⱼ 都「左右都看过」，对齐小网络和解码器才有足够的信息，判断「写到这里，这个词值不值得看」。作者还解释，RNN 更擅长记住最近读到的东西，所以 hⱼ 会以 xⱼ 周围的词为主。这是作者的解释，论文没有实验去验证。</p>
+
+<h3>和旧方法的本质区别</h3>
+<div class="tbl"><table>
+  <thead><tr><th></th><th>002 / RNNencdec（旧）</th><th>003 / RNNsearch（本文）</th></tr></thead>
+  <tbody>
+    <tr><td>编码器输出</td><td>1 个固定向量</td><td>一排向量，原文有几个词就有几个</td></tr>
+    <tr><td>编码器方向</td><td>单向</td><td>双向</td></tr>
+    <tr><td>解码器看原文</td><td>全程同一个 c</td><td>每步一个新的 cᵢ，自己决定看哪里</td></tr>
+    <tr><td>长句信息放在哪</td><td>全挤在一个向量里</td><td>分散在各个 h 里，按需取</td></tr>
+    <tr><td>代价</td><td>无</td><td>每个译文词要和每个原文词打一次分，计算量约为 Tx × Ty，随句长变长平方增长</td></tr>
+    <tr><td>能不能看明白</td><td>向量内部看不出</td><td>权重 α 可以画成热图（第 3 节结论三）</td></tr>
+  </tbody>
+</table></div>
+<p>要提醒的是，003 里的 RNNencdec 不是 002 那个模型（一层，单向，没有倒序，没有集成）。它是 RNNsearch 去掉注意力后的特例，才能公平对比。
+
+</p>
+
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>实验：三个结论</h2>
+<p>英译法，WMT'14 数据。对手是旧的 RNNencdec，用<b>同样的数据、同样的训练流程</b>各训练两次：只用不超过 30 个词的句子训练，叫 -30；不超过 50 个词的，叫 -50。再加一个传统系统 Moses 当参照。下面只看三个能支撑主线的结论，其余细节收在最后一个折叠的延伸里。</p>
+
+<h3>结论一：BLEU 更高</h3>
+<figure class="fig">
+  <span class="tag">图 6 · 测试集 BLEU（原文 Table 1，全部句子）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="横向柱状图：RNNencdec-30 是 13.93，RNNsearch-30 是 21.50；RNNencdec-50 是 17.82，RNNsearch-50 是 26.75；RNNsearch-50 训练更久的版本是 28.45；传统系统 Moses 是 33.30，用灰色虚线标出。">
+    <g class="sm" text-anchor="end">
+      <text class="to" x="220" y="38">RNNencdec-30</text>
+      <text class="tn" x="220" y="72">RNNsearch-30</text>
+      <text class="to" x="220" y="106">RNNencdec-50</text>
+      <text class="tn" x="220" y="140">RNNsearch-50</text>
+      <text class="tn b" x="220" y="174">RNNsearch-50⋆（训练更久）</text>
+      <text class="m" x="220" y="208">Moses（传统系统）</text>
+    </g>
+    <rect class="old" x="230" y="24" width="139.3" height="20" rx="4"/>
+    <rect class="new" x="230" y="58" width="215" height="20" rx="4"/>
+    <rect class="old" x="230" y="92" width="178.2" height="20" rx="4"/>
+    <rect class="new" x="230" y="126" width="267.5" height="20" rx="4"/>
+    <rect class="new" x="230" y="160" width="284.5" height="20" rx="4"/>
+    <rect class="softS" x="230" y="194" width="333" height="20" rx="4"/>
+    <line class="mutS dash" x1="563" y1="16" x2="563" y2="224" style="stroke-width:1.4"/>
+    <g class="mo sm">
+      <text x="377" y="38">13.93</text><text x="453" y="72">21.50</text><text x="416" y="106">17.82</text>
+      <text x="505" y="140">26.75</text><text x="522" y="174">28.45</text><text class="m b" x="571" y="208">33.30</text>
+      <text class="tn b" x="520" y="72">+7.57</text><text class="tn b" x="566" y="140">+8.93</text>
+    </g>
+    <line class="ln" x1="230" y1="224" x2="630" y2="224"/>
+    <g class="mo sm m" text-anchor="middle"><text x="230" y="242">0</text><text x="330" y="242">10</text><text x="430" y="242">20</text><text x="530" y="242">30</text><text x="630" y="242">40</text></g>
+  </svg>
+  </div>
+  <figcaption>蓝柱是带注意力的，赭柱是旧的。同样的训练句长上限下，蓝柱都更长：30 的一组高 7.57 分，50 的一组高 8.93 分。（Table 1 的「All」列）</figcaption>
+</figure>
+<ol>
+  <li><b>同一个限制下，注意力全面胜出</b>，差距大到不是调参能解释的。</li>
+  <li><b>RNNsearch-30（21.50）比 RNNencdec-50（17.82）还高。</b>用更短句子训练、带注意力的，打败了用更长句子训练、不带注意力的。原文拿这一点进一步印证注意力的作用。</li>
+  <li><b>和 Moses 比，这一列还没赢。</b>只看不含生词的句子，才与 Moses 相当，口径见最后的延伸。</li>
+</ol>
+
+<h3>结论二：长句不垮了（全篇最重要的证据）</h3>
+<p>第 1 节留下的假说是：固定向量会在长句上垮。如果这个假说对，去掉瓶颈的模型，在长句上应该明显更好。Figure 2 就是这个检验：横轴是句子长度，纵轴是 BLEU。</p>
+<figure class="fig">
+  <span class="tag">图 7 · 只看两条线（示意，形状按原文 Figure 2 估读）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 290" role="img" aria-label="折线图：横轴句长 0 到 60 词，纵轴 BLEU 0 到 30。蓝线 RNNsearch-50 升到约 26 后基本保持水平。赭线 RNNenc-50 升到约 22 后，30 词之后一路下降，60 词处约 6。30 词处画一条竖直虚线，右侧两条线的差距越拉越大。">
+    <g class="ln"><line x1="70" y1="30" x2="550" y2="30"/><line x1="70" y1="96.7" x2="550" y2="96.7"/><line x1="70" y1="163.3" x2="550" y2="163.3"/><line x1="70" y1="230" x2="550" y2="230"/></g>
+    <g class="mo sm m" text-anchor="end"><text x="62" y="34">30</text><text x="62" y="100">20</text><text x="62" y="167">10</text><text x="62" y="234">0</text></g>
+    <text class="sm m" x="20" y="22">BLEU</text>
+    <g class="mo sm m" text-anchor="middle"><text x="70" y="248">0</text><text x="150" y="248">10</text><text x="230" y="248">20</text><text x="310" y="248">30</text><text x="390" y="248">40</text><text x="470" y="248">50</text><text x="550" y="248">60</text></g>
+    <text class="sm m" x="310" y="274" text-anchor="middle">句子长度（词）</text>
+    <line class="mutS dash" x1="310" y1="40" x2="310" y2="230"/><text class="sm b" x="318" y="46">30 词之后</text>
+    <path class="newS" d="M70 143 L110 97 L150 73 L230 57 L310 57 L390 60 L470 63 L534 57" style="stroke-width:3"/>
+    <path class="oldS" d="M70 130 L110 103 L150 90 L230 83 L310 110 L390 143 L470 170 L542 187" style="stroke-width:3"/>
+    <line class="mutS" x1="470" y1="70" x2="470" y2="162" marker-start="url(#ah)" marker-end="url(#ah)"/>
+    <text class="sm m" x="478" y="120">差距越拉越大</text>
+    <text class="mo sm tn b" x="556" y="52">RNNsearch-50</text><text class="sm tn" x="556" y="68">基本不掉</text>
+    <text class="mo sm to b" x="556" y="190">RNNenc-50</text><text class="sm to" x="556" y="206">一路掉</text>
+  </svg>
+  </div>
+  <figcaption>最好用一句话记住：<b>旧模型过了 30 词就开始往下掉，带注意力的模型几乎是平的</b>。具体数值是我对着原图估读的，只看趋势，精确读数请看下面的原图。</figcaption>
+</figure>
+<figure class="fig">
+  <span class="tag">原文 Figure 2 · BLEU 随句子长度的变化</span>
+  <img class="orig" src="orig-fig2.png" alt="原文 Figure 2：横轴是句子长度 0 到 60，纵轴是 BLEU 0 到 30，四条线。实线 RNNsearch-50 在 20 词左右升到约 26 后几乎保持水平，直到 60 词。点线 RNNsearch-30 前半段和实线相近，30 词之后逐渐下降到约 6。虚线 RNNenc-50 在 20 词左右最高，约 22，之后一路下降到约 6。点划线 RNNenc-30 同样下降，最低。" loading="lazy" width="905" height="557">
+  <figcaption>这张图在说什么：<b>句子越长，旧模型越差，带注意力的模型基本不受影响</b>。怎么看：横轴是句长，纵轴是 BLEU，越高越好；四种线型：实线 RNNsearch-50，点线 RNNsearch-30，虚线 RNNenc-50，点划线 RNNenc-30，名字里的 30、50 是训练时的句长上限。先盯住虚线和点划线：越往右越低。再看实线：到 50 词以上也看不出恶化。再看点线：它在 30 词之后也开始掉，说明训练时没见过更长的句子，泛化有限，但整体仍不比旧模型差。结果在含有生词的完整测试集上算。图源：Bahdanau, Cho, Bengio 2014 原文。</figcaption>
+</figure>
+<p>这个结果和假说的预测一致。作者也给了一个直观的例子：一句 30 多个词的话，旧模型前半句译对，译到后半段就偏离了原意，把「基于他作为医院医护人员的身份」译成了「基于他的健康状况」，末尾的信息没存住，只能靠语言惯性编一个像样的结尾。</p>
+<p>要保留一点谨慎。图只显示相关，不能排除别的因素：RNNsearch 同时还有双向编码器，参数也更多。原文说这「证实了我们的假设」，我补充的是：严格地说，是「与假设一致」。</p>
+
+<h3>结论三：学到的对齐合理，而且可以读</h3>
+<p>训练时没有任何人告诉模型「哪个词对哪个词」。那它到底有没有在看对的地方？把每一步的权重 α 画出来就知道。先看一个小例子，教你怎么读热图：</p>
+<figure class="fig">
+  <span class="tag">图 8 · 同一件事的两种画法（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 226" role="img" aria-label="左边用连线：英文 European Economic Area 对应法文 zone économique européenne，Area 连到 zone，Economic 连到 économique，European 连到 européenne，三条线交叉。右边画成方格：行是法文三个词，列是英文三个词，亮格在 zone 与 Area、économique 与 Economic、européenne 与 European 的交叉处，形成一条反方向的对角线。">
+    <text class="b" x="20" y="18">连线画法</text><text class="b" x="330" y="18">热图画法</text>
+    <text class="sm m" x="0" y="64">英</text><text class="sm m" x="0" y="174">法</text>
+    <g text-anchor="middle"><text x="50" y="64">European</text><text x="140" y="64">Economic</text><text x="230" y="64">Area</text>
+    <text x="50" y="174">zone</text><text x="140" y="174">économique</text><text x="230" y="174">européenne</text></g>
+    <path class="newS" d="M230 74 L50 152" style="stroke-width:3"/><path class="newS" d="M140 74 L140 152" style="stroke-width:3"/><path class="newS" d="M50 74 L230 152" style="stroke-width:3"/>
+    <text class="sm m" x="20" y="208">写 zone 时先看 Area，再一个个往回看</text>
+    <g class="sm m" text-anchor="middle"><text x="433" y="68">European</text><text x="501" y="68">Economic</text><text x="569" y="68">Area</text></g>
+    <g class="sm" text-anchor="end"><text x="394" y="98">zone</text><text x="394" y="134">économique</text><text x="394" y="170">européenne</text></g>
+    <g>
+      <rect class="softS" x="400" y="76" width="66" height="34" rx="3"/><rect class="softS" x="468" y="76" width="66" height="34" rx="3"/><rect class="new" x="536" y="76" width="66" height="34" rx="3"/>
+      <rect class="softS" x="400" y="112" width="66" height="34" rx="3"/><rect class="new" x="468" y="112" width="66" height="34" rx="3"/><rect class="softS" x="536" y="112" width="66" height="34" rx="3"/>
+      <rect class="new" x="400" y="148" width="66" height="34" rx="3"/><rect class="softS" x="468" y="148" width="66" height="34" rx="3"/><rect class="softS" x="536" y="148" width="66" height="34" rx="3"/>
+    </g>
+    <text class="sm m" x="400" y="208">亮格 = 看得多，暗格 = 看得少</text>
+  </svg>
+  </div>
+  <figcaption>英文是「形容词 形容词 名词」，法文是「名词 形容词 形容词」，所以亮格排成一条<b>反方向</b>的斜线，不是普通的对角线。（方格的亮暗为示意，真实热图每格是一个 0 到 1 的权重）</figcaption>
+</figure>
+<figure class="fig">
+  <span class="tag">原文 Figure 3 · 学到的对齐（RNNsearch-50）</span>
+  <img class="orig" src="orig-fig3.png" alt="原文 Figure 3：四个热图 a 到 d。每个横轴是英文原句的词，纵轴是生成的法文词，越亮表示权重越大。图 a：The agreement on the European Economic Area was signed in August 1992 对应 L'accord sur la zone économique européenne a été signé en août 1992，亮点大体沿对角线，European Economic Area 这三个词处亮点反向。图 b、c 是随机抽取的句子，亮点也大体沿对角线。图 d：这个人说『这会改变我与家人的未来』，其中 l' homme 对应 the man said，l' 同时对着 the 和 man。" loading="lazy" width="969" height="1054">
+  <figcaption>这张图在说什么：<b>模型学到的「看哪里」，和人的直觉一致</b>。怎么看：每张小图里，横轴是英文原句，纵轴是生成的法文，一格是一个权重，黑是 0，白是 1，越亮看得越多。(a) 是作者任意挑的句子，(b)(c)(d) 是从测试集随机抽的。盯三处：一、亮点大体沿对角线，因为英法词序相近；二、(a) 里 European Economic Area 对 zone économique européenne，亮点沿反方向走，写 zone 时先跳到 Area，再一个个往回看，这是旧的「一对一从左到右」对不出来的；三、(d) 里写 l' 时，权重同时落在 the 和 man 上，正是软对齐的价值。图源：Bahdanau, Cho, Bengio 2014 原文。</figcaption>
+</figure>
+<p>三个提醒：对齐是学出来的，没有任何人工标注参与训练；这是<b>定性</b>证据，只是看着合理，没有用人工对齐去做量化评估；权重高也不一定等于「真的被用来做决定」，这是我补充的提醒。</p>
+
+<details class="ext"><summary>🧭 延伸 · 实验细节与读数字的注意事项（跳过不影响理解）</summary>
+<p><b>Table 1 完整版。</b>「No UNK」列只评估原文和参考译文里都没有生词的句子，并且禁止模型输出 [UNK]。</p>
+<div class="tbl"><table>
+  <thead><tr><th>模型</th><th class="num">All</th><th class="num">No UNK</th></tr></thead>
+  <tbody>
+    <tr><td>RNNencdec-30</td><td class="num">13.93</td><td class="num">24.19</td></tr>
+    <tr><td>RNNsearch-30</td><td class="num">21.50</td><td class="num">31.44</td></tr>
+    <tr><td>RNNencdec-50</td><td class="num">17.82</td><td class="num">26.71</td></tr>
+    <tr><td>RNNsearch-50</td><td class="num">26.75</td><td class="num">34.16</td></tr>
+    <tr><td>RNNsearch-50⋆（训练更久）</td><td class="num">28.45</td><td class="num">36.15</td></tr>
+    <tr><td>Moses</td><td class="num">33.30</td><td class="num">35.63</td></tr>
+  </tbody>
+</table></div>
+<ol>
+  <li><b>和 Moses 比，要看列。</b>All 列：RNNsearch-50 比 Moses 低 6.55 分，⋆ 版本低 4.85 分。No UNK 列：RNNsearch-50 低 1.47 分，⋆ 版本 36.15 超过 35.63。所以原文的措辞是「相当」（as high as），不是「超过」。</li>
+  <li><b>All 和 No UNK 的落差，就是生词的代价。</b>RNNsearch-50 掉 7.4 分，Moses 只掉 2.3 分。神经模型只有 3 万词的词表，遇到罕见词只能输出 [UNK]。这是本文最明显的短板。</li>
+  <li><b>Moses 用了额外 418M 词的单语语料</b>，RNNsearch 只用了平行语料，所以「相当」并不容易（原文 5.1 节）。</li>
+  <li><b>⋆ 版本训练更久</b>：252 小时、5.0 个 epoch，比另几个多近一倍。它的领先来自训练更久，不该和同时长的 RNNencdec 直接比。</li>
+  <li><b>和 002 的数字不可比。</b>002 是 34.81（5 个 4 层 LSTM 集成），003 的 28.45 是单个一层 GRU 模型；003 里的 RNNencdec 也不是 002 的模型。两篇是两条路线：002 靠更深加集成把固定向量推到极致，003 靠换结构去掉瓶颈。真正的结构性证据在 003 内部：同样数据、同样流程下的 RNNencdec 对 RNNsearch。</li>
+  <li><b>没有消融实验。</b>双向编码器和注意力各自贡献多少，没测。Table 1 的差距是「注意力 + 双向 + 编码器参数翻倍」的合力。只做了英法一个语言对。</li>
+</ol>
+<p><b>Table 2：训练统计。</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>模型</th><th class="num">更新次数 (×10<sup>5</sup>)</th><th class="num">epoch</th><th class="num">小时</th><th class="num">验证 NLL</th></tr></thead>
+  <tbody>
+    <tr><td>RNNenc-30</td><td class="num">8.46</td><td class="num">6.4</td><td class="num">109</td><td class="num">53.0</td></tr>
+    <tr><td>RNNenc-50</td><td class="num">6.00</td><td class="num">4.5</td><td class="num">108</td><td class="num">43.6</td></tr>
+    <tr><td>RNNsearch-30</td><td class="num">4.71</td><td class="num">3.6</td><td class="num">113</td><td class="num">47.2</td></tr>
+    <tr><td>RNNsearch-50</td><td class="num">2.88</td><td class="num">2.2</td><td class="num">111</td><td class="num">38.1</td></tr>
+    <tr><td>RNNsearch-50⋆</td><td class="num">6.67</td><td class="num">5.0</td><td class="num">252</td><td class="num">35.2</td></tr>
+  </tbody>
+</table></div>
+<ul>
+  <li>同样约 110 小时，RNNsearch-50 只做了 2.88×10<sup>5</sup> 次更新，RNNenc-50 做了 6.00×10<sup>5</sup> 次：每次更新更贵（对齐要算 Tx×Ty，编码器是双向）。但验证 NLL 更低（38.1 对 43.6），训练得更少，效果仍更好。</li>
+  <li>NLL 是每句的平均负对数概率，30 和 50 的模型句长分布不同，<b>不能横向比较</b>。</li>
+  <li>正文说训练「约 5 天」，Table 2 的 108 到 113 小时约合 4.5 天，⋆ 版本 252 小时约 10.5 天。两处口径略有出入，以 Table 2 为准。</li>
+  <li>附录 C 的长句例子是作者挑选的，只能作旁证，不能替代 Figure 2 的整体统计。</li>
+</ul>
+</details>
+
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>相关工作</h2>
+<ul>
+  <li><b>神经网络在翻译里长期当配角。</b>原文 6.2 节说，从 Bengio 等 2003（001）开始，神经网络在翻译里大多只是给传统系统提供一个特征，或者给候选译文重新排序。本文自称是对此前工作的彻底背离：不当零件，整个系统自己翻译。</li>
+  <li><b>同一个团队的前几步。</b>Cho 等 2014a 提出 RNN 编码器-解码器和 GRU，2014b 观察到长句变差，Pouget-Abadie 等 2014 尝试自动切段。本文是这条线上的第三个回应：不切，让模型自己找。</li>
+  <li><b>Graves 2013 的手写体合成</b>也用「预测权重」的方法，但位置只能单调向前。作者指出，这对翻译是严重限制，因为翻译常需要长距离重排（比如英译德）。软对齐没有这个限制。</li>
+  <li><b>同期的 002（Sutskever 等）</b>走的是另一条路：靠更深的网络把固定向量推到极致，没有改结构。</li>
+</ul>
+
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>结论</h2>
+<p class="punch">不必把所有信息塞进一个向量。<em>让解码器需要什么，就去取什么。</em></p>
+<p>整条因果链回头看一遍：固定向量装不下长句 → 所以不压成一个向量，每个词留一个 → 所以写每个词时要按需取 → 所以取的方式必须是「软」的、能用梯度训练 → 所以编码器的每个向量要左右都看过。</p>
+<p><b>作者承认的局限</b>：生词（UNK）仍是明显短板，留给未来的挑战；对每个译文词都要算所有原文词，计算量随句长平方增长。翻译的句子多半只有 15 到 40 词，影响不大，但可能限制它用在别的任务上（6.1 节）。</p>
+<p><b>我补充的局限</b>（原文没当局限讨论）：没有消融实验，分不清双向和注意力各自的功劳；只做了英法一个语言对；对齐热图是定性证据；对比的旧模型较弱，换成 002 那样的强基线，差距会小多少，本文给不出。</p>
+
+
+<!-- ================= after ================= -->
+<h2 id="after">读完之后（原文之外）</h2>
+
+<h3>当时的技术背景（2014）</h3>
+<ul>
+  <li>神经翻译是新东西：Kalchbrenner 和 Blunsom 2013、Sutskever 等 2014（002）、Cho 等 2014 刚刚提出。</li>
+  <li>3 万词的词表是当时的普遍做法，生词问题还没有通行的解法，子词方法要到后来才出现。</li>
+  <li>作者和 001 的 Bengio 同属蒙特利尔一个组。</li>
+</ul>
+
+<h3>后来发展到什么程度</h3>
+<p>下面是后世评价，不是原文内容。</p>
+<ul>
+  <li><b>成为神经翻译的标配。</b>带注意力的编码器-解码器很快取代了不带注意力的版本，也被用到图像描述、语音识别等任务，说明「按需取信息」不限于翻译。</li>
+  <li><b>骨架还活在今天的大模型里。</b>「用当前状态去给所有候选打分，softmax 成权重，对内容加权求和」，这仍是注意力层的基本形式。本文这个形式，后来被叫作加性注意力，004 会换成更简单的点积写法。</li>
+  <li><b>留下的两个问题都有后续。</b>生词 → 子词切分（007）；每个译文词都要算所有原文词、RNN 又必须串行 → 004 Transformer 把这种「按需取信息」做成整个模型的基础，同时去掉了 RNN。</li>
+  <li><b>相对准确的定位：</b>本文不是注意力的唯一起源，类似思想（如 Graves 2013）更早出现。本文的贡献是在机器翻译里，把可微的软对齐和端到端训练结合起来，动机清楚、实验扎实、热图直观，所以影响最大。</li>
+</ul>
+
+<h3>前后篇衔接</h3>
+<p><b>继承自</b>：<a href="../002-seq2seq/index.html">002 Seq2Seq</a>（编码器-解码器、逐词概率、束搜索、「瓶颈在固定向量」的诊断）；<a href="../001-nplm/index.html">001 NPLM</a>（神经网络参数化条件概率、softmax、词向量）；Cho 等的 GRU 和长句观察。</p>
+<p><b>对 002 的推进</b>：c 变成 cᵢ，每个译文词一份；一个向量变一排向量；对齐可微、可训练；长句不再垮，还得到了能读的对齐热图。002 靠倒序缓解的长距离问题，在这里被结构性地绕开：注意力直接连接任意两个位置。</p>
+<p><b>留下的问题</b>：</p>
+<ul>
+  <li>仍用 RNN，必须串行；对齐还有 Tx × Ty 的开销 → 第 004 篇 Transformer，完全用注意力，还让注意力作用在序列内部</li>
+  <li>词表有限、生词 → 子词切分（第 007 篇）</li>
+  <li>优化器用 Adadelta → 后来的标配 Adam（第 005 篇）</li>
+</ul>
+
+
+<footer>
+  AI 论文解读 · 003 · 原文：Bahdanau, Cho, Bengio. <i>Neural Machine Translation by Jointly Learning to Align and Translate.</i> ICLR 2015（arXiv 1409.0473）。<br>
+  图中标「示意」的数字是为了讲清机制编的例子；实验数字出自原文 Table 1、Table 2；图 7 的曲线是对着原文 Figure 2 估读的趋势。原文 Figure 1、2、3 的图源为原文。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>

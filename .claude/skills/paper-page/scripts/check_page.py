@@ -67,7 +67,9 @@ def main():
     url = "file://" + page
     with sync_playwright() as p:
         b = p.chromium.launch()
-        pg = b.new_page(viewport={"width": 900, "height": 1000})
+        ctx = b.new_context(viewport={"width": 900, "height": 1000})
+        ctx.route("**/*", lambda r: r.abort() if r.request.url.startswith('http') else r.continue_())  # 外网字体会卡住加载，直接拦掉
+        pg = ctx.new_page()
         pg.goto(url)
         pg.wait_for_timeout(1500)
         for i, f in enumerate(pg.query_selector_all("figure.fig")):
@@ -76,7 +78,9 @@ def main():
         for o in over:
             ok = False
             print(f"FAIL  文字超出 viewBox：{o}")
-        m = b.new_page(viewport={"width": 390, "height": 800})
+        ctx2 = b.new_context(viewport={"width": 390, "height": 800})
+        ctx2.route("**/*", lambda r: r.abort() if r.request.url.startswith('http') else r.continue_())
+        m = ctx2.new_page()
         m.goto(url)
         m.wait_for_timeout(1000)
         sw = m.evaluate("document.documentElement.scrollWidth")
