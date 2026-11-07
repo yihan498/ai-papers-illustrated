@@ -1,15 +1,26 @@
-// 论文页导航：左上角返回主页按钮 + 章节导航。章节导航从正文的 h2（大节）和 h3（小节）自动生成，不需要手写目录。
+// 论文页导航：顶部返回条 + 章节导航。章节导航从正文的 h2（大节）和 h3（小节）自动生成，不需要手写目录。
 // 标题的写法约定：<h2><span class="no">1</span>标题</h2>、<h3><span class="no">1.3</span>标题</h3>。
 // 没有 id 的标题按编号补一个稳定的 id（1.3 → s1-3），这样链接可以分享到具体小节。
 (function () {
-  // 左上角固定的「返回主页」按钮：滚到哪里都在。地址沿用页眉里的返回链接，没有就用 ../../index.html
-  var home = document.querySelector('header .eyebrow a');
-  var back = document.createElement('a');
-  back.className = 'pback';
-  back.href = home ? home.getAttribute('href') : '../../index.html';
-  back.textContent = '← 主页';
-  back.setAttribute('aria-label', '返回 AI 论文解读主页');
-  document.body.appendChild(back);
+  // 顶部细条（design-library 的 pageheader-06 粘性压缩页头）：页眉滚出视野后从顶部滑入，
+  // 左边「‹ AI 论文解读」回主页，后面跟着本篇编号和标题。页眉还在视野里时不显示，那里已有返回链接。
+  var header = document.querySelector('header');
+  var home = header && header.querySelector('.eyebrow a');
+  var h1 = header && header.querySelector('h1');
+  var eb = header && header.querySelector('.eyebrow');
+  var num = eb ? (eb.textContent.split('·').pop() || '').trim() : '';
+  var bar = document.createElement('div');
+  bar.className = 'pbar';
+  bar.innerHTML = '<a class="pbar-home" href="#"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>AI 论文解读</a>' +
+    '<span class="pbar-sep" aria-hidden="true">/</span><span class="pbar-t"></span>';
+  bar.querySelector('a').href = home ? home.getAttribute('href') : '../../index.html';
+  bar.querySelector('.pbar-t').textContent = (num ? num + ' · ' : '') + (h1 ? h1.textContent.trim() : document.title);
+  document.body.appendChild(bar);
+  if (header && 'IntersectionObserver' in window) {
+    new IntersectionObserver(function (es) { bar.classList.toggle('show', !es[0].isIntersecting); }).observe(header);
+  } else {
+    bar.classList.add('show');
+  }
 
   var main = document.querySelector('main');
   if (!main) return;
