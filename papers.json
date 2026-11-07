@@ -12,7 +12,7 @@
   },
   "papers": [
     {"id": "001", "slug": "001-nplm", "short": "NPLM", "title": "A Neural Probabilistic Language Model", "year": 2003, "authors": "Bengio 等", "oneliner": "给每个词一个坐标，再用平滑的函数猜下一个词。", "status": "published", "date": "2026-11-06"},
-    {"id": "002", "slug": "002-seq2seq", "short": "Seq2Seq", "title": "Sequence to Sequence Learning with Neural Networks", "year": 2014, "authors": "Sutskever 等", "oneliner": "", "status": "planned"},
+    {"id": "002", "slug": "002-seq2seq", "short": "Seq2Seq", "title": "Sequence to Sequence Learning with Neural Networks", "year": 2014, "authors": "Sutskever 等", "oneliner": "先把整句读成一个向量，再从这个向量写出译文。", "status": "published", "date": "2026-11-07"},
     {"id": "003", "slug": "003-bahdanau-attention", "short": "Bahdanau Attention", "title": "Neural Machine Translation by Jointly Learning to Align and Translate", "year": 2014, "authors": "Bahdanau 等", "oneliner": "", "status": "planned"},
     {"id": "004", "slug": "004-transformer", "short": "Transformer", "title": "Attention Is All You Need", "year": 2017, "authors": "Vaswani 等", "oneliner": "", "status": "planned"},
     {"id": "005", "slug": "005-adam", "short": "Adam", "title": "Adam: A Method for Stochastic Optimization", "year": 2014, "authors": "Kingma, Ba", "oneliner": "", "status": "planned"},

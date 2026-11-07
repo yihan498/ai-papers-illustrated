@@ -1,0 +1,10 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="编码器-解码器示意：四个原文词汇聚到一个向量，再从这个向量展开成四个译文词">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <path class="ln" d="M30 64 L120 96 M52 64 L120 96 M74 64 L120 96 M96 64 L120 96"/>
+  <path class="newS" d="M120 96 L146 128 M120 96 L170 128 M120 96 L194 128 M120 96 L218 128" style="stroke-width:1.4"/>
+  <circle class="mutF" cx="30" cy="60" r="5"/><circle class="mutF" cx="52" cy="60" r="5"/><circle class="mutF" cx="74" cy="60" r="5"/><circle class="mutF" cx="96" cy="60" r="5"/>
+  <circle class="new" cx="120" cy="96" r="11"/><text x="120" y="101" class="sm on" text-anchor="middle">v</text>
+  <circle class="newT" cx="146" cy="132" r="5"/><circle class="newT" cx="170" cy="132" r="5"/><circle class="newT" cx="194" cy="132" r="5"/><circle class="newT" cx="218" cy="132" r="5"/>
+  <text x="24" y="44" class="sm m">读</text><text x="212" y="160" class="sm m">写</text>
+  <text x="222" y="30" class="mo sm m" text-anchor="end">一句 → 一个向量 → 一句</text>
+</svg>
