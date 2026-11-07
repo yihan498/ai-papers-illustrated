@@ -10,7 +10,7 @@ description: 把一篇读完的论文解读（learning/reading/ai-foundational-p
 
 网站是 self-media 的内容底座（见仓库 `NOTES.local.md`）：它积累注意力和信任，小红书从这里取材、往这里导流。所以页面的标准是「宗旨」：别人用同样的 AI 工具一句话做不出来。这一页的辨识度来自**手写 SVG + 只用蓝赭两色的固定图形词汇**，不能用图库图、AI 插画、通用图标。
 
-已做过：001 NPLM（2026-11-06）、002 Seq2Seq（2026-11-07）。以它们为样板。
+已做过：001 NPLM（2026-11-06）、002 Seq2Seq（2026-11-07）、003 Bahdanau 注意力（2026-11-07）。以它们为样板，003 是目前最完整的一版（有原图和公式）。
 
 ## 前提
 - 用户明确说这篇**读完了**（README 进度表里「读原文」✅）。只有解读、她还没读完的不做。
@@ -33,9 +33,14 @@ description: 把一篇读完的论文解读（learning/reading/ai-foundational-p
 |---|---|
 | 第 1 节「技术基础」里的概念 | 拆开，放到原文**第一次用到它**的位置，做成 `<aside class="anno">` 📎 注解 |
 | 第 2、3 节问题与方法 | 按原文顺序进对应的 h2/h3 |
-| 第 4 节实验 | 原文实验节；「怎么读这些数字」保留成有序列表 |
+| 第 4 节实验 | 原文实验节只留**结论**（每条一个 h3 + 一张图），数据集、训练设置、超参数压进一个折叠的 `<details class="ext">` |
 | 推算、后世评价、历史 | `<aside class="ext">` 🧭 延伸，或「读完之后」 |
 | 第 5–7 节 | 「读完之后」 |
+
+**内容分配：读者是外行，内在逻辑最重要。**用户读 003 时反馈：实验设计和数学公式最容易把人搞混，搞清「为什么这样做」比细节重要。所以：
+- 每个机制按「白话逻辑 → 小数字算例图 → 公式 → 符号表」的顺序写。公式**要在正文里给出来**（用户明确要求过，不能为了好读删掉），用 `<div class="formula">`，原文出处写成 `<span class="fsrc">（原文 Eq. N，…）</span>`，手机上会自动换行；公式后面紧跟一张表，逐个解释符号。
+- 读懂主线不需要的细节（GRU 门控、maxout 等内部结构）放 `<aside class="ext">`，标明「跳过不影响理解」。
+- 实验：正文只留几条结论，细节全部折叠。
 
 写法要求：
 - 讲因果不讲结论，和解读一致；作者的假说写明是假说。
@@ -44,10 +49,12 @@ description: 把一篇读完的论文解读（learning/reading/ai-foundational-p
 - 解读者补充的观点写成「我补充的」，这是她的站，用她的第一人称。
 - 中文行文：短句，不用破折号连缀，不堆形容词。
 
-### 4 · 画图（每篇 10–14 张）
+### 4 · 画图（每篇 10–14 张，含原图）
 - 每张图用 `<figure class="fig">` + `<span class="tag">图 N · 标题</span>` + `<div class="sv"><svg class="d" viewBox="0 0 680 H" role="img" aria-label="完整描述">` + `<figcaption>`。宽固定 680，高按内容定。
 - **只用已有的 class 上色**（填充/描边 `.new .newT .newS .old .oldT .oldS .soft .softS .card .ln .dash .ring .mutS .mutF .ink .inkF`，文字 `.tn .to .on .m .mo`，字号 `.sm .lg .xl`，箭头 `marker-end="url(#ah)"`/`#ahN`/`#ahO`），不写死颜色，暗色模式才会自动跟着变。蓝 = 本文的新方法，赭 = 要被替代的旧方法，其余用灰。
 - 选图标准：解读里每个「机制」至少一张（结构、公式的小数字例子、对比），实验的核心表画成柱状图并标出基线。
+- **原文的典型图表放原图**（结构图、核心曲线、可视化结果，每篇 2–3 张），比手画更直观，也让读者能对照原文。做法：用 fitz 从 PDF 截区域 `page.get_pixmap(dpi=200, clip=fitz.Rect(...))`，转灰度存成 `papers/<slug>/orig-figN.png`；截完一定打开看，第一次截常会切掉坐标标签或带进图注文字。页面里写 `<figure class="fig"><span class="tag">原文 Figure N · 标题</span><img class="orig" src="orig-figN.png" alt="完整描述"><figcaption>这张图在说什么：<b>一句结论</b>。怎么看：……图源：作者 年份 原文。</figcaption></figure>`，CSS 照抄 003 的 `.fig img.orig`（白底加内边距，暗色模式下也清楚）。原文 PDF 只读不改。
+- 手画图和原图可以配对：手画的简化版讲原理，原图就放在旁边。照着原图估着画的曲线要标「示意，形状按原文 Figure N 估画」。
 - 首页缩略图：从页面里挑最代表这篇的一张，简化成 `papers/<slug>/thumb.svg`（viewBox 240×180，同样只用 class），格式照 001、002。
 
 **已经踩过的坑**（画的时候就避开）：
@@ -62,7 +69,7 @@ description: 把一篇读完的论文解读（learning/reading/ai-foundational-p
 python3 scripts/build.py                     # 在仓库根目录，看到 OK
 python3 -P .claude/skills/paper-page/scripts/check_page.py papers/<slug>/index.html <scratchpad>/shots
 ```
-脚本过了之后，**用 Read 逐张看 `sheet*.png`**，查重叠、裁切、方块字、颜色用错。有问题改完再跑一遍，直到截图没问题。
+脚本会拦掉外网请求（Google Fonts 会让截图一直卡住），截图里用的是本地回退字体，属于正常情况。脚本过了之后，**用 Read 逐张看 `sheet*.png`**，查重叠、裁切、方块字、颜色用错。还要另外截两张：390px 宽的手机版（看公式、长行有没有被截断）和暗色模式（`color_scheme='dark'`，看原图和配色）。截图前先把 `scrollBehavior` 设成 `auto`，否则会截到滚动到一半的画面。有问题改完再跑一遍，直到截图没问题。
 
 ### 6 · 交给用户审核
 - 先在 `papers.json` 里把这篇改成 `"status": "published"`，填 `oneliner`（一句白话，和 001「给每个词一个坐标，再用平滑的函数猜下一个词。」同一种语气）和 `date`，再跑 build 生成首页。**这时候不 commit、不 push。**
@@ -71,7 +78,7 @@ python3 -P .claude/skills/paper-page/scripts/check_page.py papers/<slug>/index.h
 
 ### 7 · 发布（她说「可以发」之后）
 ```
-git add papers/<slug> papers.json index.html
+git add papers/<slug> papers.json index.html        # 原图 png 在 papers/<slug>/ 里，一起带上
 git commit -m "上新 NNN 简称：图解页、首页卡片缩略图"     # 末尾带 Co-Authored-By
 git push
 ```
