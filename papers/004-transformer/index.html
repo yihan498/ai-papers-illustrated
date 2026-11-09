@@ -1,0 +1,1011 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Transformer 图解</title>
+<meta name="description" content="Vaswani 等 2017《Attention Is All You Need》图解：把 RNN 整个拿掉，只用注意力，让每个词直接看所有词。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文（Transformer：只用注意力），赭 = 要被替代的旧做法（RNN 的逐步串行）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;min-width:520px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th:first-child,td:first-child{white-space:nowrap}
+th:first-child,td:first-child{padding-right:20px}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+
+<main class="wrap">
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　004</nav>
+  <h1 style="margin-top:14px">不要 RNN，只用注意力</h1>
+  <p class="lede">Vaswani 等 8 位作者 2017 年的论文《Attention Is All You Need》做了一件事：<b>把 RNN 整个拿掉，只用注意力。让句子里每个词直接「看」句子里所有的词，一层之内所有位置同时算完。</b>结果是翻译更好、训练快得多。这个架构后来成了 GPT、BERT 以及今天几乎所有大模型的底座。</p>
+  <div class="meta">
+    <span>Ashish Vaswani 等 · NIPS 2017（arXiv 1706.03762，本页依据 2023 年 v7 版）</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的 Transformer</span>
+    <span class="key"><i class="sw o"></i>赭色：要被替代的旧做法（RNN 逐步串行）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · Transformer 的整体样子（简化自原文 Figure 1）</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 346" role="img" aria-label="左边是编码器，重复 6 层，每层两块：多头自注意力和前馈网络，底部是词向量加位置编码，输入源句。右边是解码器，也重复 6 层，每层三块：带掩码的多头自注意力、编码器到解码器的注意力、前馈网络，底部输入已经写出的译文，顶部接线性层和 softmax，输出下一个词的概率。编码器顶部的输出作为键和值，送进解码器中间那块注意力。图中没有任何 RNN。">
+      <text class="sm m" x="510" y="14" text-anchor="middle">下一个词的概率</text>
+      <line class="mutS" x1="510" y1="48" x2="510" y2="20" marker-end="url(#ah)"/>
+      <rect class="softS" x="440" y="50" width="140" height="26" rx="6"/><text class="sm" x="510" y="68" text-anchor="middle">线性层 + softmax</text>
+      <line class="mutS" x1="510" y1="92" x2="510" y2="78" marker-end="url(#ah)"/>
+
+      <rect class="ln dash" x="386" y="92" width="248" height="168" rx="12"/>
+      <text class="b sm" x="396" y="110">解码器 × 6 层</text>
+      <rect class="softS" x="406" y="118" width="208" height="30" rx="7"/><text class="sm" x="510" y="138" text-anchor="middle">前馈网络</text>
+      <line class="mutS" x1="510" y1="165" x2="510" y2="150" marker-end="url(#ah)"/>
+      <rect class="newT" x="406" y="166" width="208" height="38" rx="7"/><text class="b sm tn" x="510" y="183" text-anchor="middle">编码器-解码器注意力</text><text class="sm m" x="510" y="198" text-anchor="middle">Q 来自解码器</text>
+      <line class="mutS" x1="510" y1="219" x2="510" y2="206" marker-end="url(#ah)"/>
+      <rect class="newT" x="406" y="220" width="208" height="30" rx="7"/><text class="b sm tn" x="510" y="240" text-anchor="middle">带掩码的自注意力</text>
+
+      <rect class="ln dash" x="46" y="124" width="248" height="136" rx="12"/>
+      <text class="b sm" x="56" y="142">编码器 × 6 层</text>
+      <rect class="softS" x="66" y="150" width="208" height="30" rx="7"/><text class="sm" x="170" y="170" text-anchor="middle">前馈网络</text>
+      <line class="mutS" x1="170" y1="197" x2="170" y2="182" marker-end="url(#ah)"/>
+      <rect class="newT" x="66" y="198" width="208" height="52" rx="7"/><text class="b sm tn" x="170" y="220" text-anchor="middle">多头自注意力</text><text class="sm m" x="170" y="237" text-anchor="middle">Q、K、V 都来自源句</text>
+
+      <path class="newS" d="M294 164 H 342 V 185 H 404" marker-end="url(#ahN)"/>
+      <text class="sm tn b" x="350" y="158">K、V</text>
+
+      <line class="mutS" x1="170" y1="284" x2="170" y2="262" marker-end="url(#ah)"/>
+      <line class="mutS" x1="510" y1="284" x2="510" y2="262" marker-end="url(#ah)"/>
+      <rect class="softS" x="66" y="286" width="208" height="26" rx="6"/><text class="sm" x="170" y="304" text-anchor="middle">词向量 + 位置编码</text>
+      <rect class="softS" x="406" y="286" width="208" height="26" rx="6"/><text class="sm" x="510" y="304" text-anchor="middle">词向量 + 位置编码</text>
+      <text class="sm m" x="170" y="334" text-anchor="middle">源句</text>
+      <text class="sm m" x="510" y="334" text-anchor="middle">已写出的译文（右移一位）</text>
+      <text class="sm to b" x="340" y="262" text-anchor="middle">没有 RNN</text>
+    </svg>
+    </div>
+    <figcaption>每个方块外面还包着一层「残差连接 + 层归一化」，图里省略了。蓝色是注意力，一共用在三个地方。003 里的 RNN，在这里一个也没有。</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>引言：RNN 卡在哪</a>
+    <a href="#s3"><span>3</span>模型：用注意力搭起来</a>
+    <a href="#s4"><span>4</span>为什么是自注意力</a>
+    <a href="#s5"><span>5</span>训练</a>
+    <a href="#s6"><span>6</span>实验：结论</a>
+    <a href="#s7"><span>7</span>结论</a>
+    <a href="#after"><span>→</span>读完之后（原文之外）</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>主线是因果链</b>：RNN 为什么慢，删掉它会丢什么，每一个新零件是在补哪个洞。每个零件先讲「为什么必须有它」，再讲怎么做。</li>
+      <li><b>公式</b>放在直觉之后：先白话和小数字，再给精确写法，紧跟一张「每个符号是什么」的对照表。</li>
+      <li><b>📎 注解</b>是就地解释的概念（点积、残差、层归一化、掩码等），<b>🧭 延伸</b>是可以跳过的补充，实验和训练细节折叠在里面。</li>
+      <li>001 <a href="../001-nplm/index.html">NPLM</a>、002 <a href="../002-seq2seq/index.html">Seq2Seq</a>、003 <a href="../003-bahdanau-attention/index.html">Bahdanau 注意力</a> 讲过的概念（词向量、softmax、RNN、梯度消失、注意力、BLEU、束搜索）这里只提一句。</li>
+    </ul>
+  </div>
+</header>
+
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>引言：RNN 卡在哪</h2>
+
+<h3>003 之后，还剩什么问题</h3>
+<p>003 让解码器可以回头看原文，解决了「整句压成一个向量」的瓶颈。但它留下两个限制：</p>
+<ul>
+  <li><b>RNN 必须一步一步算。</b>第 t 步要等第 t−1 步算完。GPU 擅长「同时做一万件一样的事」，RNN 却要求「做完上一件才能做下一件」。</li>
+  <li><b>注意力只用在一个地方：</b>解码器看编码器。源句内部词和词的关系，还是靠 RNN 一步步传过去。</li>
+</ul>
+<p>本文的想法很直接：注意力既然已经能让「任意两个位置直接连上」，那<b>句子内部词和词的关系，也用注意力来建</b>，RNN 就可以整个删掉。标题说的就是这件事。</p>
+<figure class="fig">
+  <span class="tag">图 1 · RNN 要排队，自注意力一次算完（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="上面：RNN 处理六个词，五个赭色箭头从左到右依次标 1 到 5，每一步要等上一步算完。下面：自注意力处理六个词，所有词同时连进一个蓝色的矩阵乘法框，一次算完所有词对的关系。">
+    <text class="b to" x="20" y="20">RNN：第 t 步要等第 t−1 步</text>
+    <g>
+      <rect class="softS" x="30" y="40" width="64" height="30" rx="7"/><rect class="softS" x="136" y="40" width="64" height="30" rx="7"/><rect class="softS" x="242" y="40" width="64" height="30" rx="7"/><rect class="softS" x="348" y="40" width="64" height="30" rx="7"/><rect class="softS" x="454" y="40" width="64" height="30" rx="7"/><rect class="softS" x="560" y="40" width="64" height="30" rx="7"/>
+      <g class="sm" text-anchor="middle"><text x="62" y="60">词 1</text><text x="168" y="60">词 2</text><text x="274" y="60">词 3</text><text x="380" y="60">词 4</text><text x="486" y="60">词 5</text><text x="592" y="60">词 6</text></g>
+      <g class="oldS" style="stroke-width:2"><line x1="96" y1="55" x2="134" y2="55" marker-end="url(#ahO)"/><line x1="202" y1="55" x2="240" y2="55" marker-end="url(#ahO)"/><line x1="308" y1="55" x2="346" y2="55" marker-end="url(#ahO)"/><line x1="414" y1="55" x2="452" y2="55" marker-end="url(#ahO)"/><line x1="520" y1="55" x2="558" y2="55" marker-end="url(#ahO)"/></g>
+      <g class="sm to b" text-anchor="middle"><text x="115" y="34">第 1 步</text><text x="221" y="34">第 2 步</text><text x="327" y="34">第 3 步</text><text x="433" y="34">第 4 步</text><text x="539" y="34">第 5 步</text></g>
+    </g>
+    <text class="sm m" x="20" y="96">句子有多长，就要排多少步。几千个计算核心只能等着。</text>
+    <line class="ln" x1="20" y1="116" x2="660" y2="116"/>
+    <text class="b tn" x="20" y="142">自注意力：所有词一起算</text>
+    <g>
+      <rect class="softS" x="30" y="156" width="64" height="30" rx="7"/><rect class="softS" x="136" y="156" width="64" height="30" rx="7"/><rect class="softS" x="242" y="156" width="64" height="30" rx="7"/><rect class="softS" x="348" y="156" width="64" height="30" rx="7"/><rect class="softS" x="454" y="156" width="64" height="30" rx="7"/><rect class="softS" x="560" y="156" width="64" height="30" rx="7"/>
+      <g class="sm" text-anchor="middle"><text x="62" y="176">词 1</text><text x="168" y="176">词 2</text><text x="274" y="176">词 3</text><text x="380" y="176">词 4</text><text x="486" y="176">词 5</text><text x="592" y="176">词 6</text></g>
+      <g class="newS" style="stroke-width:1.5"><line x1="62" y1="188" x2="62" y2="208" marker-end="url(#ahN)"/><line x1="168" y1="188" x2="168" y2="208" marker-end="url(#ahN)"/><line x1="274" y1="188" x2="274" y2="208" marker-end="url(#ahN)"/><line x1="380" y1="188" x2="380" y2="208" marker-end="url(#ahN)"/><line x1="486" y1="188" x2="486" y2="208" marker-end="url(#ahN)"/><line x1="592" y1="188" x2="592" y2="208" marker-end="url(#ahN)"/></g>
+      <rect class="newT" x="30" y="210" width="594" height="30" rx="8"/><text class="b sm tn" x="327" y="230" text-anchor="middle">一次矩阵乘法：所有词对之间的关系同时算出</text>
+    </g>
+    <text class="sm m" x="20" y="258">串行的步数不随句长增加。</text>
+  </svg>
+  </div>
+  <figcaption>原文第 1 节的原话大意：RNN 的串行性，使得<b>一个训练样本内部无法并行</b>。句子越长越要命，因为显存限制了一次能并行处理多少个样本。</figcaption>
+</figure>
+
+<h3>已有的补救，为什么都不彻底</h3>
+<ul>
+  <li><b>堆更多 GPU、加大批次。</b>只增加「同时处理几句话」，一句话内部仍是串行；长句占显存多，批次也加不上去。原文提到的 LSTM 分解技巧、混合专家（MoE）提高了效率，但「串行计算这个根本约束仍然存在」。</li>
+  <li><b>改用卷积</b>（ConvS2S、ByteNet 等）。所有位置能同时算，并行问题解决了。但卷积核每次只看附近几个词，两个远处的词要穿过好几层才能「接上」：ConvS2S 的层数随距离线性增长，ByteNet 用扩张卷积，随距离对数增长。路径越长，远距离依赖越难学。</li>
+</ul>
+<figure class="fig">
+  <span class="tag">图 2 · 原文 Figure 3 的例句：making 和 more difficult 要多少步才能连上</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 300" role="img" aria-label="句子片段 making the registration or voting process more difficult，共 8 个词。第一行 RNN：赭色箭头逐词传递，到 more 要走 6 步，到 difficult 要走 7 步。第二行卷积，核宽 3：每一层视野只多扩一个词，要叠 7 层才含 difficult 的信息。第三行自注意力：蓝色弧线从 making 直接连到 difficult，一步。">
+    <g class="sm" text-anchor="middle">
+      <rect class="newT" x="32" y="34" width="56" height="26" rx="6"/><text x="60" y="52">making</text>
+      <rect class="softS" x="112" y="34" width="56" height="26" rx="6"/><text x="140" y="52">the</text>
+      <rect class="softS" x="192" y="34" width="56" height="26" rx="6"/><text x="220" y="52" style="font-size:10.5px">registration</text>
+      <rect class="softS" x="272" y="34" width="56" height="26" rx="6"/><text x="300" y="52">or</text>
+      <rect class="softS" x="352" y="34" width="56" height="26" rx="6"/><text x="380" y="52">voting</text>
+      <rect class="softS" x="432" y="34" width="56" height="26" rx="6"/><text x="460" y="52">process</text>
+      <rect class="newT" x="512" y="34" width="56" height="26" rx="6"/><text x="540" y="52">more</text>
+      <rect class="newT" x="592" y="34" width="56" height="26" rx="6"/><text x="620" y="52" style="font-size:11px">difficult</text>
+    </g>
+    <text class="b to" x="20" y="20">RNN：一个词一个词往后传</text>
+    <g class="oldS" style="stroke-width:1.8"><line x1="90" y1="47" x2="110" y2="47" marker-end="url(#ahO)"/><line x1="170" y1="47" x2="190" y2="47" marker-end="url(#ahO)"/><line x1="250" y1="47" x2="270" y2="47" marker-end="url(#ahO)"/><line x1="330" y1="47" x2="350" y2="47" marker-end="url(#ahO)"/><line x1="410" y1="47" x2="430" y2="47" marker-end="url(#ahO)"/><line x1="490" y1="47" x2="510" y2="47" marker-end="url(#ahO)"/><line x1="570" y1="47" x2="590" y2="47" marker-end="url(#ahO)"/></g>
+    <text class="sm to" x="20" y="84">到 more：6 步　到 difficult：7 步</text>
+
+    <line class="ln" x1="20" y1="100" x2="660" y2="100"/>
+    <text class="b to" x="20" y="120">卷积（核宽 3）：每叠一层，视野向每侧多 1 个词</text>
+    <g class="sm" text-anchor="middle">
+      <rect class="newT" x="32" y="134" width="56" height="26" rx="6"/><text x="60" y="152">making</text>
+      <rect class="softS" x="112" y="134" width="56" height="26" rx="6"/><text x="140" y="152">the</text>
+      <rect class="softS" x="192" y="134" width="56" height="26" rx="6"/><text x="220" y="152" style="font-size:10.5px">registration</text>
+      <rect class="softS" x="272" y="134" width="56" height="26" rx="6"/><text x="300" y="152">or</text>
+      <rect class="softS" x="352" y="134" width="56" height="26" rx="6"/><text x="380" y="152">voting</text>
+      <rect class="softS" x="432" y="134" width="56" height="26" rx="6"/><text x="460" y="152">process</text>
+      <rect class="softS" x="512" y="134" width="56" height="26" rx="6"/><text x="540" y="152">more</text>
+      <rect class="newT" x="592" y="134" width="56" height="26" rx="6"/><text x="620" y="152" style="font-size:11px">difficult</text>
+    </g>
+    <path class="oldS dash" d="M60 164 V176 H620 V166" marker-end="url(#ahO)" style="stroke-width:1.6"/>
+    <text class="sm to" x="20" y="192">making 位置要含有 difficult 的信息（位置差 7），需要叠 7 层</text>
+
+    <line class="ln" x1="20" y1="208" x2="660" y2="208"/>
+    <text class="b tn" x="20" y="228">自注意力：任意两个词一步直连</text>
+    <g class="sm" text-anchor="middle">
+      <rect class="newT" x="32" y="240" width="56" height="26" rx="6"/><text x="60" y="258">making</text>
+      <rect class="softS" x="112" y="240" width="56" height="26" rx="6"/><text x="140" y="258">the</text>
+      <rect class="softS" x="192" y="240" width="56" height="26" rx="6"/><text x="220" y="258" style="font-size:10.5px">registration</text>
+      <rect class="softS" x="272" y="240" width="56" height="26" rx="6"/><text x="300" y="258">or</text>
+      <rect class="softS" x="352" y="240" width="56" height="26" rx="6"/><text x="380" y="258">voting</text>
+      <rect class="softS" x="432" y="240" width="56" height="26" rx="6"/><text x="460" y="258">process</text>
+      <rect class="softS" x="512" y="240" width="56" height="26" rx="6"/><text x="540" y="258">more</text>
+      <rect class="newT" x="592" y="240" width="56" height="26" rx="6"/><text x="620" y="258" style="font-size:11px">difficult</text>
+    </g>
+    <path class="newS" d="M60 268 V280 H620 V270" marker-end="url(#ahN)"/>
+    <text class="sm tn b" x="340" y="296" text-anchor="middle">1 步</text>
+  </svg>
+  </div>
+  <figcaption>making 和 more 中间隔着 the、registration、or、voting、process 这 <b>5 个词</b>（位置差 6），到 difficult 的位置差是 7。「making ... more difficult」是一个整体，可是旧办法要让它们碰上，路很长。整句共 26 个 token。（步数为数位置差得出）</figcaption>
+</figure>
+
+<h3>最直接的解法：删掉 RNN，只留注意力。但会出三个问题</h3>
+<p>注意力本质上是对一组向量做加权求和。直接拿它顶替 RNN，会立刻遇到三个洞。本文后面的三个设计，就是逐个对着它们来的：</p>
+<div class="tbl"><table>
+  <thead><tr><th>删掉 RNN 之后的问题</th><th>为什么会出现</th><th>本文怎么补</th></tr></thead>
+  <tbody>
+    <tr><td><b>丢失词序</b></td><td>加权求和把输入顺序打乱，结果不变。「狗咬人」和「人咬狗」在模型眼里一样</td><td>位置编码（3.5）</td></tr>
+    <tr><td><b>「抹平」效应</b></td><td>一次加权平均只得到一个混合结果。一个词同时需要「语法主语」和「指代的先行词」两类信息，平均之后两者都变模糊。原文第 2 节说它「降低了有效分辨率」</td><td>多头注意力（3.2.2）</td></tr>
+    <tr><td><b>解码器偷看答案</b></td><td>去掉 RNN 后，训练时所有位置同时算，前面的位置能看到后面的正确答案</td><td>掩码（3.1、3.2.3）</td></tr>
+  </tbody>
+</table></div>
+<p>此外只有注意力、没有逐位置的非线性加工，表达力不够，也难以叠深。所以每层还配了前馈网络、残差连接和层归一化（3.1、3.3）。</p>
+<p>「自注意力」本身不是本文发明的。原文第 2 节列举了此前的阅读理解、摘要等工作，但它们都把自注意力和 RNN 一起用。本文的贡献是<b>第一个完全只靠自注意力</b>、不用 RNN 也不用卷积的序列转换模型。</p>
+<p>原文第 1 节预告的结果：英德翻译 28.4 BLEU，比此前所有模型（包括集成）高 2 BLEU 以上；英法 41.8 BLEU，单模型最佳；训练成本只是对手的几分之一到几十分之一。后面第 6 节逐条看。</p>
+
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>模型：用注意力搭起来</h2>
+
+<h3><span class="no">3.1</span>整体架构：骨架没变，零件换了</h3>
+<p>骨架仍是 002、003 的编码器-解码器。变的是里面的零件：从 RNN 换成了注意力。下面是原文的结构图。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 1 · 模型结构</span>
+  <img class="orig narrow" src="orig-fig1.png" alt="原文 Figure 1：左边是编码器，重复 N 次，每层是多头注意力和前馈网络，各自后面跟一个 Add and Norm；底部是 Input Embedding 加 Positional Encoding，输入是 Inputs。右边是解码器，重复 N 次，每层是带掩码的多头注意力、多头注意力、前馈网络，各自后面跟 Add and Norm；底部是 Output Embedding 加 Positional Encoding，输入是右移一位的 Outputs；顶部接 Linear 和 Softmax，输出概率。编码器顶部的输出连进解码器中间那块多头注意力。" loading="lazy" width="646" height="929">
+  <figcaption>这张图在说什么：<b>两摞结构相同的层，左边读原文，右边写译文</b>。怎么看：从下往上读。每个词先变成词向量，加上位置编码；然后进入 N = 6 层相同的结构；每层里每一块（注意力或前馈网络）旁边的弯箭头是残差连接，上面的「Add &amp; Norm」是相加后做层归一化。最该盯的是左边伸向右边的那根线：编码器最后一层的输出，送进解码器中间的注意力。图 0 是它的简化版。图源：Vaswani 等 2017 原文。</figcaption>
+</figure>
+<ul>
+  <li><b>编码器</b>：6 层完全相同的结构。每层两个子层：① 多头自注意力；② 逐位置前馈网络。</li>
+  <li><b>解码器</b>：也是 6 层，每层三个子层：① <b>带掩码的</b>多头自注意力（只看自己和左边）；② 多头<b>编码器-解码器注意力</b>（查询来自解码器，键和值来自编码器最后一层的输出，这就是 003 的「回头看原文」）；③ 逐位置前馈网络。</li>
+  <li><b>输出</b>：解码器最后一层的向量，经线性层和 softmax，得到下一个词的概率。</li>
+  <li>每个子层外面都包一层「残差 + 层归一化」（3.3 小节讲）。</li>
+</ul>
+<p>每一层做的事很固定：<b>交流（注意力）→ 消化（前馈网络）</b>。结构相同的层可以简单地叠很多层，层数就成了一个直接控制模型容量的旋钮（第 6 节的实验就在调它）。</p>
+
+<h3><span class="no">3.2</span>核心：自注意力与「缩放点积」</h3>
+<h4>白话：一句话里每个词互相提问</h4>
+<p>把一句话里的每个词想成会议上的一个人。003 的注意力像是「翻译员（解码器）向在座每个人（源词）提问，按相关程度听取意见」。<b>自注意力是在座的每个人互相提问</b>：每个人都向所有人（包括自己）问一遍「你和我有关吗？」，再按相关程度把别人的信息吸收进自己的笔记。一轮下来，每个人的笔记里都有「和自己相关的那些人」的信息。</p>
+<p>例：「The Law will never be perfect, but <b>its</b> application should be just」。its 这个词本身看不出指谁。自注意力之后，its 的向量里吸收了大量 Law 的信息，模型就「知道」its 指 the Law。这是原文附录 Figure 4 画的，本节末尾会看到原图。</p>
+
+<h4>查询、键、值：三个角色</h4>
+<p>原文 3.2 节的定义：注意力函数把<b>一个查询（query）和一组键-值对（key-value pairs）</b>映射成输出；输出是值的加权和，每个值的权重由查询和对应键的「匹配度」决定。用图书馆来类比：</p>
+<div class="tbl"><table>
+  <thead><tr><th>角色</th><th>图书馆比喻</th><th>在自注意力里</th></tr></thead>
+  <tbody>
+    <tr><td><b>查询 q</b></td><td>你在检索框里输入的需求</td><td>「我（当前词）想找什么样的信息」</td></tr>
+    <tr><td><b>键 k</b></td><td>每本书的标签、索引卡</td><td>「我（某个词）能提供什么，用来被匹配」</td></tr>
+    <tr><td><b>值 v</b></td><td>书的内容</td><td>「如果你选中我，我实际交给你的信息」</td></tr>
+  </tbody>
+</table></div>
+<p>为什么分成三个角色，而不直接用词向量？因为同一个词，「我要找什么」和「我能提供什么」往往不同：its 作为查询，要找的是「一个名词先行词」；作为被匹配的对象，它能提供的是「我是个所有格代词」。所以对同一个词向量 x，用三个不同的矩阵分别算：</p>
+<div class="formula">q = x · W<sup>Q</sup>　　k = x · W<sup>K</sup>　　v = x · W<sup>V</sup></div>
+<p>三个矩阵都是训练出来的。拿自己的 q 和每个词的 k 比对打分，分数经 softmax 变成权重，再按权重把每个词的 v 加起来，就是这个词的新向量。和 003 对应：003 里查询是解码器状态，键和值是同一个 hⱼ；这里键和值拆开了，而且<b>查询、键、值来自同一个句子</b>，所以叫「自」注意力。</p>
+
+<aside class="anno"><span class="alab">📎 注解 · 点积与矩阵乘法：为什么「能并行」这么重要</span>
+<p><b>点积</b>：两个等长向量对应位置相乘再相加。q = [1, 0, 1, 0]，k = [1, 1, 0, 0]，q·k = 1×1 + 0×1 + 1×0 + 0×0 = 1。两个向量方向越一致，点积越大，所以点积可以当作「匹配度」。</p>
+<p><b>矩阵乘法 = 一次做很多个点积</b>。把 n 个词的查询摞成矩阵 Q（n 行），n 个键摞成矩阵 K，那么 Q·Kᵀ 是一个 n×n 的矩阵，第 i 行第 j 列就是「第 i 个词的查询 · 第 j 个词的键」。一次矩阵乘法，算完所有词对的打分。</p>
+<p>GPU 里有几千个计算核心，矩阵乘法的每个元素可以由不同的核心同时算，而且这类运算有高度优化的库。RNN 的 hₜ 依赖 hₜ₋₁，核心只能排队。原文说点积注意力「在实践中快得多、也更省空间」，指的就是这个。</p>
+</aside>
+
+<h4>小数字算一遍</h4>
+<p>三个词，键的长度 d_k = 4。只看第 1 个词的查询 q = [1, 0, 1, 0]：</p>
+<figure class="fig">
+  <span class="tag">图 3 · 示意：打分 → 缩放 → softmax → 加权求和（数字为示意，d_k = 4）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 288" role="img" aria-label="查询 q 等于 [1,0,1,0]。三个词，键分别是 [1,0,1,0]、[0,1,0,1]、[1,1,0,0]，值分别是 [1,0]、[0,1]、[1,1]。第一步打分 q 点乘 k：2、0、1。第二步除以根号 4 等于 2：1、0、0.5。第三步 softmax 得到权重 0.506、0.186、0.307。第四步按权重加起来，得到新向量 [0.813, 0.493]，主要吸收了词 1 和词 3。">
+    <text class="mo b" x="20" y="22">q = [1, 0, 1, 0]</text><text class="sm m" x="170" y="22">第 1 个词的查询</text>
+    <g class="sm b"><text x="20" y="54">词</text><text x="64" y="54">键 k</text><text x="170" y="54">值 v</text><text x="250" y="54">① 打分 q·k</text><text x="360" y="54">② ÷√4</text><text class="tn" x="440" y="54">③ 权重（和为 1）</text></g>
+    <line class="ln" x1="20" y1="62" x2="660" y2="62"/>
+    <g class="mo sm">
+      <text class="sans b" x="20" y="92" style="font-family:var(--sans)">词 1</text><text x="64" y="92">[1,0,1,0]</text><text x="170" y="92">[1, 0]</text><text x="270" y="92">2</text><text x="372" y="92">1</text><text class="tn b" x="440" y="92">0.506</text>
+      <text class="b" x="20" y="136" style="font-family:var(--sans)">词 2</text><text x="64" y="136">[0,1,0,1]</text><text x="170" y="136">[0, 1]</text><text x="270" y="136">0</text><text x="372" y="136">0</text><text class="tn b" x="440" y="136">0.186</text>
+      <text class="b" x="20" y="180" style="font-family:var(--sans)">词 3</text><text x="64" y="180">[1,1,0,0]</text><text x="170" y="180">[1, 1]</text><text x="270" y="180">1</text><text x="372" y="180">0.5</text><text class="tn b" x="440" y="180">0.307</text>
+    </g>
+    <rect class="new" x="500" y="78" width="151.8" height="18" rx="3"/>
+    <rect class="new" x="500" y="122" width="55.8" height="18" rx="3"/>
+    <rect class="new" x="500" y="166" width="92.1" height="18" rx="3"/>
+    <path class="ln" d="M20 200 H660"/>
+    <rect class="newT" x="20" y="212" width="640" height="56" rx="10"/>
+    <text class="sm b tn" x="36" y="232">④ 新向量 = 按权重加起来</text>
+    <text class="mo sm" x="36" y="254">0.506×[1,0] + 0.186×[0,1] + 0.307×[1,1] = [0.813, 0.493]</text>
+    <text class="sm m" x="650" y="232" text-anchor="end">主要吸收了词 1 和词 3</text>
+  </svg>
+  </div>
+  <figcaption>条形长度是权重的大小。词 1 的键和 q 完全一样，所以权重最大；词 3 和 q 有一个维度重合，其次；词 2 一点也不重合，最小。另外两个词也各用自己的查询做同样的计算，三行同时算出，就是一次矩阵乘法。</figcaption>
+</figure>
+
+<h4>精确写法：缩放点积注意力</h4>
+<p>上面四步，原文写成一个式子：</p>
+<div class="formula">Attention( Q, K, V ) = softmax( Q·K<sup>T</sup> / √d<sub>k</sub> ) · V<span class="fsrc">（原文 Eq. 1）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th><th>本文尺寸（单个头）</th></tr></thead>
+  <tbody>
+    <tr><td><code>Q</code></td><td>n 个查询摞成的矩阵，每行是一个词的 q</td><td>n × 64</td></tr>
+    <tr><td><code>K</code>、<code>V</code></td><td>n 个键、n 个值摞成的矩阵</td><td>n × 64</td></tr>
+    <tr><td><code>Q·K<sup>T</sup></code></td><td>所有「查询 · 键」的点积，第 i 行第 j 列 = 词 i 对词 j 的匹配分（图 3 的 ①）</td><td>n × n</td></tr>
+    <tr><td><code>√d<sub>k</sub></code></td><td>缩放因子（图 3 的 ②）。d_k = 64 时等于 8</td><td>一个数</td></tr>
+    <tr><td><code>softmax</code></td><td>对每一行单独做，每行变成和为 1 的权重（图 3 的 ③）</td><td>n × n</td></tr>
+    <tr><td><code>· V</code></td><td>每个词按自己那行的权重，把所有词的 v 加权求和（图 3 的 ④）</td><td>n × 64</td></tr>
+  </tbody>
+</table></div>
+<p>和 003 的三个式子对照：权重和加权求和两步一样（softmax、按权重加），不同在<b>打分</b>。003 用一个小神经网络 vₐᵀ tanh(Wₐ sᵢ₋₁ + Uₐ hⱼ)，每对 (i, j) 都要过一遍；004 只做一次点积 q·k。两者理论复杂度差不多，但点积可以直接用高度优化的矩阵乘法，<b>快得多，也省内存</b>。
+
+</p>
+
+<h4>为什么要除以 √d_k</h4>
+<p>这是本文对点积注意力的关键修正。先分清什么是观察、什么是假说：</p>
+<ul>
+  <li><b>作者引用的现象</b>：d_k 小时，点积打分和加性打分效果差不多；d_k 大时，<b>不缩放的点积注意力不如加性注意力</b>。</li>
+  <li><b>作者的解释（原文用 We suspect，是假说）</b>：d_k 大时点积的数值会很大，把 softmax 推进梯度极小的区域。</li>
+  <li><b>为什么点积会变大（原文脚注 4）</b>：设 q 和 k 的每个分量独立、均值 0、方差 1。q·k 是 d_k 个这样的数相加，均值 0、<b>方差 d_k</b>，标准差 √d_k。d_k = 64 时标准差是 8，打分常在 ±8 的量级。除以 √d_k，方差就回到 1。</li>
+</ul>
+<p>为什么大分数会让梯度变小？softmax 对大分数非常敏感。用图 3 的例子：</p>
+<figure class="fig">
+  <span class="tag">图 4 · 分数一大，softmax 就变尖（柱高 = 权重）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="三组柱子，每组三根，代表三个词的权重。左组不缩放，分数 2、0、1，权重 0.665、0.090、0.245，用赭色。中组缩放后，分数 1、0、0.5，权重 0.506、0.186、0.307，用蓝色，更平缓。右组 d_k 很大时的示意，分数 40、0、20，权重几乎是 1、0、0，一根高柱，另外两根几乎没有。">
+    <g class="sm b" text-anchor="middle"><text class="to" x="110" y="20">不缩放：分数 [2, 0, 1]</text><text class="tn" x="340" y="20">缩放后：分数 [1, 0, 0.5]</text><text class="to" x="570" y="20">d_k 很大时（示意）：[40, 0, 20]</text></g>
+    <line class="ln" x1="20" y1="200" x2="660" y2="200"/>
+    <g class="old"><rect x="50" y="93.6" width="40" height="106.4" rx="3"/><rect x="100" y="185.6" width="40" height="14.4" rx="3"/><rect x="150" y="160.8" width="40" height="39.2" rx="3"/></g>
+    <g class="new"><rect x="280" y="119" width="40" height="81" rx="3"/><rect x="330" y="170.2" width="40" height="29.8" rx="3"/><rect x="380" y="150.9" width="40" height="49.1" rx="3"/></g>
+    <g class="old"><rect x="510" y="40" width="40" height="160" rx="3"/><rect x="560" y="197" width="40" height="3" rx="1"/><rect x="610" y="197" width="40" height="3" rx="1"/></g>
+    <g class="mo sm" text-anchor="middle"><text x="70" y="88">0.665</text><text x="120" y="180">0.090</text><text x="170" y="155">0.245</text>
+      <text x="300" y="113">0.506</text><text x="350" y="165">0.186</text><text x="400" y="145">0.307</text>
+      <text x="530" y="34">≈ 1</text><text x="580" y="190">≈ 0</text><text x="630" y="190">≈ 0</text></g>
+    <g class="sm m" text-anchor="middle"><text x="70" y="218">词 1</text><text x="120" y="218">词 2</text><text x="170" y="218">词 3</text><text x="300" y="218">词 1</text><text x="350" y="218">词 2</text><text x="400" y="218">词 3</text><text x="530" y="218">词 1</text><text x="580" y="218">词 2</text><text x="630" y="218">词 3</text></g>
+    <text class="sm to" x="580" y="238" text-anchor="middle">权重 ≈ [1, 0, 0]，softmax 饱和</text>
+    <text class="sm tn" x="340" y="238" text-anchor="middle">还保留着差别</text>
+    <text class="sm to" x="120" y="238" text-anchor="middle">已经比缩放后尖得多</text>
+  </svg>
+  </div>
+  <figcaption>前两组是图 3 的同一个例子；右组是为讲清楚编的极端情形（示意）。当 softmax 饱和，输入稍微变一点，输出几乎不变。softmax 第 i 项对自身输入的导数是 pᵢ(1−pᵢ)，pᵢ ≈ 1 时接近 0，梯度传不回去，打分相关的参数就学不动了。</figcaption>
+</figure>
+
+<h3><span class="no">3.2.2</span>多头：请 8 个人各读一遍</h3>
+<p>一个人读一句话，会同时关注好几种关系：谁是主语、这个代词指谁、这个形容词修饰谁。如果只做一次加权平均，这几种关系的信息会混成一锅粥，这就是前面说的「抹平」。多头注意力 = 请 8 个人各读一遍，每人只关注一种关系，最后把 8 份笔记拼起来。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 2 · 缩放点积注意力（左）与多头注意力（右）</span>
+  <img class="orig" src="orig-fig2.png" alt="原文 Figure 2：左边是 Scaled Dot-Product Attention，自下而上：Q 和 K 进入 MatMul，然后 Scale、Mask（可选）、SoftMax，再和 V 一起进入 MatMul。右边是 Multi-Head Attention，V、K、Q 各自经过 Linear，进入并排的 h 个 Scaled Dot-Product Attention，再 Concat，最后一个 Linear。" loading="lazy" width="1146" height="479">
+  <figcaption>这张图在说什么：<b>左边是图 3 那四步的流程图，右边是把它并排做 h 份</b>。怎么看：左图从下往上，MatMul 是 Q·K 的点积，Scale 是除以 √d_k，Mask 只在解码器用，SoftMax 变权重，最上面的 MatMul 是乘 V。右图里，V、K、Q 先各过一个 Linear（投影），再分给 h 个头各自做左图那件事，最后拼接（Concat）、再过一个 Linear。图源：Vaswani 等 2017 原文。</figcaption>
+</figure>
+<figure class="fig">
+  <span class="tag">图 5 · 多头：同样的 512 维，切成 8 份各看各的</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 300" role="img" aria-label="从上到下：原始 Q、K、V 是 512 维的长条；各乘一组 512×64 的矩阵，分成 8 份 64 维；8 个头各自做缩放点积注意力，每个输出 64 维；8 个输出首尾拼接成 8 乘 64 等于 512 维；再乘一个 512×512 的矩阵 W^O，混合 8 个头的信息，输出 512 维。">
+    <rect class="softS" x="40" y="12" width="600" height="26" rx="6"/><text class="sm" x="340" y="30" text-anchor="middle">原始 Q、K、V：512 维</text>
+    <text class="sm m" x="340" y="64" text-anchor="middle" style="paint-order:stroke;stroke:var(--card);stroke-width:6px">8 组不同的矩阵（每个 512×64）分别投影，各得 64 维</text>
+    <g class="newS" style="stroke-width:1.4"><line x1="74" y1="42" x2="74" y2="82" marker-end="url(#ahN)"/><line x1="150" y1="42" x2="150" y2="82" marker-end="url(#ahN)"/><line x1="226" y1="42" x2="226" y2="82" marker-end="url(#ahN)"/><line x1="302" y1="42" x2="302" y2="82" marker-end="url(#ahN)"/><line x1="378" y1="42" x2="378" y2="82" marker-end="url(#ahN)"/><line x1="454" y1="42" x2="454" y2="82" marker-end="url(#ahN)"/><line x1="530" y1="42" x2="530" y2="82" marker-end="url(#ahN)"/><line x1="606" y1="42" x2="606" y2="82" marker-end="url(#ahN)"/></g>
+    <g>
+      <rect class="newT" x="40" y="84" width="68" height="44" rx="7"/><rect class="newT" x="116" y="84" width="68" height="44" rx="7"/><rect class="newT" x="192" y="84" width="68" height="44" rx="7"/><rect class="newT" x="268" y="84" width="68" height="44" rx="7"/><rect class="newT" x="344" y="84" width="68" height="44" rx="7"/><rect class="newT" x="420" y="84" width="68" height="44" rx="7"/><rect class="newT" x="496" y="84" width="68" height="44" rx="7"/><rect class="newT" x="572" y="84" width="68" height="44" rx="7"/>
+      <g class="sm b" text-anchor="middle"><text x="74" y="104">头 1</text><text x="150" y="104">头 2</text><text x="226" y="104">头 3</text><text x="302" y="104">头 4</text><text x="378" y="104">头 5</text><text x="454" y="104">头 6</text><text x="530" y="104">头 7</text><text x="606" y="104">头 8</text></g>
+      <g class="sm m" text-anchor="middle"><text x="74" y="120">64 维</text><text x="150" y="120">64 维</text><text x="226" y="120">64 维</text><text x="302" y="120">64 维</text><text x="378" y="120">64 维</text><text x="454" y="120">64 维</text><text x="530" y="120">64 维</text><text x="606" y="120">64 维</text></g>
+    </g>
+    <text class="sm m" x="340" y="148" text-anchor="middle" style="paint-order:stroke;stroke:var(--card);stroke-width:6px">8 个头各自独立、同时做缩放点积注意力，各得一个 64 维的输出</text>
+    <g class="mutS" style="stroke-width:1.2"><line x1="74" y1="154" x2="74" y2="170" marker-end="url(#ah)"/><line x1="150" y1="154" x2="150" y2="170" marker-end="url(#ah)"/><line x1="226" y1="154" x2="226" y2="170" marker-end="url(#ah)"/><line x1="302" y1="154" x2="302" y2="170" marker-end="url(#ah)"/><line x1="378" y1="154" x2="378" y2="170" marker-end="url(#ah)"/><line x1="454" y1="154" x2="454" y2="170" marker-end="url(#ah)"/><line x1="530" y1="154" x2="530" y2="170" marker-end="url(#ah)"/><line x1="606" y1="154" x2="606" y2="170" marker-end="url(#ah)"/></g>
+    <rect class="softS" x="40" y="172" width="600" height="26" rx="6"/><text class="sm" x="340" y="190" text-anchor="middle">首尾拼接：8 × 64 = 512 维</text>
+    <line class="mutS" x1="340" y1="200" x2="340" y2="222" marker-end="url(#ah)"/>
+    <rect class="new" x="170" y="224" width="340" height="30" rx="8"/><text class="sm b on" x="340" y="244" text-anchor="middle">再乘 512×512 的 W^O，混合 8 个头 → 512 维</text>
+    <text class="sm m" x="340" y="284" text-anchor="middle">每个头只有 64 维，总维度仍是 512，所以总计算量和一个 512 维的单头差不多</text>
+  </svg>
+  </div>
+  <figcaption>多头不是「多花 8 倍算力」，而是<b>把同样的维度切成 8 份，各看各的</b>。</figcaption>
+</figure>
+<p>原文公式：</p>
+<div class="formula">head<sub>i</sub> = Attention( Q·W<sub>i</sub><sup>Q</sup>, K·W<sub>i</sub><sup>K</sup>, V·W<sub>i</sub><sup>V</sup> )　　i = 1 … 8</div>
+<div class="formula">MultiHead( Q, K, V ) = Concat( head<sub>1</sub>, …, head<sub>8</sub> ) · W<sup>O</sup><span class="fsrc">（原文 3.2.2）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th><th>对应图 5 里的</th></tr></thead>
+  <tbody>
+    <tr><td><code>W<sub>i</sub><sup>Q</sup>、W<sub>i</sub><sup>K</sup>、W<sub>i</sub><sup>V</sup></code></td><td>第 i 个头专属的三个投影矩阵，每个 512×64，训练得到</td><td>第一排向下的 8 组箭头</td></tr>
+    <tr><td><code>head<sub>i</sub></code></td><td>第 i 个头做完一次缩放点积注意力的结果，64 维</td><td>8 个蓝框</td></tr>
+    <tr><td><code>Concat</code></td><td>把 8 个 64 维向量首尾拼成 512 维</td><td>灰色长条</td></tr>
+    <tr><td><code>W<sup>O</sup></code></td><td>512×512 的矩阵，让 8 个头的信息互相混合</td><td>最下面的蓝条</td></tr>
+  </tbody>
+</table></div>
+<p><b>小数字（示意）</b>：设 d_model = 4，2 个头，每头 2 维。对一个词，头 1 输出 [0.8, 0.1]，头 2 输出 [0.2, 0.9]，拼接得 [0.8, 0.1, 0.2, 0.9]，再乘 4×4 的 W^O 混合成 4 维输出。如果只有单头，「主语信息」和「指代信息」会在同一次 softmax 里争夺权重，最后得到一个两边都不清楚的平均值。</p>
+<p><b>为什么有效，作者确定的和推测的要分开看：</b></p>
+<ul>
+  <li><b>原文的说法</b>：多头让模型能「同时关注来自不同表示子空间、不同位置的信息」，单头时平均会抑制这一点。</li>
+  <li><b>实验证据</b>（第 6 节的消融）：单头比最好设置差 0.9 BLEU；但头太多（32 个、每头 16 维）也变差。</li>
+  <li><b>可视化证据</b>（本节末尾的原图）：不同的头似乎学到了不同的分工。原文措辞是 apparently、seems related to，属于观察和推测，不是严格证明。</li>
+</ul>
+
+<h3><span class="no">3.2.3</span>注意力用在三个地方</h3>
+<p>同一套注意力，在模型里用在三个地方，区别只在 Q、K、V 从哪来：</p>
+<div class="tbl"><table>
+  <thead><tr><th>用在哪</th><th>Q 来自</th><th>K、V 来自</th><th>作用</th><th>对应 003 里的什么</th></tr></thead>
+  <tbody>
+    <tr><td><b>编码器自注意力</b></td><td>编码器上一层</td><td>编码器上一层（同一处）</td><td>源句每个词看源句所有词，理解原文</td><td>双向 RNN 编码器</td></tr>
+    <tr><td><b>解码器自注意力（带掩码）</b></td><td>解码器上一层</td><td>解码器上一层（同一处）</td><td>已写出的每个词看自己和左边，理解已写的译文</td><td>解码器的 RNN 状态更新</td></tr>
+    <tr><td><b>编码器-解码器注意力</b></td><td>解码器上一层</td><td>编码器最后一层输出</td><td>写译文时回头看原文</td><td>003 的注意力本身</td></tr>
+  </tbody>
+</table></div>
+<ul>
+  <li><b>并行</b>：编码器自注意力里，所有词的 Q·Kᵀ 是一次矩阵乘法，不存在「等上一个词算完」。</li>
+  <li><b>路径长度为 1</b>：任意两个词在一层里直接相连。</li>
+  <li><b>一层一层地加深理解</b>：第 1 层每个词吸收相关词的信息；第 2 层再做一次时，每个词看到的已经是「吸收过别人信息的别人」，相当于间接看到「别人的别人」。6 层下来，每个词的向量是「结合了整句语境的这个词」。</li>
+  <li><b>编码器里每个词能看整句（左右都看）</b>，效果上相当于 003 的双向 RNN，而且不用分前向、后向两遍；解码器自注意力只能看左边，因为生成时右边还不存在。</li>
+</ul>
+
+<h3><span class="no">3.5</span>位置编码：把词序补回来</h3>
+<p>注意力不区分词序，所以要给每个位置算一个 512 维的「位置向量」，<b>直接加到</b>该位置的词向量上（是相加，不是拼接），再送进编码器或解码器。因为相加，位置向量必须和词向量同样是 512 维。</p>
+<p>用的是正弦和余弦：</p>
+<div class="formula">PE( pos, 2i ) = sin( pos / 10000<sup>2i / d_model</sup> )<span class="fsrc">（原文 3.5，偶数维）</span></div>
+<div class="formula">PE( pos, 2i+1 ) = cos( pos / 10000<sup>2i / d_model</sup> )<span class="fsrc">（原文 3.5，奇数维）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th></tr></thead>
+  <tbody>
+    <tr><td><code>pos</code></td><td>第几个位置（0, 1, 2, …）</td></tr>
+    <tr><td><code>i</code></td><td>第几对维度。偶数维用 sin，奇数维用 cos，每一对共用一个频率</td></tr>
+    <tr><td><code>10000<sup>2i / d_model</sup></code></td><td>i 越大，分母越大，波越慢。原文说波长从 2π 到 10000·2π 成等比数列</td></tr>
+  </tbody>
+</table></div>
+<p><b>直觉是钟表</b>：秒针转得快，分针慢，时针更慢。只看秒针分不清 1 点和 2 点，三根针合起来就能唯一确定时间。512 维的位置编码就是 256 对转速不同的「指针」：前面几对变化很快，能区分相邻位置；后面几对变化很慢，能区分相隔很远的位置。</p>
+<figure class="fig">
+  <span class="tag">图 6 · 位置向量长什么样（d_model = 4，两对维度，按公式算出）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="左边一张表：行是位置 0、1、2，列是 sin(pos)、cos(pos)、sin(pos/100)、cos(pos/100)。位置 0：0、1、0、1。位置 1：0.841、0.540、0.010、1.000。位置 2：0.909、-0.416、0.020、1.000。前两列变化快，后两列变化慢。右边：词向量加位置向量，逐维相加，得到输入。">
+    <text class="sm b tn" x="143" y="22" text-anchor="middle">第 0 对：快指针</text><text class="sm b" x="305" y="22" text-anchor="middle">第 1 对：慢指针</text>
+    <g class="sm m"><text x="20" y="84">pos 0</text><text x="20" y="130">pos 1</text><text x="20" y="176">pos 2</text></g>
+    <g>
+      <rect class="softS" x="70" y="56" width="70" height="38" rx="4"/><rect class="softS" x="146" y="56" width="70" height="38" rx="4"/><rect class="softS" x="232" y="56" width="70" height="38" rx="4"/><rect class="softS" x="308" y="56" width="70" height="38" rx="4"/>
+      <rect class="softS" x="70" y="102" width="70" height="38" rx="4"/><rect class="softS" x="146" y="102" width="70" height="38" rx="4"/><rect class="softS" x="232" y="102" width="70" height="38" rx="4"/><rect class="softS" x="308" y="102" width="70" height="38" rx="4"/>
+      <rect class="softS" x="70" y="148" width="70" height="38" rx="4"/><rect class="softS" x="146" y="148" width="70" height="38" rx="4"/><rect class="softS" x="232" y="148" width="70" height="38" rx="4"/><rect class="softS" x="308" y="148" width="70" height="38" rx="4"/>
+    </g>
+    <g class="sm m" text-anchor="middle" style="font-size:11px"><text x="105" y="50">sin(p)</text><text x="181" y="50">cos(p)</text><text x="267" y="50">sin(p/100)</text><text x="343" y="50">cos(p/100)</text></g>
+    <g class="mo sm" text-anchor="middle">
+      <text x="105" y="80">0</text><text x="181" y="80">1</text><text x="267" y="80">0</text><text x="343" y="80">1</text>
+      <text x="105" y="126">0.841</text><text x="181" y="126">0.540</text><text x="267" y="126">0.010</text><text x="343" y="126">1.000</text>
+      <text x="105" y="172">0.909</text><text x="181" y="172">−0.416</text><text x="267" y="172">0.020</text><text x="343" y="172">1.000</text>
+    </g>
+    <rect class="newS dash" x="64" y="52" width="158" height="140" rx="8" style="stroke-width:1.4"/>
+    <rect class="mutS dash" x="226" y="52" width="158" height="140" rx="8" style="stroke-width:1.4"/>
+    <text class="sm tn" x="143" y="212" text-anchor="middle">变化快，能区分相邻位置</text>
+    <text class="sm m" x="305" y="212" text-anchor="middle">变化慢，能区分相隔很远的位置</text>
+    <line class="mutS" x1="400" y1="124" x2="440" y2="124" marker-end="url(#ah)"/>
+    <rect class="softS" x="446" y="52" width="200" height="40" rx="8"/><text class="sm" x="546" y="76" text-anchor="middle">词向量（512 维）</text>
+    <text class="lg" x="546" y="116" text-anchor="middle">+</text>
+    <rect class="newT" x="446" y="126" width="200" height="40" rx="8"/><text class="sm tn" x="546" y="150" text-anchor="middle">位置向量（512 维）</text>
+    <line class="mutS" x1="546" y1="170" x2="546" y2="192" marker-end="url(#ah)"/>
+    <rect class="card" x="446" y="194" width="200" height="34" rx="8" style="stroke:var(--new);stroke-width:1.8"/><text class="sm b" x="546" y="216" text-anchor="middle">逐维相加 → 送入第 1 层</text>
+    <text class="sm m" x="20" y="252">每个位置得到一个不同的向量</text>
+  </svg>
+  </div>
+  <figcaption>图中 p 即 pos。第 0 对是 sin(pos)、cos(pos)，频率为 1；第 1 对是 sin(pos/100)、cos(pos/100)。真实模型有 256 对，转速从快到慢排开。</figcaption>
+</figure>
+<p><b>为什么选 sin/cos（原文给的理由，作者用的词是 hypothesized，是假设）：</b>对任意固定的距离 k，PE(pos+k) 都能写成 PE(pos) 的<b>线性函数</b>。作者假设这能让模型容易学会「按相对位置关注」（比如「看我左边第 2 个词」）。原因是三角公式：</p>
+<div class="formula">sin( p + k ) = sin p · cos k + cos p · sin k</div>
+<div class="formula">cos( p + k ) = cos p · cos k − sin p · sin k</div>
+<p>也就是 [sin(p+k), cos(p+k)] = 一个只和 k 有关的 2×2 旋转矩阵 × [sin p, cos p]。「往后挪 k 个位置」，就是「把每对指针各转一个固定角度」，和当前在哪无关。</p>
+<p><b>和「学出来的位置向量」比</b>：作者也试了像词向量一样、每个位置学一个向量的做法，结果几乎一样（开发集 BLEU 25.7 对 25.8）。选 sin/cos 的理由是「<b>可能</b>」让模型外推到比训练时更长的句子，因为学出来的位置向量只覆盖训练见过的位置。这是作者的期望，原文没有做实验验证。</p>
+<p class="note"><span class="lab">我补充的</span>相加为什么不会毁掉词义？512 维空间非常大，词义信号和位置信号可以大致落在不同方向上，相加后仍能被后面的线性投影（W^Q、W^K）近似分开。这是我的直觉解释，原文没有讨论。</p>
+
+<h3>解码器的掩码：训练时不偷看后文</h3>
+<aside class="anno"><span class="alab">📎 注解 · 自回归、teacher forcing 与掩码</span>
+<p><b>自回归</b>：生成时每一步把「已经生成的词」作为输入，再预测下一个词（002、003 的解码器都这样）。</p>
+<p><b>训练时</b>我们手里有完整的正确译文，所以解码器每个位置的输入，直接用「正确答案的前文」，不用模型自己生成的词（这种做法通常叫 teacher forcing，原文没用这个术语）。RNN 即使答案全知，也得按位置一步步更新状态；Transformer 没有状态要传递，所有位置可以同时算。</p>
+<p>但这样会出问题：位置 3 在算的时候，能「看到」位置 4、5 的正确答案，等于考试偷看答案，模型学不到真本事，推理时（后文还不存在）就会崩。<b>掩码</b>就是防偷看的。另外，解码器的输入整体右移一位（第 i 个位置的输入是第 i−1 个目标词），配合掩码，保证预测第 i 个词时只用到第 i 个词之前的已知输出。</p>
+</aside>
+<p>做法：在 softmax 之前，把打分矩阵里所有「看右边」的位置设成 −∞。softmax 之后，e<sup>−∞</sup> = 0，权重就是 0。</p>
+<figure class="fig">
+  <span class="tag">图 7 · 掩码：把右上角清零（目标句 3 个位置，数字为示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 270" role="img" aria-label="三张 3×3 的格子。左：某一层算出的打分，第一行 1.0、0.5、2.0；第二行 0.3、1.2、0.8；第三行 0.6、0.1、0.9，其中位置 1 看位置 3 的分数 2.0 最高，用赭色标出。中：加掩码后右上角三格变成负无穷，其余保留。右：softmax 之后，第一行权重 1、0、0，第二行 0.289、0.711、0，第三行三个位置都有权重。">
+    <g class="sm b" text-anchor="middle"><text x="148" y="20">① 打分矩阵</text><text x="340" y="20">② 加掩码</text><text class="tn" x="532" y="20">③ softmax 之后</text></g>
+    <g class="sm m"><text x="14" y="70">位置 1</text><text x="14" y="114">位置 2</text><text x="14" y="158">位置 3</text></g>
+    <g class="sm m" text-anchor="middle"><text x="96" y="40">看 1</text><text x="148" y="40">看 2</text><text x="200" y="40">看 3</text><text x="288" y="40">看 1</text><text x="340" y="40">看 2</text><text x="392" y="40">看 3</text><text x="480" y="40">看 1</text><text x="532" y="40">看 2</text><text x="584" y="40">看 3</text></g>
+    <g>
+      <rect class="softS" x="72" y="48" width="48" height="36"/><rect class="softS" x="124" y="48" width="48" height="36"/><rect class="oldT" x="176" y="48" width="48" height="36"/>
+      <rect class="softS" x="72" y="92" width="48" height="36"/><rect class="softS" x="124" y="92" width="48" height="36"/><rect class="softS" x="176" y="92" width="48" height="36"/>
+      <rect class="softS" x="72" y="136" width="48" height="36"/><rect class="softS" x="124" y="136" width="48" height="36"/><rect class="softS" x="176" y="136" width="48" height="36"/>
+      <rect class="softS" x="264" y="48" width="48" height="36"/><rect class="card" x="316" y="48" width="48" height="36" style="fill:var(--bg)"/><rect class="card" x="368" y="48" width="48" height="36" style="fill:var(--bg)"/>
+      <rect class="softS" x="264" y="92" width="48" height="36"/><rect class="softS" x="316" y="92" width="48" height="36"/><rect class="card" x="368" y="92" width="48" height="36" style="fill:var(--bg)"/>
+      <rect class="softS" x="264" y="136" width="48" height="36"/><rect class="softS" x="316" y="136" width="48" height="36"/><rect class="softS" x="368" y="136" width="48" height="36"/>
+      <rect class="newT" x="456" y="48" width="48" height="36"/><rect class="card" x="508" y="48" width="48" height="36" style="fill:var(--bg)"/><rect class="card" x="560" y="48" width="48" height="36" style="fill:var(--bg)"/>
+      <rect class="newT" x="456" y="92" width="48" height="36"/><rect class="newT" x="508" y="92" width="48" height="36"/><rect class="card" x="560" y="92" width="48" height="36" style="fill:var(--bg)"/>
+      <rect class="newT" x="456" y="136" width="48" height="36"/><rect class="newT" x="508" y="136" width="48" height="36"/><rect class="newT" x="560" y="136" width="48" height="36"/>
+    </g>
+    <g class="mo sm" text-anchor="middle">
+      <text x="96" y="71">1.0</text><text x="148" y="71">0.5</text><text class="to b" x="200" y="71">2.0</text>
+      <text x="96" y="115">0.3</text><text x="148" y="115">1.2</text><text x="200" y="115">0.8</text>
+      <text x="96" y="159">0.6</text><text x="148" y="159">0.1</text><text x="200" y="159">0.9</text>
+      <text x="288" y="71">1.0</text>
+      <text x="288" y="115">0.3</text><text x="340" y="115">1.2</text>
+      <text x="288" y="159">0.6</text><text x="340" y="159">0.1</text><text x="392" y="159">0.9</text>
+      <text class="tn b" x="480" y="71">1</text><text class="tn b" x="480" y="115">0.289</text><text class="tn b" x="532" y="115">0.711</text>
+      <text class="m" x="532" y="71">0</text><text class="m" x="584" y="71">0</text><text class="m" x="584" y="115">0</text>
+    </g>
+    <g class="m" text-anchor="middle" style="font-size:14px"><text x="340" y="71">−∞</text><text x="392" y="71">−∞</text><text x="392" y="115">−∞</text></g>
+    <g class="tn b" text-anchor="middle"><text x="480" y="159">有</text><text x="532" y="159">有</text><text x="584" y="159">有</text></g>
+    <text class="sm m" x="14" y="200">位置 1 只能看自己，位置 2 能看 1、2，位置 3 能看 1、2、3。</text>
+    <text class="sm to" x="14" y="224">原本位置 1 给位置 3 打了最高分 2.0，掩码之后被强行清零。</text>
+    <text class="sm m" x="14" y="248">第 2 行：e^0.3 = 1.350，e^1.2 = 3.320，总和 4.670，所以权重是 0.289 和 0.711。</text>
+    <line class="mutS" x1="232" y1="110" x2="256" y2="110" marker-end="url(#ah)"/><line class="mutS" x1="424" y1="110" x2="448" y2="110" marker-end="url(#ah)"/>
+  </svg>
+  </div>
+  <figcaption>训练时整个目标句一次性输入，三个位置同时算，但每个位置的结果和「一个词一个词地生成」时完全一致。所以训练能并行，又不作弊。<b>推理时仍然串行</b>：生成第 4 个词之前，第 3 个词必须先生成出来。</figcaption>
+</figure>
+
+<h3><span class="no">3.3</span>把模块稳定地叠起来：前馈网络、残差、层归一化</h3>
+<p>每个子层（多头注意力或前馈网络）外面，都套同一个包装：</p>
+<div class="formula">输出 = LayerNorm( x + Sublayer( x ) )<span class="fsrc">（原文 3.1）</span></div>
+<p>原文 5.4 节还说，Dropout 加在子层输出上、相加之前。包装里有两个新零件：</p>
+<aside class="anno"><span class="alab">📎 注解 · 残差连接：给每一层留一条「直通车道」</span>
+<p><b>问题</b>：网络叠得越深越难训练。梯度要穿过很多层往回传，容易越传越弱；而且每层都要从头学出完整的输出，难度大。</p>
+<p><b>做法</b>（He 等 2016，原文引用）：子层的输出不替换输入，而是<b>加回到输入上</b>：输出 = x + Sublayer(x)。直觉：改文章时不重写全文，而是在原稿上批注。子层只需学「在 x 基础上改多少」，什么都不用改时输出 0 就行。</p>
+<p><b>为什么帮助训练</b>：加法的导数是 1，反向传播时梯度可以沿着 x 这条直通路径原样流回前面的层。这和 002 里 LSTM「传送带上主要做加法」是同一个道理。一个约束：要能相加，输入和输出必须一样长，所以原文规定所有子层和嵌入层的输出都是 d_model = 512 维。</p>
+</aside>
+<aside class="anno"><span class="alab">📎 注解 · 层归一化：每层输出先「统一量纲」</span>
+<p><b>问题</b>：层层叠加后，向量里的数值可能越来越大或越来越偏，下一层很难适应。</p>
+<p><b>做法</b>（Ba 等 2016，原文引用）：对<b>一个词的向量</b>，算出它所有维度的均值和标准差，减均值、除以标准差，再乘一个可学的缩放 γ、加一个可学的偏移 β。不管上一层输出的数值多大，进入下一层前都被拉回到稳定的范围。</p>
+<p>本文先做残差相加，再归一化。这种放法后来叫 Post-LN；后来的模型大多改成先归一化再进子层（Pre-LN），见「读完之后」。</p>
+</aside>
+<figure class="fig">
+  <span class="tag">图 8 · 每个子层的包装，和两个小数字例子</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="上面是流程：输入 x 进入子层（注意力或前馈网络）得到 Sublayer(x)；x 同时走一条蓝色的直通线绕过子层，两路在加号处相加，再过层归一化，得到输出。下面左：残差的小例子，x 等于 [1.0, 2.0]，子层输出 [0.1, -0.3]，相加得 [1.1, 1.7]。下面右：层归一化的小例子，一个词的向量 [2,4,6,8]，均值 5，标准差约 2.236，归一化后约 [-1.342, -0.447, 0.447, 1.342]。">
+    <rect class="softS" x="20" y="54" width="50" height="34" rx="8"/><text class="mo b" x="45" y="76" text-anchor="middle">x</text>
+    <line class="mutS" x1="72" y1="71" x2="136" y2="71" marker-end="url(#ah)"/>
+    <rect class="softS" x="138" y="52" width="180" height="38" rx="8"/><text class="sm" x="228" y="76" text-anchor="middle">子层：注意力 或 前馈网络</text>
+    <line class="mutS" x1="320" y1="71" x2="366" y2="71" marker-end="url(#ah)"/>
+    <circle class="card" cx="382" cy="71" r="14" style="stroke:var(--new);stroke-width:1.8"/><text class="lg tn" x="382" y="77" text-anchor="middle">+</text>
+    <path class="newS" d="M45 52 V 22 H 382 V 55" marker-end="url(#ahN)"/>
+    <text class="sm tn b" x="214" y="16" text-anchor="middle">直通：x 原样绕过子层（残差）</text>
+    <line class="mutS" x1="398" y1="71" x2="444" y2="71" marker-end="url(#ah)"/>
+    <rect class="newT" x="446" y="52" width="110" height="38" rx="8"/><text class="sm b" x="501" y="76" text-anchor="middle">层归一化</text>
+    <line class="mutS" x1="558" y1="71" x2="596" y2="71" marker-end="url(#ah)"/>
+    <text class="b sm" x="606" y="76">输出</text>
+    <line class="ln" x1="20" y1="112" x2="660" y2="112"/>
+    <rect class="card" x="20" y="126" width="310" height="120" rx="10"/>
+    <text class="sm b tn" x="36" y="148">残差：x + Sublayer(x)</text>
+    <g class="mo sm"><text x="36" y="172">x            = [1.0, 2.0]</text><text x="36" y="192">Sublayer(x)  = [0.1, −0.3]</text><text class="b" x="36" y="214">输出         = [1.1, 1.7]</text></g>
+    <text class="sm m" x="36" y="236">信息主体保留，只做了小修改</text>
+    <rect class="card" x="350" y="126" width="310" height="120" rx="10"/>
+    <text class="sm b tn" x="366" y="148">层归一化：一个词的向量</text>
+    <g class="mo sm"><text x="366" y="172">x = [2, 4, 6, 8]</text><text x="366" y="192">均值 5，标准差 ≈ 2.236</text><text class="b" x="366" y="214">→ [−1.342, −0.447, 0.447, 1.342]</text></g>
+    <text class="sm m" x="366" y="236">均值 0、方差 1（γ、β 初始为 1 和 0）</text>
+  </svg>
+  </div>
+  <figcaption>两个小例子的数字都来自原文之外的算例，用来讲机制。原文的做法是：先残差相加，再层归一化，然后送进下一个子层。</figcaption>
+</figure>
+
+<h4>前馈网络：给每个位置一次单独加工</h4>
+<p>注意力的输出，本质上是「别人的 v 的加权平均」。它负责<b>收集信息</b>，但加权平均本身是线性的，加工能力有限。所以每层再放一个前馈网络，对<b>每个词单独、用同一套参数</b>各算一次，词和词之间在这一步不交流（原文说也可以看成「卷积核大小为 1 的两层卷积」）。</p>
+<div class="formula">FFN( x ) = max( 0, x·W<sub>1</sub> + b<sub>1</sub> ) · W<sub>2</sub> + b<sub>2</sub><span class="fsrc">（原文 Eq. 2）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th></tr></thead>
+  <tbody>
+    <tr><td><code>x</code></td><td>一个词的 512 维向量</td></tr>
+    <tr><td><code>W<sub>1</sub>、b<sub>1</sub></code></td><td>把 512 维放大到 2048 维（d_ff），中间放大 4 倍，给加工留出空间</td></tr>
+    <tr><td><code>max(0, ·)</code></td><td>ReLU：负数变 0，正数不变。和 001 的 tanh 一样是非线性，计算更简单，正区间梯度恒为 1</td></tr>
+    <tr><td><code>W<sub>2</sub>、b<sub>2</sub></code></td><td>再压回 512 维</td></tr>
+  </tbody>
+</table></div>
+<p class="note"><span class="lab">我补充的</span>一个常用的比喻：注意力 = 开会交流，前馈网络 = 会后每个人回自己工位消化。这是我的总结，原文没有这样说。每层的前馈网络参数不同，同一层内所有位置共用一套。</p>
+
+<aside class="ext"><span class="alab">🧭 延伸 · 嵌入层的两个细节（跳过不影响理解）</span>
+<ul>
+  <li><b>三处共用一个矩阵</b>：源语嵌入、目标语嵌入、输出前的线性层共用同一个权重矩阵（原文引用 Press 和 Wolf）。英德能这么做，是因为用了共享的 BPE 词表。直觉上，「词 → 向量」和「向量 → 词」本来就是互逆的两件事。</li>
+  <li><b>嵌入乘以 √d_model（≈ 22.6）</b>：原文只说了做法，没有解释原因。一种常见的理解是，让词向量的数值不被加上去的位置编码（取值在 −1 到 1 之间）淹没。这是我的推测，待核实。</li>
+</ul>
+</aside>
+
+<h3>看看它学到了什么：原文附录的注意力可视化</h3>
+<p>下面是原文附录 Figure 3 和 Figure 4，来自编码器第 5 层（共 6 层）的自注意力。注意这是作者挑选出来的例子，措辞是 apparently、seems，属于定性观察。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 3 · 注意力追踪远距离依赖</span>
+  <img class="orig" src="orig-fig3.png" alt="原文附录 Figure 3：上下两排相同的句子 It is in this spirit that a majority of American governments have passed new laws since 2009 making the registration or voting process more difficult，文字竖着排。从上排的 making 引出多条彩色线，粗线连到下排的 more 和 difficult，另有几条细线连到 2009、making 自身、laws、句号和 EOS。不同颜色代表不同的头。" loading="lazy" width="1146" height="601">
+  <figcaption>这张图在说什么：<b>多个头从 making 直接指向了远处的 more difficult</b>，补全了「making ... more difficult」这个短语。怎么看：上排是被提问的词（making），线连到下排被关注的词，线越粗权重越大，不同颜色是不同的头。图 2 里 RNN 要走 6、7 步的路，这里一步直达。图的下方还有各头的热力格子，原文 PDF 里就是这样截断的。图源：Vaswani 等 2017 原文（彩色）。</figcaption>
+</figure>
+<figure class="fig">
+  <span class="tag">原文 Figure 4 · 指代消解：its 看向 Law（下半幅）</span>
+  <img class="orig" src="orig-fig4.png" alt="原文附录 Figure 4 下半幅：上排的句子 The Law will never be perfect, but its application should be just - this is what we are missing, in my opinion，its 被框出。从 its 引出两条线到下排：一条粗的紫色线连到 Law，一条较细的棕色线连到 application。下排的 Law 和 application 下方有深色格子。" loading="lazy" width="1146" height="678">
+  <figcaption>这张图在说什么：<b>its 的注意力几乎全部落在 Law 上</b>，模型因此「知道」its 指 the Law。怎么看：这是原文 Figure 4 的下半幅，只画了 its 一个词，在第 5、6 两个头里的注意力。原文说这些注意力「非常尖锐」。上半幅是第 5 个头对整句的完整注意力，这里没有截取。图源：Vaswani 等 2017 原文。</figcaption>
+</figure>
+<p>原文 Figure 5 的第三个例子（两个头表现出和句子结构相关的不同模式，「显然学会了做不同的事」），这里不放。</p>
+
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>为什么是自注意力</h2>
+<p>前面讲了怎么搭。原文第 4 节回头问：为什么选自注意力，而不是 RNN 或卷积？作者用三个标准，比较这三种「层」：</p>
+<div class="tbl"><table>
+  <thead><tr><th>层类型</th><th>每层计算量</th><th>最少串行步数</th><th>任意两位置最长路径</th></tr></thead>
+  <tbody>
+    <tr><td><b class="n">自注意力</b></td><td>O(n² · d)</td><td>O(1)</td><td>O(1)</td></tr>
+    <tr><td><b class="o">RNN</b></td><td>O(n · d²)</td><td>O(n)</td><td>O(n)</td></tr>
+    <tr><td>卷积（核宽 k）</td><td>O(k · n · d²)</td><td>O(1)</td><td>O(log<sub>k</sub> n)</td></tr>
+    <tr><td>受限自注意力（只看邻近 r 个）</td><td>O(r · n · d)</td><td>O(1)</td><td>O(n/r)</td></tr>
+  </tbody>
+</table></div>
+<p>n 是句长，d 是向量维度。出自原文 Table 1。</p>
+<aside class="anno"><span class="alab">📎 注解 · 复杂度记号 O(·)</span>
+<p>O(n) 读作「n 的量级」，只关心规模翻倍时代价怎么增长，不关心具体常数。O(1)：和 n 无关，句子多长都一样。O(n)：句子长一倍，代价长一倍。O(n²)：句子长一倍，代价变成四倍。O(log n)：增长很慢，n 从 8 到 64，log₂n 只从 3 到 6。</p>
+</aside>
+<h3>怎么读这张表</h3>
+<ul>
+  <li><b>最少串行步数（并行程度）</b>：自注意力和卷积是 O(1)，RNN 是 O(n)。这是 RNN 训练慢的根源。</li>
+  <li><b>最长路径（远距离依赖好不好学）</b>：自注意力 O(1) 最短；卷积要叠 O(log<sub>k</sub> n) 层（扩张卷积）或 O(n/k) 层（普通卷积）；RNN 最长。路径越短，前向信号和反向梯度走的路越短，远距离依赖越好学。</li>
+  <li><b>每层计算量</b>：自注意力是 n²·d，RNN 是 n·d²，哪个大取决于 n 和 d 谁大。<b>当句长 n 小于维度 d 时，自注意力更省</b>。本文 d = 512，原文说翻译中常用的子词句子表示「多数情况下」满足 n &lt; d。</li>
+</ul>
+<figure class="fig">
+  <span class="tag">图 9 · 推算：n = 30，d = 512 时，一层的计算量量级</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 150" role="img" aria-label="横向两根柱子。自注意力一层约 46 万，很短，蓝色。RNN 一层约 786 万，长很多，赭色。两者相差约 17 倍。">
+    <g class="sm" text-anchor="end"><text class="tn b" x="178" y="42">自注意力  n²·d</text><text class="to b" x="178" y="92">RNN  n·d²</text></g>
+    <rect class="new" x="190" y="26" width="25.7" height="24" rx="4"/>
+    <rect class="old" x="190" y="76" width="440" height="24" rx="4"/>
+    <g class="mo sm"><text x="224" y="43">900 × 512 ≈ 46 万</text><text class="on b" x="198" y="93" style="fill:var(--on)">30 × 262144 ≈ 786 万</text></g>
+    <text class="sm b" x="660" y="132" text-anchor="end">相差约 17 倍</text>
+    <text class="sm m" x="20" y="132">两根柱子按同一比例画</text>
+  </svg>
+  </div>
+  <figcaption>句长 n 比维度 d 小的时候，自注意力一层更省。这是解读里的推算，用的是 Table 1 的量级公式，不是原文给出的实测。反过来，句子很长时 n² 会反超。</figcaption>
+</figure>
+
+<h3>自注意力的软肋，也在这张表里</h3>
+<p>计算量随句长<b>平方</b>增长。句长 30 时没问题，句长上万（长文档、图像、音频）时，n² 就非常大。作者提出的应对是<b>受限自注意力</b>：每个位置只看附近 r 个位置，计算量降为 r·n·d，代价是最长路径变成 O(n/r)。原文说「计划在未来工作中进一步研究」，本文没有实验。</p>
+<p>另外，生成时仍是一个词一个词地出，这一点和 RNN 一样没变：训练能并行，推理不能。</p>
+<p>原文还指出一个附带的好处：<b>可解释性</b>。注意力权重可以直接画出来，看模型在关注什么，就是上一节末尾的那几张图。</p>
+
+<details class="ext"><summary>🧭 延伸 · 和卷积的进一步比较（选读，跳过不影响理解）</summary>
+<p>直白的结论：卷积要么连不上远处，要么得叠很多层。一个核宽 k &lt; n 的卷积层不能连接所有位置对，要叠 O(n/k) 层（普通卷积）或 O(log<sub>k</sub> n) 层（扩张卷积）。可分离卷积能把复杂度降到 O(k·n·d + n·d²)，但即使 k = n，它的复杂度也正好等于「一层自注意力 + 一层逐位置前馈网络」，也就是本文的组合。所以没有理由选卷积。</p>
+</details>
+
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>训练</h2>
+<p>这一节的细节很多，但读懂主线不需要它们，折叠起来了。主线只有三句：</p>
+<ul>
+  <li>一台机器，8 块 NVIDIA P100。base 模型每步约 0.4 秒，10 万步共 <b>12 小时</b>；big 模型每步约 1.0 秒，30 万步共 <b>3.5 天</b>。</li>
+  <li>用的优化器是 Adam，学习率先线性增大到第 4000 步，再慢慢降下来（预热）。</li>
+  <li>两个防过拟合、让结果更好的技巧：dropout 和标签平滑。</li>
+</ul>
+<p>对比一下：003 里单个模型训练约 5 天（单 GPU，规模和数据也不同，只做量级参考）。</p>
+
+<details class="ext"><summary>🧭 延伸 · 训练细节：模型尺寸、数据、优化器、正则化、推理（跳过不影响理解）</summary>
+<h4>两个尺寸的模型（原文 Table 3）</h4>
+<div class="tbl"><table>
+  <thead><tr><th></th><th class="num">层数 N</th><th class="num">d_model</th><th class="num">d_ff</th><th class="num">头数 h</th><th class="num">d_k = d_v</th><th class="num">P_drop</th><th class="num">训练步数</th><th class="num">参数量</th></tr></thead>
+  <tbody>
+    <tr><td>base</td><td class="num">6</td><td class="num">512</td><td class="num">2048</td><td class="num">8</td><td class="num">64</td><td class="num">0.1</td><td class="num">10 万</td><td class="num">6500 万</td></tr>
+    <tr><td>big</td><td class="num">6</td><td class="num">1024</td><td class="num">4096</td><td class="num">16</td><td class="num">64</td><td class="num">0.3（英法用 0.1）</td><td class="num">30 万</td><td class="num">2.13 亿</td></tr>
+  </tbody>
+</table></div>
+<p><b>base 的参数从哪来（我按原文配置估算，原文只给了总数）</b>：共享嵌入矩阵约 37000 × 512 ≈ 1890 万；每层编码器约 315 万（多头注意力 4 个 512×512 矩阵约 105 万，前馈网络约 210 万），6 层约 1890 万；每层解码器约 420 万，6 层约 2520 万。合计约 6300 万，和原文的 6500 万接近。偏置和层归一化参数合计只有约 10 万，补不上剩下约 200 万（约 3%）的差距。差距可能来自实际词表大小或实现细节，<b>原文没有交代，待核实</b>。可以看出：前馈网络占了每层参数的大头，注意力本身参数并不多。</p>
+
+<h4>数据与批次（原文 5.1 节）</h4>
+<ul>
+  <li>英德：WMT 2014，约 450 万句对，BPE 共享词表约 37000。</li>
+  <li>英法：WMT 2014，3600 万句，word-piece 词表 32000。</li>
+  <li>按句长相近的句子组批，每批约 25000 个源语 token + 25000 个目标语 token。</li>
+</ul>
+<p><b>子词切分（BPE / word-piece）</b>：把词切成更小的常见片段，例如 unhappiness → un + happi + ness。词表大小可控，又基本没有 003 那样的生词问题。BPE 的切分算法会在第 007 篇展开。</p>
+
+<h4>优化器与学习率（原文 5.3 节）</h4>
+<p>Adam，β₁ = 0.9，β₂ = 0.98，ε = 10<sup>−9</sup>（Adam 本身在第 005 篇讲）。学习率随步数变化：</p>
+<div class="formula">lrate = d<sub>model</sub><sup>−0.5</sup> · min( step<sup>−0.5</sup>, step · warmup<sup>−1.5</sup> )　　warmup = 4000<span class="fsrc">（原文 Eq. 3）</span></div>
+<p>前 4000 步，第二项更小，学习率随 step <b>线性上升</b>；之后第一项更小，学习率按 1/√step <b>缓慢下降</b>。为什么开头要小：训练刚开始时参数是随机的，梯度方向很不可靠，一开始就迈大步容易把模型「踢飞」。代入几个点（d_model<sup>−0.5</sup> ≈ 0.0442）：</p>
+<div class="tbl"><table>
+  <thead><tr><th>步数</th><th>学习率</th></tr></thead>
+  <tbody>
+    <tr><td>1000</td><td>约 1.75 × 10<sup>−4</sup></td></tr>
+    <tr><td>4000（峰值）</td><td>约 7.0 × 10<sup>−4</sup></td></tr>
+    <tr><td>16000</td><td>约 3.5 × 10<sup>−4</sup></td></tr>
+  </tbody>
+</table></div>
+
+<h4>正则化（原文 5.4 节）</h4>
+<ul>
+  <li><b>Dropout</b>：训练时随机把一部分神经元的输出置 0（P_drop = 0.1，即 10%）。直觉：团队里每次随机有人请假，迫使大家都得会，从而减少过拟合（在训练集上背答案、换了数据就不行）。推理时不丢弃。每个子层的输出在加回残差前做 dropout，嵌入与位置编码之和也做。</li>
+  <li><b>标签平滑</b>（ε_ls = 0.1）：正常训练时正确词的目标概率是 1、其余是 0。标签平滑把目标「软化」，正确词约 0.9，剩下 0.1 分给其他词（具体分法有几种实现，原文未写明）。原文说它<b>让困惑度变差，但提高了准确率和 BLEU</b>，没有解释 BLEU 为什么变好。</li>
+</ul>
+
+<h4>推理（原文 6.1 节）</h4>
+<ul>
+  <li><b>检查点平均</b>：base 取最后 5 个检查点（每 10 分钟存一个）的参数取平均当最终模型，big 取最后 20 个。直觉：训练末期参数在最优点附近来回抖动，平均更接近中心。</li>
+  <li>束搜索，束宽 4；<b>长度惩罚</b> α = 0.6（抵消束搜索偏爱短句的倾向）；最大输出长度 = 输入长度 + 50。这些超参数是在开发集上试出来的。</li>
+</ul>
+</details>
+
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>实验：结论</h2>
+
+<h3>结论一：更好，也更便宜</h3>
+<figure class="fig">
+  <span class="tag">图 10 · 英德翻译测试集 BLEU 和训练成本（原文 Table 2）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 292" role="img" aria-label="横向柱状图，英德翻译 BLEU，从 0 起。ConvS2S 25.16，训练成本 9.6 乘 10 的 18 次方；MoE 26.03，2.0 乘 10 的 19 次方；GNMT 加 RL 集成 26.30，1.8 乘 10 的 20 次方；ConvS2S 集成 26.36，7.7 乘 10 的 19 次方；Transformer base 27.3，蓝色，成本 3.3 乘 10 的 18 次方；Transformer big 28.4，蓝色，成本 2.3 乘 10 的 19 次方。">
+    <text class="sm b" x="190" y="18">BLEU（越高越好）</text><text class="sm b" x="572" y="18">训练成本</text>
+    <g class="sm" text-anchor="end"><text x="182" y="52">ConvS2S</text><text x="182" y="88">MoE</text><text x="182" y="124">GNMT + RL 集成</text><text x="182" y="160">ConvS2S 集成</text><text class="tn b" x="182" y="196">Transformer base</text><text class="tn b" x="182" y="232">Transformer big</text></g>
+    <rect class="softS" x="190" y="36" width="276.8" height="22" rx="4"/>
+    <rect class="softS" x="190" y="72" width="286.3" height="22" rx="4"/>
+    <rect class="softS" x="190" y="108" width="289.3" height="22" rx="4"/>
+    <rect class="softS" x="190" y="144" width="290" height="22" rx="4"/>
+    <rect class="new" x="190" y="180" width="300.3" height="22" rx="4"/>
+    <rect class="new" x="190" y="216" width="312.4" height="22" rx="4"/>
+    <g class="mo sm" text-anchor="start"><text x="474" y="52">25.16</text><text x="484" y="88">26.03</text><text x="487" y="124">26.30</text><text x="488" y="160">26.36</text><text class="tn b" x="498" y="196">27.3</text><text class="tn b" x="510" y="232">28.4</text></g>
+    <g class="mo sm" text-anchor="start">
+      <text x="572" y="52">9.6×10<tspan dy="-5" style="font-size:8px">18</tspan></text>
+      <text x="572" y="88">2.0×10<tspan dy="-5" style="font-size:8px">19</tspan></text>
+      <text x="572" y="124">1.8×10<tspan dy="-5" style="font-size:8px">20</tspan></text>
+      <text x="572" y="160">7.7×10<tspan dy="-5" style="font-size:8px">19</tspan></text>
+      <text class="tn b" x="572" y="196">3.3×10<tspan dy="-5" style="font-size:8px">18</tspan></text>
+      <text class="tn b" x="572" y="232">2.3×10<tspan dy="-5" style="font-size:8px">19</tspan></text>
+    </g>
+    <line class="ln" x1="190" y1="248" x2="540" y2="248"/>
+    <g class="mo sm m" text-anchor="middle"><text x="190" y="264">0</text><text x="300" y="264">10</text><text x="410" y="264">20</text><text x="520" y="264">30</text></g>
+    <text class="sm m" x="20" y="284">只列了与 Transformer 对比的几个英德模型；完整的 Table 2 在下面的折叠里。</text>
+  </svg>
+  </div>
+  <figcaption>蓝柱是本文。base 的成本 3.3×10<sup>18</sup>，只有 ConvS2S 集成（7.7×10<sup>19</sup>）的约 1/23，GNMT + RL 集成（1.8×10<sup>20</sup>）的约 1/55。柱子从 0 画起，差距看着小，但在翻译领域 2 BLEU 是大进步。</figcaption>
+</figure>
+<ol>
+  <li><b>英德，big 的 28.4 比此前最好的 ConvS2S 集成（26.36）高 2.04 BLEU。</b>「集成」是把多个模型的预测合起来，通常比单模型高不少，Transformer 用单模型超过了别人的集成。</li>
+  <li><b>base（27.3）也超过了所有此前的模型和集成</b>，成本却只是对手的几十分之一。<b>「更好」和「更便宜」同时成立</b>，这是本文最有说服力的地方：如果只是更好但贵得多，很难说是架构的功劳。</li>
+  <li><b>英法，big 的 41.8 是单模型最佳</b>，略高于 ConvS2S 集成（41.29）。训练成本约为此前最佳单模型 MoE 的 1/5。</li>
+  <li><b>英法 base 只有 38.1</b>，低于多数对手。英法数据量（3600 万句）是英德的 8 倍，小模型可能容量不够。原文没有专门讨论，这是我的推测。</li>
+</ol>
+<p>训练成本是估出来的（原文脚注 5）：训练时间 × GPU 数 × 每块 GPU 的持续单精度算力（P100 取 9.5 TFLOPS）。比如 big：3.5 天 × 8 块 × 9.5 TFLOPS ≈ 2.3×10<sup>19</sup>。只能看量级。</p>
+
+<h3>结论二：训练快得多</h3>
+<p>原文第 1 节和 6.1 节：base 模型在 8 块 P100 上训练 <b>12 小时</b>，就超过了此前所有已发表的模型。这个数字的意义在于研究迭代的速度：一个想法当天就能验证。「比 RNN 时代快一个数量级」是我对 Table 2 训练成本的概括。</p>
+
+<h3>结论三：每个零件都有用（拆零件实验）</h3>
+<p>作者以 base 为基准，每次只改一个地方，看 BLEU 和困惑度怎么变（原文 Table 3，英德开发集）。base 的成绩是困惑度 4.92、BLEU 25.8。</p>
+<figure class="fig">
+  <span class="tag">图 11 · 拆零件：头数（左）与标签平滑（右）（原文 Table 3 的 A、D 组）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 278" role="img" aria-label="左：五根柱子表示头数 1、4、8、16、32 时的开发集 BLEU：24.9、25.5、25.8、25.8、25.4。头数 1 用赭色，8 用蓝色，一条虚线标出 base 的 25.8。纵轴从 24 起，是截断的。右：标签平滑的卡片，去掉标签平滑（ε 等于 0）时，困惑度 4.67 比 4.92 更好，BLEU 25.3 比 25.8 更差。">
+    <text class="sm b" x="20" y="18">头数（总维度不变：h × d_k = 512）</text>
+    <line class="ln" x1="30" y1="210" x2="370" y2="210"/>
+    <line class="mutS dash" x1="30" y1="48" x2="370" y2="48" style="stroke-width:1.2"/><text class="sm m" x="366" y="42" text-anchor="end">base 25.8</text>
+    <rect class="old" x="50" y="129" width="44" height="81" rx="3"/>
+    <rect class="soft" x="110" y="75" width="44" height="135" rx="3" style="fill:var(--line)"/>
+    <rect class="new" x="170" y="48" width="44" height="162" rx="3"/>
+    <rect class="soft" x="230" y="48" width="44" height="162" rx="3" style="fill:var(--line)"/>
+    <rect class="soft" x="290" y="84" width="44" height="126" rx="3" style="fill:var(--line)"/>
+    <g class="mo sm" text-anchor="middle"><text class="to b" x="72" y="123">24.9</text><text x="132" y="69">25.5</text><text class="tn b" x="192" y="42">25.8</text><text x="252" y="42">25.8</text><text x="312" y="78">25.4</text></g>
+    <g class="sm" text-anchor="middle"><text x="72" y="228">h = 1</text><text x="132" y="228">h = 4</text><text x="192" y="228">h = 8</text><text x="252" y="228">h = 16</text><text x="312" y="228">h = 32</text></g>
+    <g class="sm m" text-anchor="middle"><text x="72" y="244">d_k 512</text><text x="132" y="244">128</text><text x="192" y="244">64</text><text x="252" y="244">32</text><text x="312" y="244">16</text></g>
+    <text class="sm m" x="20" y="268">纵轴从 24 起，是截断的，只为看清 1 BLEU 以内的差别</text>
+    <line class="ln" x1="420" y1="30" x2="420" y2="250"/>
+    <text class="sm b" x="450" y="18">标签平滑：训练指标和任务指标不一致</text>
+    <rect class="card" x="450" y="36" width="210" height="96" rx="10"/>
+    <text class="sm b" x="464" y="58">去掉标签平滑（ε：0.1 → 0）</text>
+    <text class="sm" x="464" y="84">困惑度</text><text class="mo sm" x="540" y="84">4.92 → 4.67</text><text class="sm tn b" x="624" y="84">更好</text>
+    <text class="sm" x="464" y="112">BLEU</text><text class="mo sm" x="540" y="112">25.8 → 25.3</text><text class="sm to b" x="624" y="112">更差</text>
+    <text class="sm m" x="450" y="156">原文：标签平滑损害困惑度，</text>
+    <text class="sm m" x="450" y="176">但提高 BLEU。</text>
+    <text class="sm m" x="450" y="196">困惑度变差有明确原因：它故意</text>
+    <text class="sm m" x="450" y="216">不让模型太笃定。BLEU 为什么</text>
+    <text class="sm m" x="450" y="236">反而变好，原文没有解释。</text>
+  </svg>
+  </div>
+  <figcaption>两组结论：单头比最好设置差 0.9 BLEU，<b>证明多头确实有用</b>；头太多、每个头只有 16 维时又变差，每个头的维度太小，打分不准了。8 到 16 头是最佳区间。</figcaption>
+</figure>
+<ul>
+  <li><b>多头有用</b>（上图）。</li>
+  <li><b>去掉 dropout，BLEU 掉 1.2，困惑度明显变差</b>（P_drop = 0：困惑度 5.77，BLEU 24.6）：dropout 对防过拟合很重要。</li>
+  <li><b>训练指标和任务指标不完全一致</b>（上图右）。以下是我的推测：不太笃定的模型可能泛化更好，束搜索时也保留了更多候选。</li>
+  <li><b>用学出来的位置向量代替 sin/cos</b>：困惑度 4.92，BLEU 25.7，几乎和 base 一样。说明「给模型位置信息」本身是关键，具体用哪种编码没那么重要。</li>
+  <li><b>模型越大越好</b>：原文的结论只有一句「如预期」。整体趋势是层数、宽度、前馈维度增加，困惑度基本都下降（big：困惑度 4.33，BLEU 26.4，是表里最好的）。「越大越好」这个朴素观察，后来被系统研究成了缩放定律（第 009 篇）。</li>
+  <li>键的维度 d_k 缩小会变差（d_k = 16：BLEU 25.1；32：25.4）。作者的推论是「判断匹配度并不容易」，比点积更复杂的打分函数<b>也许</b>有益，这是作者的推测。</li>
+</ul>
+
+<h3>结论四：不调参，换个任务也很强</h3>
+<p>为测泛化能力，作者拿 4 层的 Transformer 去做<b>英语成分句法分析</b>：给句子画出语法结构树，输出写成一串括号序列。难点是输出必须满足严格的结构约束，而且比输入长得多；此前 RNN 序列到序列模型在小数据上一直做不到最好。</p>
+<ul>
+  <li>只用约 4 万句的 WSJ 训练集：Transformer 得 91.3（F1），远超 RNN 序列到序列模型（88.3），也超过专门设计的 BerkeleyParser（90.4），只比 RNNG（91.7）低一点。</li>
+  <li>半监督（加入约 1700 万句自动标注数据）：92.7，超过同类方法。</li>
+  <li>调参很少：只在开发集上调了 dropout、学习率和束宽，其余照搬英德翻译 base 的参数。这说明它是一个通用的序列建模架构，不是专为翻译调出来的。</li>
+</ul>
+
+<details class="ext"><summary>🧭 延伸 · 完整数据表与读数字的注意事项（跳过不影响理解）</summary>
+<h4>Table 2 完整版（英德 / 英法，newstest2014）</h4>
+<div class="tbl"><table>
+  <thead><tr><th>模型</th><th class="num">英德 BLEU</th><th class="num">英法 BLEU</th><th class="num">成本 英德</th><th class="num">成本 英法</th></tr></thead>
+  <tbody>
+    <tr><td>ByteNet</td><td class="num">23.75</td><td class="num"></td><td class="num"></td><td class="num"></td></tr>
+    <tr><td>Deep-Att + PosUnk</td><td class="num"></td><td class="num">39.2</td><td class="num"></td><td class="num">1.0×10<sup>20</sup></td></tr>
+    <tr><td>GNMT + RL</td><td class="num">24.6</td><td class="num">39.92</td><td class="num">2.3×10<sup>19</sup></td><td class="num">1.4×10<sup>20</sup></td></tr>
+    <tr><td>ConvS2S</td><td class="num">25.16</td><td class="num">40.46</td><td class="num">9.6×10<sup>18</sup></td><td class="num">1.5×10<sup>20</sup></td></tr>
+    <tr><td>MoE</td><td class="num">26.03</td><td class="num">40.56</td><td class="num">2.0×10<sup>19</sup></td><td class="num">1.2×10<sup>20</sup></td></tr>
+    <tr><td>Deep-Att + PosUnk 集成</td><td class="num"></td><td class="num">40.4</td><td class="num"></td><td class="num">8.0×10<sup>20</sup></td></tr>
+    <tr><td>GNMT + RL 集成</td><td class="num">26.30</td><td class="num">41.16</td><td class="num">1.8×10<sup>20</sup></td><td class="num">1.1×10<sup>21</sup></td></tr>
+    <tr><td>ConvS2S 集成</td><td class="num">26.36</td><td class="num">41.29</td><td class="num">7.7×10<sup>19</sup></td><td class="num">1.2×10<sup>21</sup></td></tr>
+    <tr><td><b>Transformer (base)</b></td><td class="num"><b>27.3</b></td><td class="num">38.1</td><td class="num"><b>3.3×10<sup>18</sup></b></td><td class="num"></td></tr>
+    <tr><td><b>Transformer (big)</b></td><td class="num"><b>28.4</b></td><td class="num"><b>41.8</b></td><td class="num"><b>2.3×10<sup>19</sup></b></td><td class="num"></td></tr>
+  </tbody>
+</table></div>
+<p>Transformer 的训练成本在原文表格里跨英德、英法两列，即两种语言对的估算相同（big 都是 8 块 P100 训练 3.5 天）。</p>
+<p><b>一处原文前后不一致</b>：摘要和 Table 2 写英法 big 是 <b>41.8</b>，但 6.1 节正文写的是 <b>41.0</b>。41.8 是 arXiv 后续版本更新后的数字（早期版本是 41.0），正文没有同步改，以表和摘要为准。版本更新的细节待核实。</p>
+
+<h4>Table 3 的其他几组（英德开发集）</h4>
+<div class="tbl"><table>
+  <thead><tr><th>改动</th><th class="num">困惑度</th><th class="num">BLEU</th><th class="num">参数量</th></tr></thead>
+  <tbody>
+    <tr><td>base</td><td class="num">4.92</td><td class="num">25.8</td><td class="num">6500 万</td></tr>
+    <tr><td>d_k = 16</td><td class="num">5.16</td><td class="num">25.1</td><td class="num">5800 万</td></tr>
+    <tr><td>d_k = 32</td><td class="num">5.01</td><td class="num">25.4</td><td class="num">6000 万</td></tr>
+    <tr><td>N = 2 层</td><td class="num">6.11</td><td class="num">23.7</td><td class="num">3600 万</td></tr>
+    <tr><td>N = 4 层</td><td class="num">5.19</td><td class="num">25.3</td><td class="num">5000 万</td></tr>
+    <tr><td>N = 8 层</td><td class="num">4.88</td><td class="num">25.5</td><td class="num">8000 万</td></tr>
+    <tr><td>d_model = 256（d_k = d_v 改为 32）</td><td class="num">5.75</td><td class="num">24.5</td><td class="num">2800 万</td></tr>
+    <tr><td>d_model = 1024（d_k = d_v 改为 128）</td><td class="num">4.66</td><td class="num">26.0</td><td class="num">1.68 亿</td></tr>
+    <tr><td>d_ff = 1024</td><td class="num">5.12</td><td class="num">25.4</td><td class="num">5300 万</td></tr>
+    <tr><td>d_ff = 4096</td><td class="num">4.75</td><td class="num">26.2</td><td class="num">9000 万</td></tr>
+    <tr><td>P_drop = 0</td><td class="num">5.77</td><td class="num">24.6</td><td class="num"></td></tr>
+    <tr><td>P_drop = 0.2</td><td class="num">4.95</td><td class="num">25.5</td><td class="num"></td></tr>
+    <tr><td>ε_ls = 0</td><td class="num">4.67</td><td class="num">25.3</td><td class="num"></td></tr>
+    <tr><td>ε_ls = 0.2</td><td class="num">5.47</td><td class="num">25.7</td><td class="num"></td></tr>
+    <tr><td>学出来的位置向量</td><td class="num">4.92</td><td class="num">25.7</td><td class="num"></td></tr>
+    <tr><td>big</td><td class="num">4.33</td><td class="num">26.4</td><td class="num">2.13 亿</td></tr>
+  </tbody>
+</table></div>
+<p>N = 8 的 BLEU（25.5）反而略低于 base（25.8），但困惑度更好，说明 BLEU 有一定波动，不能只看单个数字。</p>
+
+<h4>Table 4：句法分析的对照（WSJ 23 F1）</h4>
+<div class="tbl"><table>
+  <thead><tr><th>模型</th><th>训练方式</th><th class="num">F1</th></tr></thead>
+  <tbody>
+    <tr><td>Vinyals &amp; Kaiser 等 2014（RNN 序列到序列）</td><td>仅 WSJ</td><td class="num">88.3</td></tr>
+    <tr><td>Petrov 等 2006（BerkeleyParser）</td><td>仅 WSJ</td><td class="num">90.4</td></tr>
+    <tr><td>Dyer 等 2016（RNNG）</td><td>仅 WSJ</td><td class="num">91.7</td></tr>
+    <tr><td><b>Transformer（4 层）</b></td><td>仅 WSJ</td><td class="num"><b>91.3</b></td></tr>
+    <tr><td>Vinyals &amp; Kaiser 等 2014</td><td>半监督</td><td class="num">92.1</td></tr>
+    <tr><td><b>Transformer（4 层）</b></td><td>半监督</td><td class="num"><b>92.7</b></td></tr>
+    <tr><td>Luong 等 2015</td><td>多任务</td><td class="num">93.0</td></tr>
+    <tr><td>Dyer 等 2016（RNNG）</td><td>生成式</td><td class="num">93.3</td></tr>
+  </tbody>
+</table></div>
+<p>设置：4 层，d_model = 1024；推理时最大输出长度为输入 + 300，束宽 21，α = 0.3。</p>
+
+<h4>局限：作者承认的，和我补充的</h4>
+<p><b>作者承认或提到的</b>：自注意力计算量随句长平方增长，长序列需要受限或局部注意力，留作未来工作；生成仍是串行的；平均会降低分辨率，需要多头抵消；点积打分可能不够强。</p>
+<p><b>我补充的</b>：</p>
+<ul>
+  <li>实验只在翻译和句法分析上做，都是「输入一段、输出一段」的有监督任务。它能不能做纯语言模型、能不能大规模预训练，本文没有验证（第 006、008 篇）。</li>
+  <li>位置编码「能外推到更长句子」只是期望，没有实验。后来的经验表明，原始的正弦位置编码外推能力有限（待核实具体程度），这也是后来出现多种新位置编码的原因。</li>
+  <li>消融实验（Table 3）原文没有报告多次运行的波动范围。像 N = 8 的 BLEU 比 N = 6 还低这类结果，可能落在随机波动之内。</li>
+  <li>没有和「同等算力下的最强 RNN」做严格对照。训练成本是按「时间 × GPU 数 × 估计算力」估出来的，只能看量级。</li>
+</ul>
+</details>
+
+
+<!-- ================= 7 ================= -->
+<h2 id="s7"><span class="no">7</span>结论</h2>
+<p>原文的结论可以浓缩成三句：</p>
+<ul>
+  <li>Transformer 是第一个<b>完全基于注意力</b>的序列转换模型，用多头自注意力代替了编码器-解码器里最常见的循环层。</li>
+  <li>翻译上，它训练得比循环或卷积结构快得多，英德、英法都达到了当时的最好水平。</li>
+  <li>作者对注意力模型的未来很兴奋，计划把它扩展到文本以外的模态，也想让生成不那么串行。代码随论文开源，作者还提到后来改用 tensor2tensor 代码库重写了实现，「大大改进了结果、大大加速了研究」。</li>
+</ul>
+
+
+<!-- ================= after ================= -->
+<h2 id="after">读完之后（原文之外）</h2>
+
+<h3>当时的技术背景（2017）</h3>
+<ul>
+  <li><b>主流架构</b>：RNN（LSTM/GRU）+ 注意力。Google 2016 年上线的 GNMT 是一个很深的 LSTM 编码器-解码器加注意力，代表当时工业界的最强水平。</li>
+  <li><b>「去 RNN 化」的竞争</b>：Facebook AI 的 ConvS2S（2017 年 5 月）用卷积做翻译，比 GNMT 更快更好；DeepMind 的 ByteNet 用扩张卷积。大家都意识到 RNN 的串行是瓶颈，分歧在于「用什么替代」。Transformer 在 ConvS2S 发布约一个月后挂上 arXiv（2017 年 6 月）。ConvS2S 为了补回词序，也用了学出来的位置向量，这一点在本文 3.5 节被引用过。</li>
+  <li><b>算力</b>：NVIDIA P100（2016 年发布）是主力 GPU，单卡约 9.5 TFLOPS 单精度。GPU 擅长矩阵乘法、不擅长串行，这正是本文设计的出发点。</li>
+  <li><b>零件都是新的</b>：残差连接（2016）、层归一化（2016）、Adam（2015）都刚出现不久。本文的贡献很大一部分在于<b>把这些零件用对了地方并组合起来</b>。</li>
+</ul>
+
+<h3>后来发展到什么程度</h3>
+<p>下面区分「可以核实的事实」和「后世评价」。</p>
+<ul>
+  <li><b>成了几乎所有大模型的底座（事实）</b>。只用解码器：GPT 系列去掉编码器，只用「带掩码的自注意力 + 前馈网络」做语言模型，用大量文本预训练（第 006、007、011 篇）。今天的 ChatGPT、Claude 等大语言模型基本都属于这一路线。只用编码器：BERT 去掉解码器，只用双向自注意力做预训练（第 008 篇）。</li>
+  <li><b>走出文本（事实）</b>：2020 年的 Vision Transformer 把图像切成小块当作 token，用 Transformer 做图像识别；语音、蛋白质结构等领域也广泛采用，兑现了原文「扩展到文本以外的模态」的计划。</li>
+  <li><b>零件被改进（事实）</b>：层归一化的位置，大多数大模型改成了 Pre-LN（先归一化再进子层，残差直通不经过归一化），深层模型更容易训练；位置编码，正弦编码后来被学出来的位置向量、相对位置编码、RoPE、ALiBi 等取代；长序列，平方复杂度催生了大量高效注意力研究，FlashAttention 等方法不改变数学定义，而是优化显存读写；前馈网络里的 ReLU 常换成 GELU、SwiGLU，混合专家也被放进前馈网络的位置。</li>
+  <li><b>「越大越好」被系统化（事实）</b>：第 3 节实验里那条朴素观察，后来被系统研究成缩放定律（第 009、010 篇）。</li>
+  <li><b>后世评价</b>：Transformer 能并行、能稳定叠深，常被认为是后来能把模型做到千亿参数的前提。它被普遍视为深度学习史上最有影响力的论文之一，被引次数极高（具体数字待核实）。一个常见的看法是：它的成功不只因为效果好，更因为<b>和 GPU 的计算方式高度契合</b>，让「用更多算力和数据换更好效果」这条路第一次变得可行。</li>
+</ul>
+<p class="note"><span class="lab">我补充的</span>RoPE 的核心思想，正是 3.5 节「挪动 k 个位置等于旋转一个固定角度」的进一步发展。这是我自己的联系，具体关系待核实。</p>
+
+<h3>前后篇衔接</h3>
+<p><b>继承自</b>：<a href="../003-bahdanau-attention/index.html">003 Bahdanau 注意力</a>（注意力的核心机制：打分、softmax、加权求和，「任意位置直接相连」的思想，编码器-解码器注意力）；<a href="../002-seq2seq/index.html">002 Seq2Seq</a>（编码器-解码器骨架、逐词概率分解、自回归生成、束搜索）；<a href="../001-nplm/index.html">001 NPLM</a>（词向量、softmax 输出层、用神经网络参数化条件概率）。</p>
+<p><b>对 003 的推进</b>：</p>
+<ul>
+  <li>删掉 RNN，自注意力成为唯一的信息交换方式；训练时一句话内部完全并行（编码器和解码器都是）。</li>
+  <li>任意两个位置的路径长度从 O(n) 降到 O(1)。</li>
+  <li>注意力从「只用在解码器看编码器」推广到三处。</li>
+  <li>加性打分变成缩放点积打分（更快），再加多头（抵消平均的模糊）。</li>
+  <li>新增位置编码，显式补回 RNN 天然有的顺序信息。</li>
+  <li>003 留下的「必须串行」问题被解决；003 的生词问题由子词切分基本消除。</li>
+</ul>
+<p><b>留下的问题</b>：</p>
+<ul>
+  <li>本文用的 Adam 和学习率设置没有展开 → 第 005 篇 Adam</li>
+  <li>只在有监督翻译上训练，每个任务都要成对的标注数据 → 第 006 篇 GPT-1（只用解码器，先在大量无标注文本上预训练，再微调），第 008 篇 BERT（只用编码器做双向预训练）</li>
+  <li>子词切分只是拿来用 → 第 007 篇 GPT-2 的 byte-level BPE</li>
+  <li>「模型越大越好」只是一句观察 → 第 009 篇 Scaling Laws、第 010 篇 Chinchilla</li>
+  <li>平方复杂度、生成串行：本系列不专门讨论，后续篇涉及时再提</li>
+</ul>
+
+
+<footer>
+  AI 论文解读 · 004 · 原文：Vaswani, Shazeer, Parmar, Uszkoreit, Jones, Gomez, Kaiser, Polosukhin. <i>Attention Is All You Need.</i> NIPS 2017（arXiv 1706.03762，依据 2023 年 v7 版）。<br>
+  图中标「示意」的数字是为了讲清机制编的例子；标「推算」的是由原文公式算出的量级；实验数字出自原文 Table 2、3、4。原文 Figure 1、2、3、4 的图源为原文（图 4 只截取了下半幅）。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>
