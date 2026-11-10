@@ -1,0 +1,20 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Transformer 特辑示意：一摞重复的层，每层是注意力加前馈网络，两张小格子表示单向和双向两种掩码">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <rect class="ln" x="22" y="26" width="104" height="112" rx="8" style="stroke-dasharray:5 4"/>
+  <rect class="softS" x="34" y="38" width="80" height="20" rx="4"/>
+  <rect class="newT" x="34" y="66" width="80" height="20" rx="4"/>
+  <rect class="softS" x="34" y="98" width="80" height="20" rx="4"/>
+  <rect class="newT" x="34" y="126" width="80" height="6" rx="2"/>
+  <g class="new">
+    <rect x="146" y="36" width="10" height="10"/>
+    <rect x="146" y="48" width="10" height="10"/><rect x="158" y="48" width="10" height="10"/>
+    <rect x="146" y="60" width="10" height="10"/><rect x="158" y="60" width="10" height="10"/><rect x="170" y="60" width="10" height="10"/>
+    <rect x="146" y="88" width="34" height="34"/>
+  </g>
+  <g class="softS">
+    <rect x="158" y="36" width="10" height="10"/><rect x="170" y="36" width="10" height="10"/><rect x="170" y="48" width="10" height="10"/>
+  </g>
+  <text x="190" y="58" class="mo sm m">GPT</text>
+  <text x="190" y="110" class="mo sm m">BERT</text>
+  <text x="120" y="164" class="mo sm m" text-anchor="middle">特辑 · Transformer</text>
+</svg>

@@ -6,6 +6,8 @@
   - 每篇 published 的论文都有 papers/<slug>/index.html
   - papers/ 下的每个文件夹都在 papers.json 里登记过
   - id 不重复
+  - 特辑（papers.json 的 specials）同理：published 的有 specials/<slug>/index.html，specials/ 下的文件夹都登记过
+特辑是跨篇的专题页，不占阅读地图上的位置，首页单独列一栏。
 """
 import html
 import json
@@ -31,11 +33,20 @@ def check(data):
     for d in (ROOT / "papers").iterdir():
         if d.is_dir() and d.name not in slugs:
             errs.append(f"papers/{d.name}/ 没有在 papers.json 里登记")
+    specials = data.get("specials", [])
+    sp_slugs = {x["slug"] for x in specials}
+    for x in specials:
+        if x["status"] == "published" and not (ROOT / "specials" / x["slug"] / "index.html").exists():
+            errs.append(f"特辑 {x['slug']} 标为 published，但没有 specials/{x['slug']}/index.html")
+    if (ROOT / "specials").exists():
+        for d in (ROOT / "specials").iterdir():
+            if d.is_dir() and d.name not in sp_slugs:
+                errs.append(f"specials/{d.name}/ 没有在 papers.json 的 specials 里登记")
     return errs
 
 
-def thumb(p):
-    f = ROOT / "papers" / p["slug"] / "thumb.svg"
+def thumb(p, folder="papers"):
+    f = ROOT / folder / p["slug"] / "thumb.svg"
     if not f.exists():
         return ""
     svg = f.read_text(encoding="utf-8").strip()
@@ -54,6 +65,20 @@ def card(p):
         + (f'<span class="one">{esc(p["oneliner"])}</span>' if p.get("oneliner") else "")
         + f'<span class="full">{esc(p["title"])}</span>'
         '<span class="go">读这篇 →</span>'
+        '</span></a></li>'
+    )
+
+
+def special_card(x):
+    return (
+        f'<li class="pub"><a class="card" href="specials/{esc(x["slug"])}/index.html">'
+        + thumb(x, "specials")
+        + '<span class="body">'
+        f'<span class="meta">特辑 · {esc(x.get("covers", ""))}</span>'
+        f'<span class="short">{esc(x["short"])}</span>'
+        + (f'<span class="one">{esc(x["oneliner"])}</span>' if x.get("oneliner") else "")
+        + f'<span class="full">{esc(x["title"])}</span>'
+        '<span class="go">读特辑 →</span>'
         '</span></a></li>'
     )
 
@@ -174,12 +199,21 @@ def render(data):
     papers = data["papers"]
     pubs = [p for p in papers if p["status"] == "published"]
     todo = [p for p in papers if p["status"] != "published"]
-    last = max((p.get("date", "") for p in pubs), default="")
+    last = max([p.get("date", "") for p in pubs] + [x.get("date", "") for x in data.get("specials", []) if x["status"] == "published"], default="")
     first = pubs[0] if pubs else None
     lede = "".join(f"<span>{esc(x)}。</span>" for x in s["tagline"].split("。") if x.strip())
     about = "".join(f"<p>{esc(x)}</p>" for x in s.get("about", []))
     start = (f'<a class="start rv" href="papers/{esc(first["slug"])}/index.html">从第一篇读起 →</a>' if first else "")
     cards = "\n".join(card(p) for p in pubs)
+    sps = [x for x in data.get("specials", []) if x["status"] == "published"]
+    sp_sec = ("" if not sps else f"""
+  <section class="sec rv">
+    <div class="sec-head"><h2>特辑</h2><span class="cnt">跨篇梳理 · {len(sps)} 篇</span></div>
+    <ol class="list">
+""" + "\n".join(special_card(x) for x in sps) + """
+    </ol>
+  </section>
+""")
     rows = "\n".join(plan(p) for p in todo)
     more = f'<li class="more"><span class="dots">⋯</span><span>{esc(s["more"])}</span></li>' if s.get("more") else ""
     return f"""<!doctype html>
@@ -221,7 +255,7 @@ def render(data):
 {cards}
     </ol>
   </section>
-
+{sp_sec}
   <section class="sec rv">
     <div class="sec-head"><h2>接下来要读的</h2><span class="cnt">按这个顺序陆续更新</span></div>
     <ol class="todo">
@@ -248,7 +282,8 @@ def main():
         sys.exit(1)
     (ROOT / "index.html").write_text(render(data), encoding="utf-8")
     n_pub = sum(p["status"] == "published" for p in data["papers"])
-    print(f"OK  index.html 已生成：共 {len(data['papers'])} 篇，已发布 {n_pub} 篇")
+    n_sp = sum(x["status"] == "published" for x in data.get("specials", []))
+    print(f"OK  index.html 已生成：共 {len(data['papers'])} 篇，已发布 {n_pub} 篇，特辑 {n_sp} 篇")
 
 
 if __name__ == "__main__":

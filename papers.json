@@ -29,5 +29,8 @@
     {"id": "016", "slug": "016-ppo", "short": "PPO", "title": "Proximal Policy Optimization Algorithms", "year": 2017, "authors": "Schulman 等", "oneliner": "", "status": "planned"},
     {"id": "017", "slug": "017-alignment-lab", "short": "Alignment Laboratory", "title": "A General Language Assistant as a Laboratory for Alignment", "year": 2021, "authors": "Askell 等", "oneliner": "", "status": "planned"},
     {"id": "018", "slug": "018-instructgpt", "short": "InstructGPT", "title": "Training Language Models to Follow Instructions with Human Feedback", "year": 2022, "authors": "Ouyang 等", "oneliner": "", "status": "planned"}
+  ],
+  "specials": [
+    {"slug": "transformer", "short": "Transformer 特辑", "covers": "跨篇 · 001–018", "title": "一个架构，撑起了后面所有的模型", "oneliner": "一层 = 开会交流 + 回工位消化。三种形态只差掩码，后面的论文几乎不再改它。", "status": "published", "date": "2026-11-10"}
   ]
 }
