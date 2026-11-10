@@ -64,7 +64,8 @@ h1{font-family:var(--serif);font-weight:900;font-size:clamp(44px,9vw,72px);line-
 .d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
 .d .m{fill:var(--mut)} .d .sm{font-size:12px} .d .mo{font-family:var(--mono)}
 .d .ln{stroke:var(--line);fill:none;stroke-width:1.5}
-.d .new{fill:var(--new)} .d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.2}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2} .d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.2}
+.d .on{fill:var(--on)}
 .d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
 .d .mutF{fill:var(--mut)}
 
