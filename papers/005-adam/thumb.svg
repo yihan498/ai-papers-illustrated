@@ -1,0 +1,10 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="狭长山谷示意：赭色虚线来回横跳，蓝色线平稳地沿谷底走向最低点">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <ellipse class="ln" cx="196" cy="80" rx="176" ry="62" style="stroke-width:1"/>
+  <ellipse class="ln" cx="196" cy="80" rx="112" ry="38" style="stroke-width:1"/>
+  <ellipse class="ln" cx="196" cy="80" rx="52" ry="18" style="stroke-width:1"/>
+  <path d="M30 34 L50 126 L72 40 L94 120 L116 46 L138 112 L160 54 L178 102" style="fill:none;stroke:var(--old);stroke-width:1.6;stroke-dasharray:4 3"/>
+  <path d="M30 126 C70 96 120 84 196 80" style="fill:none;stroke:var(--new);stroke-width:2.6"/>
+  <circle class="new" cx="196" cy="80" r="5"/>
+  <text x="120" y="166" class="mo sm m" text-anchor="middle">自适应步长</text>
+</svg>
