@@ -114,6 +114,7 @@ pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var
 
 .fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
 .fig img.orig.narrow{max-width:320px}
+.fig video{display:block;width:100%;height:auto;border-radius:6px;background:#000}
 details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
 details.ext[open]>summary{margin-bottom:6px}
 .formula sub,.formula sup{font-size:.75em}
@@ -212,6 +213,15 @@ html{scroll-behavior:smooth}
       <li><b>📎 注解</b>是就地解释的概念，<b>🧭 延伸</b>可以跳过。标「我补充的」是我整理时的归纳或推测，论文里没有这样说。</li>
     </ul>
   </div>
+
+  <figure class="fig">
+    <span class="tag">视频 · 5 分钟看完这一页（4 分 38 秒）</span>
+    <video controls preload="metadata" playsinline poster="video-poster.jpg" aria-label="Transformer 特辑讲解视频，14 页幻灯片配旁白：问题链、一层的结构、注意力的计算、多头、掩码与三种形态、参数量和规模">
+      <source src="transformer-video.mp4" type="video/mp4">
+      你的浏览器放不了这个视频，可以<a href="transformer-video.mp4">直接下载</a>。
+    </video>
+    <figcaption>按这一页的内容做成的讲解视频，适合先看一遍建立整体印象，再往下读细节。视频由豆包根据本页内容生成，画面和旁白以下文为准。</figcaption>
+  </figure>
 </header>
 
 
