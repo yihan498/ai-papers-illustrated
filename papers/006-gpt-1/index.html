@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GPT-1 图解</title>
+<meta name="description" content="Radford 等 2018《Improving Language Understanding by Generative Pre-Training》图解：先在大量没标注的书上猜下一个词，再用少量标注把同一个模型微调到各个任务。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文（预训练 + 整个模型微调），赭 = 要被替代的旧做法（从头训练任务模型、只搬词向量或特征、LSTM）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;min-width:520px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th:first-child,td:first-child{white-space:nowrap}
+th:first-child,td:first-child{padding-right:20px}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+
+<main class="wrap">
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　006</nav>
+  <h1 style="margin-top:14px">先读书，再做题</h1>
+  <p class="lede">Radford 等人 2018 年在 OpenAI 写的《Improving Language Understanding by Generative Pre-Training》，就是后来被叫作 GPT-1 的那篇。它分两步：<b>先让一个模型在 7000 多本没有标注的书上练「猜下一个词」，学会语言；再用每个任务的少量标注数据，把同一个模型微调成答题的模型。</b>一个通用模型，在 12 个语言理解数据集里的 9 个刷新了当时的最好成绩。后来的 GPT-2、BERT、GPT-3 都走在这条「先预训练、再适配」的路上。</p>
+  <div class="meta">
+    <span>Alec Radford、Karthik Narasimhan、Tim Salimans、Ilya Sutskever（OpenAI）· 2018 年预印本</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的做法（预训练 + 整个模型微调）</span>
+    <span class="key"><i class="sw o"></i>赭色：要被替代的旧做法（从头训练任务模型、只搬词向量、LSTM）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · 两个阶段：先在书上学语言，再在任务上学答题</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 268" role="img" aria-label="左边是阶段一，无标注预训练：7000 多本书的连续长文本，输入 12 层 Transformer 解码器，带掩码，只能看左边，目标是猜下一个词。中间一个箭头，表示参数整份复制。右边是阶段二，有标注微调：任务样本先改写成一条序列，输入同一个 12 层网络，从预训练的参数出发，最后新加一个线性层输出标签。底部写：预训练 100 轮，微调大多 3 轮就够。">
+      <text class="b tn" x="170" y="22" text-anchor="middle">阶段一 · 预训练（没有标注）</text>
+      <text class="b tn" x="510" y="22" text-anchor="middle">阶段二 · 微调（有标注）</text>
+
+      <rect class="softS" x="40" y="36" width="260" height="42" rx="8"/>
+      <text x="170" y="62" text-anchor="middle">7000 多本书：一段段连续的长文本</text>
+      <line class="mutS" x1="170" y1="78" x2="170" y2="98" marker-end="url(#ah)"/>
+      <rect class="new" x="40" y="100" width="260" height="58" rx="8"/>
+      <text class="b on" x="170" y="125" text-anchor="middle">12 层 Transformer 解码器</text>
+      <text class="sm on" x="170" y="145" text-anchor="middle">带掩码，每个位置只能看左边</text>
+      <line class="mutS" x1="170" y1="158" x2="170" y2="178" marker-end="url(#ah)"/>
+      <rect class="newT" x="40" y="180" width="260" height="46" rx="8"/>
+      <text x="170" y="208" text-anchor="middle">目标：猜下一个词</text>
+
+      <line class="newS" x1="302" y1="129" x2="356" y2="129" marker-end="url(#ahN)"/>
+      <text class="sm tn b" x="330" y="118" text-anchor="middle">参数</text>
+      <text class="sm tn b" x="330" y="150" text-anchor="middle">整份复制</text>
+
+      <rect class="softS" x="360" y="36" width="300" height="42" rx="8"/>
+      <text x="510" y="62" text-anchor="middle">任务样本，改写成一条序列</text>
+      <line class="mutS" x1="510" y1="78" x2="510" y2="98" marker-end="url(#ah)"/>
+      <rect class="new" x="360" y="100" width="300" height="58" rx="8"/>
+      <text class="b on" x="510" y="125" text-anchor="middle">同一个 12 层网络</text>
+      <text class="sm on" x="510" y="145" text-anchor="middle">从预训练的参数出发，全部继续训练</text>
+      <line class="mutS" x1="510" y1="158" x2="510" y2="178" marker-end="url(#ah)"/>
+      <rect class="newT" x="360" y="180" width="300" height="46" rx="8"/>
+      <text x="510" y="208" text-anchor="middle">新加一个线性层 → 输出标签</text>
+
+      <text class="sm m" x="340" y="256" text-anchor="middle">预训练 100 轮，花大力气学语言；微调大多 3 轮就够，只学这道题怎么答</text>
+    </svg>
+    </div>
+    <figcaption>左边是阶段一，右边是阶段二，中间的箭头是两者唯一的接口：预训练好的参数整份拿过去，再加一个线性层。</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>要解决的问题</a>
+    <a href="#s2"><span>2</span>第一步：在书上猜下一个词</a>
+    <a href="#s3"><span>3</span>第二步：加一个线性层，微调</a>
+    <a href="#s4"><span>4</span>一个模型做所有任务：改写输入</a>
+    <a href="#s5"><span>5</span>证据：它为什么有效</a>
+    <a href="#s6"><span>6</span>局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>正文只走一条线</b>：要解决什么问题 → 分两步怎么做、为什么这样就行 → 哪个实验证明了哪一步。只读每节的标题和每段第一句，也能串起来。</li>
+      <li>公式、符号表、训练参数、完整结果表、概念解释、当时的背景，都在页尾的<b>附录</b>里，默认折叠，标明对应原文第几节。</li>
+      <li>小数字例子都验算过：为讲解设定的标「示意」，按原文规格估算的标「推算」。</li>
+      <li>模型的零件（自注意力、掩码、残差）在 004 <a href="../004-transformer/index.html">Transformer</a> 讲过，「猜下一个词」在 001 <a href="../001-nplm/index.html">NPLM</a> 讲过，这里不重复。</li>
+    </ul>
+  </div>
+</header>
+
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>要解决的问题</h2>
+<p>本文想要一个能<b>广泛理解语言</b>的模型：判断两句话是否矛盾、做阅读理解、判断两句话是否同义、判断句子通不通顺，在这些任务上都做得好。挡在前面的有两个问题。</p>
+
+<h3>问题一：每个任务的标注都很少</h3>
+<p>有标注的数据要人一条条标，贵、慢，所以每个任务的数据都不多。没标注的文本（书、网页）却多得用不完。只用标注数据从头训练一个深度网络，模型要同时学「语言是什么」和「这道题怎么做」，几千条样本撑不起前一件事。</p>
+<figure class="fig">
+  <span class="tag">图 1 · 有标注的很少，没标注的用不完</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 210" role="img" aria-label="对数刻度的横向条形图，表示几个任务的训练样本数。RTE 文本蕴含 2490 条；STS-B 语义相似约 5700 条；SNLI 文本蕴含约 55 万条，是本文用到的最大的数据集。下面一行是没有标注的书和网页，画成一条一直延伸出去的蓝色虚线箭头，原文没给词数，只画方向。">
+    <text class="sm m" x="20" y="22">每个任务的训练样本数（对数刻度，每格差 10 倍）</text>
+    <text class="sm" x="20" y="49">RTE（文本蕴含）</text>
+    <rect class="old" x="180" y="36" width="47.5" height="18" rx="3"/><text class="sm mo" x="234" y="49">2,490 条</text>
+    <text class="sm" x="20" y="77">STS-B（语义相似）</text>
+    <rect class="old" x="180" y="64" width="90.7" height="18" rx="3"/><text class="sm mo" x="277" y="77">≈ 5,700 条</text>
+    <text class="sm" x="20" y="105">SNLI（文本蕴含）</text>
+    <rect class="old" x="180" y="92" width="328.9" height="18" rx="3"/><text class="sm mo" x="515" y="105">≈ 550,000 条</text>
+    <line class="ln" x1="180" y1="120" x2="560" y2="120"/>
+    <g class="sm m mo" text-anchor="middle">
+      <text x="180" y="136">1,000</text><text x="300" y="136">1 万</text><text x="420" y="136">10 万</text><text x="540" y="136">100 万</text>
+    </g>
+    <text class="sm b tn" x="20" y="172">没标注的书和网页</text>
+    <line class="newS dash" x1="180" y1="168" x2="652" y2="168" marker-end="url(#ahN)"/>
+    <text class="sm tn" x="180" y="192">不用人标，几乎用不完（原文没给词数，这条只画方向，没有刻度）</text>
+  </svg>
+  </div>
+  <figcaption>赭色条是三个任务的训练样本数，出自原文 4.2 节；横轴是对数刻度。SNLI 已经是本文最大的数据集。</figcaption>
+</figure>
+
+<h3>问题二：从没标注的文本里学到的，前人只搬走了词这一层</h3>
+<p>「先在大量文本上学，再搬到任务上」，前人已经在做，搬法有三种。<b>搬得越少，每个任务要从头学的就越多：</b></p>
+<figure class="fig">
+  <span class="tag">图 2 · 三种搬法：预训练来的部分越多，每个任务要从头学的越少</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="三栏。第一栏搬词向量：底下一条细的蓝色是预训练的词向量，上面一大块赭色是从头训练的任务模型，代表 word2vec、GloVe，每个任务新增整个模型。第二栏搬特征：下面蓝色是冻结的预训练模型，上面一大块赭色是任务专用结构，代表 ELMo、CoVe，每个任务新增大量专用参数。第三栏整个模型微调：一大块蓝色是预训练网络，所有参数继续训练，上面一条细的灰色是线性层，代表 ULMFiT 和本文，每个任务新增一个线性层。">
+    <g class="b" text-anchor="middle"><text x="115" y="22">① 搬词向量</text><text x="340" y="22">② 搬特征</text><text class="tn" x="565" y="22">③ 整个模型微调</text></g>
+
+    <rect class="oldT" x="30" y="40" width="170" height="122" rx="8"/>
+    <text class="b to" x="115" y="96" text-anchor="middle">任务模型</text>
+    <text class="sm to" x="115" y="116" text-anchor="middle">从头训练</text>
+    <rect class="new" x="30" y="168" width="170" height="28" rx="6"/>
+    <text class="sm on" x="115" y="187" text-anchor="middle">词向量（预训练）</text>
+
+    <rect class="oldT" x="255" y="40" width="170" height="80" rx="8"/>
+    <text class="b to" x="340" y="76" text-anchor="middle">任务专用结构</text>
+    <text class="sm to" x="340" y="96" text-anchor="middle">从头训练</text>
+    <line class="mutS" x1="340" y1="130" x2="340" y2="122" marker-end="url(#ah)"/>
+    <rect class="new" x="255" y="130" width="170" height="66" rx="8"/>
+    <text class="b on" x="340" y="158" text-anchor="middle">预训练模型</text>
+    <text class="sm on" x="340" y="178" text-anchor="middle">冻结，只提供特征</text>
+
+    <rect class="softS" x="480" y="40" width="170" height="28" rx="6"/>
+    <text class="sm" x="565" y="59" text-anchor="middle">线性层（新加）</text>
+    <rect class="new" x="480" y="74" width="170" height="122" rx="8"/>
+    <text class="b on" x="565" y="128" text-anchor="middle">预训练网络</text>
+    <text class="sm on" x="565" y="148" text-anchor="middle">所有参数继续训练</text>
+
+    <g class="sm m" text-anchor="middle"><text x="115" y="220">代表：word2vec、GloVe</text><text x="340" y="220">代表：ELMo、CoVe</text><text x="565" y="220">代表：ULMFiT、本文</text></g>
+    <g class="sm" text-anchor="middle"><text class="to" x="115" y="244">每个任务新增：整个模型</text><text class="to" x="340" y="244">每个任务新增：大量参数</text><text class="tn b" x="565" y="244">每个任务新增：一个线性层</text></g>
+  </svg>
+  </div>
+  <figcaption>蓝色是预训练来的，赭色是每个任务要从头学的。这个三分法是我整理的，原文第 1、2 节分散提到这三种做法。</figcaption>
+</figure>
+<p>最常用的是 ① <b>词向量</b>：在大量文本上给每个词学一个向量，放进任务模型当第一层。可一个词只有一个向量，不管上下文，搬走的只是「词」这一层的信息。② 搬得多一些，但每个任务还要另外设计一套结构，这套结构从头学，用不上预训练。</p>
+<p>本文走 ③：<b>把整个预训练好的网络当作任务模型的起点，每个任务只加一个线性层。</b>接下来两节就是这两步。</p>
+
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>第一步：在书上猜下一个词</h2>
+
+<h3>做什么</h3>
+<p>给模型看一段文字的前面部分，让它猜下一个词，猜对的概率越高越好。答案就在文本里，<b>不需要人标</b>，所以可以用几千本书来练。这一步解决问题一：语言能力从没标注的文本里学，不占用宝贵的标注数据。</p>
+
+<h3>为什么猜下一个词能学到有用的东西</h3>
+<p>要猜得准，模型得真的懂。一个例子（示意）：要把「奖杯放不进手提箱，因为它太___」填成「大」，得知道「它」指奖杯，还得知道大东西放不进小东西；要猜对侦探小说的下一句，得记住前面的人物和线索。<b>猜下一个词像一场伪装起来的综合考试，什么都要懂一点，而答案从文本里白拿。</b>原文把这写成一个假说：模型为了把语言建模做好，会顺带学会许多我们要评测的能力。第 5 节有支持它的实验。</p>
+
+<h3>用什么模型：只留 Transformer 的解码器</h3>
+<p>模型是 12 层 Transformer 解码器。每一层只有两块：<b>带掩码的自注意力</b>和前馈网络。掩码的意思是，每个位置只能看到自己和左边的词，看不到右边，因为右边就是要猜的答案。</p>
+<figure class="fig">
+  <span class="tag">图 3 · 一层两块，叠 12 层；掩码让最后一个位置看过整句</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 270" role="img" aria-label="左边是模型的一层：下面是掩码自注意力，上面是前馈网络，乘 12 层。右边是一个 5 乘 5 的掩码格子，行是当前位置，列是被看的词：我、今天、去、了、公园。每一行只有自己和左边的格子是蓝色，右边是灰色。最后一行公园五格全是蓝色，用蓝框圈出，写着最后一个位置看过整句，微调时用它代表整条输入。">
+    <text class="b tn" x="150" y="26" text-anchor="middle">模型的一层</text>
+    <rect class="newT" x="70" y="56" width="160" height="44" rx="6"/><text x="150" y="83" text-anchor="middle">前馈网络</text>
+    <line class="mutS" x1="150" y1="150" x2="150" y2="103" marker-end="url(#ah)"/>
+    <rect class="newT" x="70" y="150" width="160" height="44" rx="6"/><text x="150" y="177" text-anchor="middle">掩码自注意力</text>
+    <text class="b tn" x="270" y="132" text-anchor="middle">× 12</text>
+    <text class="sm m" x="150" y="226" text-anchor="middle">每块外面有残差和层归一化</text>
+
+    <text class="b" x="530" y="26" text-anchor="middle">掩码：只能看自己和左边</text>
+    <g class="sm m" text-anchor="middle"><text x="442" y="58">我</text><text x="486" y="58">今天</text><text x="530" y="58">去</text><text x="574" y="58">了</text><text x="618" y="58">公园</text></g>
+    <g class="sm" text-anchor="end"><text x="410" y="91">我</text><text x="410" y="125">今天</text><text x="410" y="159">去</text><text x="410" y="193">了</text><text class="b tn" x="410" y="227">公园</text></g>
+    <g class="newT">
+      <rect x="422" y="72" width="40" height="30" rx="4"/>
+      <rect x="422" y="106" width="40" height="30" rx="4"/><rect x="466" y="106" width="40" height="30" rx="4"/>
+      <rect x="422" y="140" width="40" height="30" rx="4"/><rect x="466" y="140" width="40" height="30" rx="4"/><rect x="510" y="140" width="40" height="30" rx="4"/>
+      <rect x="422" y="174" width="40" height="30" rx="4"/><rect x="466" y="174" width="40" height="30" rx="4"/><rect x="510" y="174" width="40" height="30" rx="4"/><rect x="554" y="174" width="40" height="30" rx="4"/>
+      <rect x="422" y="208" width="40" height="30" rx="4"/><rect x="466" y="208" width="40" height="30" rx="4"/><rect x="510" y="208" width="40" height="30" rx="4"/><rect x="554" y="208" width="40" height="30" rx="4"/><rect x="598" y="208" width="40" height="30" rx="4"/>
+    </g>
+    <g class="soft">
+      <rect x="466" y="72" width="40" height="30" rx="4"/><rect x="510" y="72" width="40" height="30" rx="4"/><rect x="554" y="72" width="40" height="30" rx="4"/><rect x="598" y="72" width="40" height="30" rx="4"/>
+      <rect x="510" y="106" width="40" height="30" rx="4"/><rect x="554" y="106" width="40" height="30" rx="4"/><rect x="598" y="106" width="40" height="30" rx="4"/>
+      <rect x="554" y="140" width="40" height="30" rx="4"/><rect x="598" y="140" width="40" height="30" rx="4"/>
+      <rect x="598" y="174" width="40" height="30" rx="4"/>
+    </g>
+    <rect class="newS" x="417" y="203" width="226" height="40" rx="6"/>
+    <text class="sm tn b" x="530" y="262" text-anchor="middle">最后一个位置看过整句 → 微调时用它代表整条输入</text>
+  </svg>
+  </div>
+  <figcaption>右边每一行是一个位置，蓝格是它能看到的词，灰格被掩码挡住。只有最后一行是全蓝的。</figcaption>
+</figure>
+<p>掩码带来一个后面要用的性质：<b>只有最后一个位置看过全部输入</b>，所以它的向量可以代表整段话。（原文的公式就是取最后一个位置，理由是我根据掩码推的。）</p>
+
+<h3>怎么「猜」：拿输出向量和每个词比相似度</h3>
+<p>12 层算完，最后一个位置得到一个向量。拿它和词表里每个词的向量比相似度，越像的词分数越高，再把分数换成概率。查词向量的表和打分用的表是同一张。</p>
+<figure class="fig">
+  <span class="tag">图 4 · 输出向量越「指向」哪个词，那个词的概率越高（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 240" role="img" aria-label="左边是最后位置的输出向量 h 等于 1 和 0.5。右边是一张五行的表：cat 的向量 1、0，得分 1.0，概率 0.309；dog 的向量 0.8、0.6，得分 1.1，概率 0.342，最高；sat 的向量 0、1，得分 0.5，概率 0.188；on 的向量 负 0.5、0.2，得分负 0.4，概率 0.076；the 的向量 0.2、负 1，得分负 0.3，概率 0.084。概率画成蓝色横条。">
+    <rect class="newT" x="20" y="92" width="150" height="58" rx="8"/>
+    <text class="sm" x="95" y="114" text-anchor="middle">最后位置的输出</text>
+    <text class="mo b" x="95" y="138" text-anchor="middle">h = [1, 0.5]</text>
+    <line class="mutS" x1="172" y1="121" x2="196" y2="121" marker-end="url(#ah)"/>
+    <g class="sm m" text-anchor="middle"><text x="236" y="26">词</text><text x="318" y="26">词向量</text><text x="414" y="26">得分（相似度）</text></g>
+    <text class="sm m" x="470" y="26">概率</text>
+    <g class="mo sm" text-anchor="middle">
+      <text x="236" y="57">cat</text><text x="318" y="57">[1, 0]</text><text x="414" y="57">1.0</text>
+      <text class="b tn" x="236" y="89">dog</text><text class="tn" x="318" y="89">[0.8, 0.6]</text><text class="b tn" x="414" y="89">1.1</text>
+      <text x="236" y="121">sat</text><text x="318" y="121">[0, 1]</text><text x="414" y="121">0.5</text>
+      <text x="236" y="153">on</text><text x="318" y="153">[−0.5, 0.2]</text><text x="414" y="153">−0.4</text>
+      <text x="236" y="185">the</text><text x="318" y="185">[0.2, −1]</text><text x="414" y="185">−0.3</text>
+    </g>
+    <g class="new">
+      <rect x="470" y="45" width="124" height="16" rx="3"/>
+      <rect x="470" y="77" width="137" height="16" rx="3"/>
+      <rect x="470" y="109" width="75" height="16" rx="3"/>
+      <rect x="470" y="141" width="30" height="16" rx="3"/>
+      <rect x="470" y="173" width="34" height="16" rx="3"/>
+    </g>
+    <g class="mo sm"><text x="600" y="57">0.309</text><text class="b tn" x="613" y="89">0.342</text><text x="551" y="121">0.188</text><text x="506" y="153">0.076</text><text x="510" y="185">0.084</text></g>
+    <text class="sm m" x="340" y="226" text-anchor="middle">得分 = h 和词向量逐位相乘再相加；概率 = softmax(得分)</text>
+  </svg>
+  </div>
+  <figcaption>词表只有 5 个词、向量只有 2 维，数字是为讲解设定的。dog 的向量和 h 最接近，得分最高，概率也最高。真实模型的向量是 768 维，词表约 4 万个子词。公式见附录 A。</figcaption>
+</figure>
+
+<h3>为什么用整本的书</h3>
+<p>语料是 BooksCorpus，7000 多本没出版的书。作者选它的理由是书里有<b>大段连续的文本</b>，模型才学得到「前面几页埋的线索，后面怎么用」这种长距离的关系。另一个常用语料规模差不多，但句子被打乱过，长距离的结构就没了。这是作者的推断，本文没有拿两种语料做对比实验。</p>
+
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>第二步：加一个线性层，微调</h2>
+
+<h3>做什么</h3>
+<p>拿一个任务的标注数据，每条是一段输入和一个标签。把预训练好的网络整份拿过来，<b>在最顶上加一个很小的线性层</b>：它把最后一个位置的向量变成每个类别的分数。然后用标注数据把所有参数一起再训练几轮。这一步解决问题二：搬走的是整个网络，不只是词向量；每个任务也只新增一个线性层，没有另起一套结构。</p>
+<figure class="fig">
+  <span class="tag">图 5 · 微调一步：新加的参数少到可以忽略（示意 + 推算）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 256" role="img" aria-label="上面一行是一个三分类的小例子：最后位置的向量 h 等于 0.5 和负 1.0，乘以新加的 2 乘 3 线性层，得到分数负 0.2、负 0.55、0.4，softmax 后概率 0.284、0.200、0.517。若正确答案是第 1 类，损失是负 log 0.284 等于 1.26，梯度同时推动线性层和主体的全部参数。下面两条横条对比参数量：主体从预训练来，约 1.16 亿，推算；线性层三分类时 768 乘 3 等于 2304 个，条短到几乎看不见。">
+    <rect class="newT" x="20" y="34" width="140" height="58" rx="8"/>
+    <text class="sm" x="90" y="56" text-anchor="middle">最后位置的向量 h</text>
+    <text class="mo sm b" x="90" y="78" text-anchor="middle">[0.5, −1.0]</text>
+    <line class="mutS" x1="162" y1="63" x2="184" y2="63" marker-end="url(#ah)"/>
+    <rect class="softS" x="188" y="34" width="140" height="58" rx="8"/>
+    <text class="sm" x="258" y="56" text-anchor="middle">× 线性层（新加）</text>
+    <text class="mo sm" x="258" y="78" text-anchor="middle">2 × 3，随机初始化</text>
+    <line class="mutS" x1="330" y1="63" x2="352" y2="63" marker-end="url(#ah)"/>
+    <rect class="softS" x="356" y="34" width="140" height="58" rx="8"/>
+    <text class="sm" x="426" y="56" text-anchor="middle">三个类别的分数</text>
+    <text class="mo sm" x="426" y="78" text-anchor="middle">[−0.2, −0.55, 0.4]</text>
+    <line class="mutS" x1="498" y1="63" x2="520" y2="63" marker-end="url(#ah)"/>
+    <rect class="softS" x="524" y="34" width="140" height="58" rx="8"/>
+    <text class="sm" x="594" y="56" text-anchor="middle">softmax 概率</text>
+    <text class="sm" x="594" y="78" text-anchor="middle">[0.284, 0.200, 0.517]</text>
+    <text class="sm" x="340" y="124" text-anchor="middle">正确答案是第 1 类：损失 = −log 0.284 = 1.26，梯度同时推动线性层和主体的全部参数</text>
+
+    <text class="sm b" x="20" y="166">主体（预训练来的）</text>
+    <rect class="new" x="170" y="154" width="410" height="18" rx="3"/>
+    <text class="sm mo tn b" x="586" y="167">约 1.16 亿</text>
+    <text class="sm b" x="20" y="204">线性层（三分类）</text>
+    <rect class="inkF" x="170" y="192" width="2" height="18"/>
+    <text class="sm mo" x="180" y="205">768 × 3 = 2,304 个，约是主体的五万分之一</text>
+    <text class="sm m" x="340" y="242" text-anchor="middle">另外新增的只有分隔符、起止符这几个 token 的向量</text>
+  </svg>
+  </div>
+  <figcaption>上面一行是维度只有 2 的小例子，数字是为讲解设定的。下面两条横条按长度比例画参数量：1.16 亿是我按原文规格估算的（原文没给总数，外界常引用 1.17 亿），算法见附录 D。</figcaption>
+</figure>
+<p><b>为什么只加一个线性层就够</b>：最后那个向量已经是「读懂了输入」的表示，线性层只需要学「哪个方向对应哪一类」，这件事几千条样本就学得会。主体也只需要从预训练的位置挪一小段，所以微调的学习率只有预训练的四分之一，大多数任务训练 3 轮就够。学习率小，是为了不把预训练学到的东西冲掉。</p>
+
+<h3>微调时顺带接着练「猜下一个词」</h3>
+<p>只用任务的标签来训练，小数据上容易过拟合，也可能把预训练学到的语言能力忘掉。所以作者在微调时，让模型在<b>任务数据自己的文字上</b>继续猜下一个词，两个目标按 1 : 0.5 加起来一起优化。</p>
+<figure class="fig">
+  <span class="tag">图 6 · 一个网络，两个头：答题的同时接着练语感</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 226" role="img" aria-label="底部是任务样本的文字，输入中间蓝色的同一个网络。网络往上分出两个头：左边是任务头，新加的线性层，预测标签，问这道题答对了没有；右边是语言模型头，在任务文字上接着猜下一个词，问语感有没有丢。右侧写总目标等于答题损失加 0.5 乘猜词损失。">
+    <rect class="newT" x="40" y="20" width="250" height="54" rx="8"/>
+    <text class="b tn" x="165" y="42" text-anchor="middle">任务头（线性层）→ 标签</text>
+    <text class="sm" x="165" y="62" text-anchor="middle">这道题答对了没有</text>
+    <rect class="softS" x="390" y="20" width="250" height="54" rx="8"/>
+    <text class="b" x="515" y="42" text-anchor="middle">语言模型头 → 下一个词</text>
+    <text class="sm" x="515" y="62" text-anchor="middle">在任务文字上接着猜</text>
+    <line class="mutS" x1="290" y1="96" x2="220" y2="77" marker-end="url(#ah)"/>
+    <line class="mutS" x1="390" y1="96" x2="460" y2="77" marker-end="url(#ah)"/>
+    <rect class="new" x="230" y="96" width="220" height="50" rx="8"/>
+    <text class="b on" x="340" y="126" text-anchor="middle">同一个 12 层网络</text>
+    <line class="mutS" x1="340" y1="172" x2="340" y2="149" marker-end="url(#ah)"/>
+    <rect class="softS" x="190" y="172" width="300" height="40" rx="8"/>
+    <text class="sm" x="340" y="197" text-anchor="middle">任务样本的文字</text>
+    <text class="sm b tn" x="470" y="118">总目标 = 答题 + 0.5 × 猜词</text>
+    <text class="sm m" x="20" y="118">像学开车的同时</text>
+    <text class="sm m" x="20" y="138">每天仍读一点书</text>
+  </svg>
+  </div>
+  <figcaption>两个头共用下面同一个网络。左边的头是这一步新加的，右边的头就是第一步那个猜词的输出。</figcaption>
+</figure>
+<p>作者说这样能提高泛化、加快收敛。不过第 5 节的实验显示，它的作用其实可有可无。</p>
+
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>一个模型做所有任务：改写输入</h2>
+
+<h3>难点：任务的输入长得不一样</h3>
+<p>预训练的模型只见过「一长条连续文本」，可任务的输入各有各的形状：</p>
+<div class="tbl"><table>
+  <thead><tr><th>任务类型</th><th>做什么</th><th>输入的形状</th></tr></thead>
+  <tbody>
+    <tr><td>分类</td><td>判断句子合不合语法、情感是正还是负</td><td>单句</td></tr>
+    <tr><td>推理</td><td>读一对句子（前提、假设），判断是蕴含、矛盾还是中立</td><td>有顺序的两句</td></tr>
+    <tr><td>语义相似</td><td>判断两句话是不是一个意思</td><td><b>没有顺序</b>的两句</td></tr>
+    <tr><td>问答与常识推理</td><td>阅读理解选择题；给一个短故事，选对的结尾</td><td>文章 + 问题 + 几个候选答案</td></tr>
+  </tbody>
+</table></div>
+<p>前人的办法是为每种形状设计一套新结构，可新结构要从头学，又回到了问题二。</p>
+
+<h3>办法：不改网络，改输入</h3>
+<p>本文把每种输入<b>拼成一条文字序列</b>，让模型像读一段普通文本那样一路读下来：开头加起始符 ⟨s⟩，结尾加结束符 ⟨e⟩，两段之间加分隔符 $。读完后取结束符那个位置的向量（它看过全部输入）送进线性层。</p>
+<figure class="fig"><span class="tag">原文 Figure 1 · 左：模型结构和两个训练目标；右：四类任务各自怎么改写输入</span><img class="orig" src="orig-fig1.png" alt="原文 Figure 1。左半边是模型结构：底部是文本和位置嵌入，往上是 12 层重复的块，每块是掩码多头自注意力、相加、层归一化、前馈网络、相加、层归一化，顶部分出两个输出：文本预测和任务分类器。右半边是四类任务的输入改写：分类是 Start、Text、Extract 进 Transformer 再进 Linear；蕴含是 Start、Premise、Delim、Hypothesis、Extract；相似是两种顺序各拼一条，各过一次 Transformer，结果相加再进 Linear；多选是 Context、Delim、Answer 1 到 N 各拼一条，各过 Transformer 和 Linear，再一起归一化。" loading="lazy"><figcaption>这张图在说什么：<b>四类任务，网络完全一样，区别只在输入怎么拼、几个结果怎么合。</b>怎么看：右半边每一行的绿色 Transformer 都是同一个预训练网络；Start、Delim、Extract 就是 ⟨s⟩、$、⟨e⟩；Linear 就是新加的线性层。左半边顶部的两个输出就是图 6 的两个头。图源：Radford 等 2018 原文。</figcaption></figure>
+<ul>
+  <li><b>分类</b>：⟨s⟩ 句子 ⟨e⟩。</li>
+  <li><b>推理</b>：⟨s⟩ 前提 $ 假设 ⟨e⟩。</li>
+  <li><b>语义相似</b>：两句话本来没有顺序，可模型是从左往右读的，换个顺序结果就不同。办法是两种顺序都拼一条，各读一遍，把两个向量相加：</li>
+</ul>
+<figure class="fig">
+  <span class="tag">图 7 · 语义相似：两种顺序各读一遍，相加之后和顺序无关（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 200" role="img" aria-label="上一行：序列 s、A、分隔符、B、e 进入 Transformer，得到 h1 等于 0.5、负 0.2。下一行：序列 s、B、分隔符、A、e 进入同一个 Transformer，得到 h2 等于 0.3、0.4。两个向量在右边的加号处相加，得到 0.8、0.2，再进线性层判断同义或不同义。左下写：A、B 换个顺序，h1、h2 只是互换，和不变。">
+    <rect class="softS" x="20" y="30" width="230" height="38" rx="6"/>
+    <text class="mo" x="135" y="54" text-anchor="middle">⟨s⟩ A $ B ⟨e⟩</text>
+    <line class="mutS" x1="252" y1="49" x2="282" y2="49" marker-end="url(#ah)"/>
+    <rect class="new" x="286" y="30" width="124" height="38" rx="6"/>
+    <text class="on" x="348" y="54" text-anchor="middle">Transformer</text>
+    <line class="mutS" x1="412" y1="49" x2="434" y2="49" marker-end="url(#ah)"/>
+    <text class="mo sm" x="440" y="54">h₁ = [0.5, −0.2]</text>
+
+    <rect class="softS" x="20" y="108" width="230" height="38" rx="6"/>
+    <text class="mo" x="135" y="132" text-anchor="middle">⟨s⟩ B $ A ⟨e⟩</text>
+    <line class="mutS" x1="252" y1="127" x2="282" y2="127" marker-end="url(#ah)"/>
+    <rect class="new" x="286" y="108" width="124" height="38" rx="6"/>
+    <text class="on" x="348" y="132" text-anchor="middle">Transformer</text>
+    <line class="mutS" x1="412" y1="127" x2="434" y2="127" marker-end="url(#ah)"/>
+    <text class="mo sm" x="440" y="132">h₂ = [0.3, 0.4]</text>
+
+    <line class="newS" x1="556" y1="56" x2="584" y2="78"/>
+    <line class="newS" x1="546" y1="122" x2="584" y2="98"/>
+    <circle class="newT" cx="596" cy="88" r="14"/>
+    <text class="b tn" x="596" y="93" text-anchor="middle">+</text>
+    <line class="newS" x1="610" y1="88" x2="640" y2="88"/>
+    <text class="mo sm b tn" x="596" y="176" text-anchor="middle">[0.8, 0.2] → 线性层</text>
+    <line class="newS" x1="640" y1="88" x2="640" y2="150"/>
+    <line class="newS" x1="640" y1="150" x2="612" y2="160" marker-end="url(#ahN)"/>
+    <text class="sm m" x="20" y="182">A、B 换个顺序，h₁ 和 h₂ 只是互换，加起来不变</text>
+  </svg>
+  </div>
+  <figcaption>两个向量是为讲解设定的 2 维小例子。两条序列过的是同一个网络。</figcaption>
+</figure>
+<ul>
+  <li><b>问答与常识推理</b>：每个候选答案单独拼一条「文章 $ 候选」，各读一遍得到一个分数，再把所有候选的分数一起换成概率，选最高的：</li>
+</ul>
+<figure class="fig">
+  <span class="tag">图 8 · 多选题：每个候选单独读一遍，分数一起比（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 196" role="img" aria-label="上一行：s、故事、分隔符、结尾 1、e 进入 Transformer，经线性层得到分数 1.2。下一行：同一个故事配结尾 2，得到分数 0.4。两个分数在右边一起做 softmax，得到结尾 1 概率 0.690，结尾 2 概率 0.310，选结尾 1。">
+    <rect class="softS" x="20" y="28" width="250" height="38" rx="6"/>
+    <text class="mo sm" x="145" y="52" text-anchor="middle">⟨s⟩ 故事 $ 结尾 1 ⟨e⟩</text>
+    <line class="mutS" x1="272" y1="47" x2="296" y2="47" marker-end="url(#ah)"/>
+    <rect class="new" x="300" y="28" width="124" height="38" rx="6"/>
+    <text class="on" x="362" y="52" text-anchor="middle">Transformer</text>
+    <line class="mutS" x1="426" y1="47" x2="446" y2="47" marker-end="url(#ah)"/>
+    <text class="mo sm" x="452" y="52">线性层 → 1.2</text>
+
+    <rect class="softS" x="20" y="100" width="250" height="38" rx="6"/>
+    <text class="mo sm" x="145" y="124" text-anchor="middle">⟨s⟩ 故事 $ 结尾 2 ⟨e⟩</text>
+    <line class="mutS" x1="272" y1="119" x2="296" y2="119" marker-end="url(#ah)"/>
+    <rect class="new" x="300" y="100" width="124" height="38" rx="6"/>
+    <text class="on" x="362" y="124" text-anchor="middle">Transformer</text>
+    <line class="mutS" x1="426" y1="119" x2="446" y2="119" marker-end="url(#ah)"/>
+    <text class="mo sm" x="452" y="124">线性层 → 0.4</text>
+
+    <line class="mutS" x1="548" y1="47" x2="566" y2="70"/>
+    <line class="mutS" x1="548" y1="119" x2="566" y2="96"/>
+    <rect class="newT" x="568" y="62" width="94" height="42" rx="8"/>
+    <text class="sm b tn" x="615" y="88" text-anchor="middle">softmax</text>
+    <text class="sm" x="20" y="176">e<tspan dy="-5" style="font-size:9px">1.2</tspan><tspan dy="5"> = 3.320，e</tspan><tspan dy="-5" style="font-size:9px">0.4</tspan><tspan dy="5"> = 1.492，总和 4.812</tspan></text>
+    <text class="sm b tn" x="660" y="176" text-anchor="end">结尾 1：0.690　结尾 2：0.310　选结尾 1</text>
+  </svg>
+  </div>
+  <figcaption>故事补全每题两个结尾，所以拼两条；阅读理解每题四个选项，就拼四条。两个分数是为讲解设定的。</figcaption>
+</figure>
+<p class="punch">网络一个零件都不换，<em>任务的差别全放进输入的写法</em>。预训练学到的东西因此被完整用上，每个任务只多一个线性层。</p>
+
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>证据：它为什么有效</h2>
+
+<h3>结果：12 个数据集，9 个刷新了最好成绩</h3>
+<figure class="fig">
+  <span class="tag">图 9 · 和此前最好成绩比，每个数据集差多少分</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 370" role="img" aria-label="横向条形图，以 0 为中线，向右是比此前最好成绩高，向左是低。推理类：MNLI 高 1.5，从 80.6 到 82.1；SNLI 高 0.6；SciTail 高 5.0；QNLI 高 5.8；RTE 低 5.7，从 61.7 到 56.0。问答类：Story Cloze 高 8.9；RACE 高 5.7。分类类：CoLA 高 10.4，从 35.0 到 45.4；SST-2 低 1.9。相似类：MRPC 低 3.7；STS-B 高 1.0；QQP 高 4.2。蓝色 9 个，赭色 3 个。">
+    <g class="sm b"><rect class="new" x="20" y="8" width="12" height="12" rx="2"/><text x="38" y="19">刷新最好成绩（9 个）</text>
+      <rect class="old" x="210" y="8" width="12" height="12" rx="2"/><text x="228" y="19">没刷新（3 个）</text></g>
+    <line class="ink" x1="330" y1="34" x2="330" y2="334" style="stroke-width:1.2"/>
+    <g class="sm mo"><text x="20" y="57">MNLI</text><text x="20" y="81">SNLI</text><text x="20" y="105">SciTail</text><text x="20" y="129">QNLI</text><text x="20" y="153">RTE</text><text x="20" y="177">Story Cloze</text><text x="20" y="201">RACE</text><text x="20" y="225">CoLA</text><text x="20" y="249">SST-2</text><text x="20" y="273">MRPC</text><text x="20" y="297">STS-B</text><text x="20" y="321">QQP</text></g>
+    <g class="sm m"><text x="118" y="57">推理</text><text x="118" y="81">推理</text><text x="118" y="105">推理</text><text x="118" y="129">推理</text><text x="118" y="153">推理</text><text x="118" y="177">问答 / 常识</text><text x="118" y="201">问答 / 常识</text><text x="118" y="225">分类</text><text x="118" y="249">分类</text><text x="118" y="273">相似</text><text x="118" y="297">相似</text><text x="118" y="321">相似</text></g>
+    <g class="new">
+      <rect x="330" y="45" width="30" height="14" rx="2"/>
+      <rect x="330" y="69" width="12" height="14" rx="2"/>
+      <rect x="330" y="93" width="100" height="14" rx="2"/>
+      <rect x="330" y="117" width="116" height="14" rx="2"/>
+      <rect x="330" y="165" width="178" height="14" rx="2"/>
+      <rect x="330" y="189" width="114" height="14" rx="2"/>
+      <rect x="330" y="213" width="208" height="14" rx="2"/>
+      <rect x="330" y="285" width="20" height="14" rx="2"/>
+      <rect x="330" y="309" width="84" height="14" rx="2"/>
+    </g>
+    <g class="old">
+      <rect x="216" y="141" width="114" height="14" rx="2"/>
+      <rect x="292" y="237" width="38" height="14" rx="2"/>
+      <rect x="256" y="261" width="74" height="14" rx="2"/>
+    </g>
+    <g class="sm mo">
+      <text x="366" y="57">+1.5（80.6 → 82.1）</text>
+      <text x="348" y="81">+0.6（89.3 → 89.9）</text>
+      <text x="436" y="105">+5.0（83.3 → 88.3）</text>
+      <text x="452" y="129">+5.8（82.3 → 88.1）</text>
+      <text class="to" x="336" y="153">−5.7（61.7 → 56.0）</text>
+      <text x="514" y="177">+8.9（77.6 → 86.5）</text>
+      <text x="450" y="201">+5.7（53.3 → 59.0）</text>
+      <text class="b on" x="336" y="225">+10.4（35.0 → 45.4）</text>
+      <text class="to" x="336" y="249">−1.9（93.2 → 91.3）</text>
+      <text class="to" x="336" y="273">−3.7（86.0 → 82.3）</text>
+      <text x="356" y="297">+1.0（81.0 → 82.0）</text>
+      <text x="420" y="321">+4.2（66.1 → 70.3）</text>
+    </g>
+    <text class="sm m" x="330" y="356" text-anchor="middle">和此前最好成绩的差值（单位：分）</text>
+  </svg>
+  </div>
+  <figcaption>中线是此前最好成绩，向右是本文更高，向左是更低；括号里是「此前最好 → 本文」。数字出自原文 Table 2–4，各数据集用的指标不同，完整的表和指标说明见附录 C、E。</figcaption>
+</figure>
+<p>不少对手是专为单个任务设计的结构，还有好几个是多个模型的集成（阅读理解上是 9 个模型），本文每一项都是一个单模型。没刷新的三个里，RTE 是最小的推理数据集，只有 2490 条，输给了一个用多个任务一起训练的模型。</p>
+<p>提升最大的是要读长文、要推理的任务：阅读理解的高中题涨了 7.1 分，比初中题多涨了 4 分多；故事结尾涨了 8.9 分。</p>
+<figure class="fig">
+  <span class="tag">图 10 · 阅读理解和故事结尾：难的那一档涨得最多</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 284" role="img" aria-label="三组竖条，每组左边赭色是此前最好，右边蓝色是本文。RACE 初中题：60.2 到 62.9，高 2.7，旧的是 9 个模型的集成。RACE 高中题：50.3 到 57.4，高 7.1，旧的是 9 个模型的集成。Story Cloze 故事结尾：77.6 到 86.5，高 8.9，旧的是单模型。纵轴 0 到 100。">
+    <g class="sm b"><rect class="old" x="20" y="8" width="12" height="12" rx="2"/><text x="38" y="19">此前最好</text>
+      <rect class="new" x="120" y="8" width="12" height="12" rx="2"/><text x="138" y="19">本文（单模型）</text></g>
+    <line class="ln" x1="60" y1="230" x2="640" y2="230"/>
+    <line class="ln dash" x1="60" y1="130" x2="640" y2="130"/>
+    <line class="ln dash" x1="60" y1="30" x2="640" y2="30"/>
+    <g class="sm m mo" text-anchor="end"><text x="54" y="234">0</text><text x="54" y="134">50</text><text x="54" y="34">100</text></g>
+    <rect class="old" x="114" y="109.6" width="40" height="120.4" rx="3"/>
+    <rect class="new" x="160" y="104.2" width="40" height="125.8" rx="3"/>
+    <rect class="old" x="304" y="129.4" width="40" height="100.6" rx="3"/>
+    <rect class="new" x="350" y="115.2" width="40" height="114.8" rx="3"/>
+    <rect class="old" x="494" y="74.8" width="40" height="155.2" rx="3"/>
+    <rect class="new" x="540" y="57" width="40" height="173" rx="3"/>
+    <g class="sm mo" text-anchor="middle">
+      <text x="134" y="103">60.2</text><text class="tn" x="180" y="97">62.9</text>
+      <text x="324" y="123">50.3</text><text class="tn" x="370" y="109">57.4</text>
+      <text x="514" y="68">77.6</text><text class="tn" x="560" y="50">86.5</text>
+    </g>
+    <g class="b tn mo" text-anchor="middle"><text x="157" y="78">+2.7</text><text x="347" y="88">+7.1</text><text x="537" y="24">+8.9</text></g>
+    <g class="sm" text-anchor="middle"><text x="157" y="252">阅读理解 · 初中题</text><text x="347" y="252">阅读理解 · 高中题</text><text x="537" y="252">故事结尾</text></g>
+    <g class="sm m" text-anchor="middle"><text x="157" y="272">旧：9 个模型的集成</text><text x="347" y="272">旧：9 个模型的集成</text><text x="537" y="272">旧：单模型</text></g>
+  </svg>
+  </div>
+  <figcaption>数字出自原文 Table 3（阅读理解是 RACE，故事结尾是 Story Cloze），准确率。</figcaption>
+</figure>
+<p>原文把这归因于模型「处理长上下文的能力」，这正是第一步选整本书、选 Transformer 想要的效果。我的推测是它和长篇小说语料有关，原文没做对照。</p>
+
+<h3>消融：三个设计，各值多少</h3>
+<p>结果好，还要知道是哪个设计带来的。作者把设计一个个拿掉，看 8 个任务的平均分：</p>
+<figure class="fig">
+  <span class="tag">图 11 · 三个消融：预训练最关键，辅助目标可有可无</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 244" role="img" aria-label="四条横条，表示 8 个任务的平均分。完整模型 74.7，蓝色。去掉辅助目标 75.0，比完整还高 0.3，浅蓝。换成单层 LSTM 69.1，低 5.6，赭色。去掉预训练 59.9，低 14.8，赭色。横轴 0 到 100。">
+    <g class="sm" text-anchor="end"><text x="196" y="51">完整模型</text><text x="196" y="95">去掉微调时的猜词</text><text x="196" y="139">换成 LSTM</text><text x="196" y="183">去掉预训练</text></g>
+    <rect class="new" x="210" y="36" width="336.2" height="22" rx="3"/>
+    <rect class="newT" x="210" y="80" width="337.5" height="22" rx="3"/>
+    <rect class="old" x="210" y="124" width="311" height="22" rx="3"/>
+    <rect class="old" x="210" y="168" width="269.6" height="22" rx="3"/>
+    <g class="mo sm"><text class="b tn" x="554" y="52">74.7</text><text x="555" y="96">75.0（+0.3）</text><text class="to" x="529" y="140">69.1（−5.6）</text><text class="b to" x="487" y="184">59.9（−14.8）</text></g>
+    <line class="ln" x1="210" y1="206" x2="660" y2="206"/>
+    <g class="sm m mo" text-anchor="middle"><text x="210" y="222">0</text><text x="435" y="222">50</text><text x="660" y="222">100</text></g>
+    <text class="sm m" x="435" y="240" text-anchor="middle">8 个任务的平均分</text>
+  </svg>
+  </div>
+  <figcaption>每条是一个版本的平均分，数字出自原文 Table 5（全表见附录 E）。</figcaption>
+</figure>
+<ol>
+  <li><b>第一步（预训练）是关键：去掉它，74.7 → 59.9。</b>同一个模型，唯一的区别是有没有先读书，8 个任务全都变差，语义相似从 82.0 掉到 30.9。收益来自预训练，不是因为模型大。</li>
+  <li><b>选 Transformer 是对的：换成 LSTM，掉 5.6 分。</b>LSTM 要把读过的内容压进一个固定大小的状态里，Transformer 每个位置都能直接回看前面所有的词，长文本上更有利。LSTM 只在一项上略高。要留个心眼（我补充的）：这里的 LSTM 只有一层，两者规模差不少，5.6 分里多少来自结构、多少来自规模，分不开。</li>
+  <li><b>微调时顺带猜词，可有可无：去掉反而高 0.3。</b>它在大数据集上有帮助，在小数据集上没有。作者还是把它留在了最终模型里。</li>
+</ol>
+
+<h3>猜下一个词，真的在学做题的本事</h3>
+<p>回到第 2 节的假说。作者做了两个实验来验证：</p>
+<figure class="fig"><span class="tag">原文 Figure 2 · 左：迁移几层；右：不微调直接做题，表现随预训练步数的变化</span><img class="orig" src="orig-fig2.png" alt="原文 Figure 2。左图横轴是迁移的层数，从 0 到 12，纵轴左边是 RACE 验证集准确率，右边是 MultiNLI 验证集准确率，实线是验证集，虚线是训练集，四条线都随层数增加而上升。右图横轴是预训练更新步数，对数刻度从 1000 到 100 万，纵轴是归一化后的任务表现，四种颜色分别是情感分析、Winograd 指代消解、语法可接受度、问答，实线是 Transformer，虚线是 LSTM，实线整体随训练上升，虚线更低、波动更大。" loading="lazy"><figcaption>这张图在说什么：<b>预训练网络的每一层都有用；不经微调，做题能力也随预训练稳步长出来。</b>怎么看：左图横轴是从预训练模型搬过去几层（其余随机初始化），纵轴是两个任务的准确率。右图横轴是预训练的步数，纵轴把每个任务的分数归一化到「随机猜」和「当时最好的模型」之间；颜色区分任务，实线是 Transformer，虚线是 LSTM。图源：Radford 等 2018 原文。</figcaption></figure>
+<ul>
+  <li><b>左图：搬的层越多，越好。</b>每多搬一层，成绩还在往上走，完整搬 12 层在推理任务上最多高 9%。<b>预训练学到的东西分布在每一层里</b>，不只是最底下的词向量，这正对着问题二。</li>
+  <li><b>右图：不微调，直接做题。</b>作者给每个任务设计了一个只用「猜词概率」的规则，不更新任何参数。比如判断情感：在句子后面接上 very，看模型觉得下一个词是 positive 还是 negative 更顺（规则全表见附录 B）。这些规则的成绩<b>随预训练稳定上升</b>，说明猜下一个词的过程中，做题的本事确实在长；LSTM 的曲线更低、波动更大。</li>
+</ul>
+<p>这是相关性的证据，不是严格的证明；规则也是人为每个任务设计的。</p>
+
+<h3>作者的结论</h3>
+<p>用生成式预训练加判别式微调，一个不针对任何任务的单一模型，就能取得很强的语言理解能力。在有大段连续文本的语料上预训练，模型学到了世界知识和处理长距离依赖的能力。这也提示了哪种模型（Transformer）和哪种数据（有长距离依赖的文本）最适合这条路。</p>
+
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>局限和后来</h2>
+<ul>
+  <li><b>只能从左往右读</b>：每个词看不到右边。BERT 改成双向（第 008 篇）。</li>
+  <li><b>每个任务仍要标注和一次微调</b>：GPT-2 把「不微调直接做」推到前台（第 007 篇），GPT-3 用几个示范代替微调（第 011 篇）。</li>
+  <li><b>每个任务存一份完整参数</b>：模型变大后很贵，LoRA 针对这一点（第 014 篇）。</li>
+  <li><b>规模还很小</b>：1 亿多参数，没看继续做大会怎样（第 009 篇缩放定律）。</li>
+  <li>我补充的：语料、结构、训练方式同时换了，「赢」里有多少来自语料分不出来；没报告多次运行的波动，小数据集上几分的差距可能在波动之内。</li>
+</ul>
+<p>它真正的长远影响，常见的看法是：<b>指出了一条能一直放大的路</b>。猜下一个词不需要标注，只要数据和算力继续增长，模型就能继续变强。</p>
+
+
+<!-- ================= 附录 ================= -->
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块默认折叠，点开看。标题里写了对应原文的第几节。</p>
+
+<details class="ext"><summary>A · 五个公式和符号表（原文第 3 节，Eq. 1–5）</summary>
+<p><b>第一步：猜下一个词</b></p>
+<div class="formula">L<sub>1</sub>(U) = Σ<sub>i</sub> log P( u<sub>i</sub> | u<sub>i−k</sub>, …, u<sub>i−1</sub> ; Θ )<span class="fsrc">（原文 Eq. 1）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>是什么</th></tr></thead>
+  <tbody>
+    <tr><td>U = {u<sub>1</sub>, …, u<sub>n</sub>}</td><td>整个没标注的语料，一串 token</td></tr>
+    <tr><td>u<sub>i</sub></td><td>第 i 个位置的真实 token，就是要猜的「下一个词」</td></tr>
+    <tr><td>k</td><td>往前看多少个 token，本文 512</td></tr>
+    <tr><td>Θ</td><td>模型的全部参数</td></tr>
+    <tr><td>Σ log P</td><td>每个位置猜对的对数概率加起来，越大越好</td></tr>
+  </tbody>
+</table></div>
+<p><b>模型怎么算出这个概率</b></p>
+<div class="formula">h<sub>0</sub> = U · W<sub>e</sub> + W<sub>p</sub>　　h<sub>l</sub> = transformer_block(h<sub>l−1</sub>)，l = 1…12　　P(u) = softmax( h<sub>n</sub> · W<sub>e</sub><sup>T</sup> )<span class="fsrc">（原文 Eq. 2）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>是什么</th></tr></thead>
+  <tbody>
+    <tr><td>U</td><td>上下文的 token，写成独热矩阵（每行只有一个 1）</td></tr>
+    <tr><td>W<sub>e</sub></td><td>词嵌入矩阵（词表大小 × 768），按编号查出每个词的向量</td></tr>
+    <tr><td>W<sub>p</sub></td><td>位置嵌入矩阵（512 × 768），加到词向量上，模型才知道顺序</td></tr>
+    <tr><td>transformer_block</td><td>一个解码器层：掩码自注意力 + 前馈网络</td></tr>
+    <tr><td>h<sub>n</sub> · W<sub>e</sub><sup>T</sup></td><td>最后一层的向量乘<b>同一个</b> W<sub>e</sub> 的转置，就是图 4 里「和每个词比相似度」</td></tr>
+  </tbody>
+</table></div>
+<p>图 4 的验算：得分取 e 的幂是 2.718、3.004、1.649、0.670、0.741，总和 8.782，各自除以总和得到概率（合计 0.999 是舍入误差）。</p>
+<p><b>第二步：微调</b></p>
+<div class="formula">P( y | x<sub>1</sub>, …, x<sub>m</sub> ) = softmax( h<sub>l</sub><sup>m</sup> · W<sub>y</sub> )<span class="fsrc">（原文 Eq. 3）</span></div>
+<div class="formula">L<sub>2</sub>(C) = Σ<sub>(x, y)</sub> log P( y | x<sub>1</sub>, …, x<sub>m</sub> )<span class="fsrc">（原文 Eq. 4）</span></div>
+<div class="formula">L<sub>3</sub>(C) = L<sub>2</sub>(C) + λ · L<sub>1</sub>(C)<span class="fsrc">（原文 Eq. 5，λ = 0.5）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>是什么</th></tr></thead>
+  <tbody>
+    <tr><td>C</td><td>一个任务的标注数据集，每条是输入 x<sub>1</sub>…x<sub>m</sub> 和标签 y</td></tr>
+    <tr><td>h<sub>l</sub><sup>m</sup></td><td>最后一层、最后一个位置 m 的向量（768 维）</td></tr>
+    <tr><td>W<sub>y</sub></td><td>新加的线性层，随机初始化</td></tr>
+    <tr><td>L<sub>2</sub></td><td>答题的目标：正确标签的对数概率之和</td></tr>
+    <tr><td>L<sub>3</sub></td><td>答题加上 0.5 倍的猜词，就是图 6 的总目标</td></tr>
+  </tbody>
+</table></div>
+<p><b>一处疑点</b>：L<sub>1</sub> 写的是对所有位置求和。如果真按长度求和，一个 200 个 token 的样本，猜词项会比答题项大两个数量级，λ = 0.5 就谈不上「辅助」。实际实现可能是按 token 平均的，原文没有说明，待核实。</p>
+</details>
+
+<details class="ext"><summary>B · 几个概念：生成式与判别式、评价指标、零样本规则</summary>
+<p><b>生成式与判别式</b>。判别式模型学 P(y | x)：给定输入，答案是什么，只需要区分类别。生成式模型学数据本身的分布 P(x)：什么样的文本是像样的文本，语言模型就是生成式的。标题里的 Generative Pre-Training 指预训练用生成式目标（猜下一个词），微调换成判别式目标（答题）。后来这类「标签来自数据本身」的训练叫自监督，原文用的词是无监督。</p>
+<p><b>四种评价指标</b>。准确率：判对的比例。F1（MRPC、QQP 用）：同时看精确率和召回率，两类样本比例不均时比准确率可靠。Pearson 相关（STS-B 用）：模型打分和人工打分的线性相关程度。Matthews 相关（CoLA 用）：类别不均衡时更可靠的二分类指标，范围 −1 到 1，表里乘了 100。小例子（示意）：100 条样本，真阳 40、真阴 30、假阳 10、假阴 20，准确率 70%，F1 ≈ 0.727，Matthews 只有 ≈ 0.408。所以 CoLA 上涨 10 分，是在一个很难拿高分的指标上涨的。</p>
+<p><b>零样本的四条规则</b>（原文第 5 节）：</p>
+<div class="tbl"><table>
+  <thead><tr><th>任务</th><th>规则</th><th>直观理解</th></tr></thead>
+  <tbody>
+    <tr><td>CoLA（语法）</td><td>算整句每个 token 的平均对数概率，高于阈值判为合语法</td><td>通顺的句子，语言模型不觉得意外</td></tr>
+    <tr><td>SST-2（情感）</td><td>句尾加 very，比较接 positive 还是 negative 的概率高</td><td>「……很棒。very ___」，接 positive 更顺</td></tr>
+    <tr><td>RACE（阅读理解）</td><td>以文章和问题为条件，选平均对数概率最高的答案</td><td>和上下文一致的答案更顺口</td></tr>
+    <tr><td>DPRD（指代消解）</td><td>把代词分别换成两个可能的对象，选后文平均对数概率更高的</td><td>代入对的对象，后面读起来更通</td></tr>
+  </tbody>
+</table></div>
+<p>CoLA 规则的小例子（示意）：「The cat sat on the mat」平均对数概率 −3.1，「mat the on sat cat The」是 −6.0，阈值设 −4.5，前者判合语法，后者判不合。这和后来 GPT-2、GPT-3 的零样本不完全一样：那里任务用自然语言写进提示，这里是每个任务一条手工规则。</p>
+</details>
+
+<details class="ext"><summary>C · 相关工作与当时的背景（原文第 1、2 节）</summary>
+<p><b>原文指出的两个没有共识的问题</b>：学什么（预训练目标有语言模型、机器翻译、篇章连贯性，各自只在某些任务上占优），怎么搬（为每个任务改结构、复杂的训练流程、加辅助目标，常常几样组合）。本文选了最朴素的语言模型，没有做「哪种预训练目标最好」的对比，所以这是一个选择，不是被证明的结论。</p>
+<p><b>半监督与无监督预训练</b>：半监督是同时用少量有标注和大量无标注数据。原文对无监督预训练的定义是：目标是<b>找到一个好的初始化点</b>，而不是修改有监督的学习目标。前人认为预训练起到正则化的作用，让深度网络泛化更好。</p>
+<p><b>和本文最接近的两条路线</b>：一是 LSTM 语言模型预训练再微调（Dai 和 Le、ULMFiT），流程一样，但作者认为 LSTM 只擅长短距离，而且它们只用在文本分类上；二是把预训练模型的隐藏表示当额外特征（ELMo 等），每个任务都要大量新参数。输入改写成一条序列的「遍历式」做法，来自 Rocktäschel 等人；只用 Transformer 解码器，来自 Liu 等 2018 年生成维基百科摘要的工作。</p>
+<p><b>当时的背景（2018）</b>：词向量（word2vec 2013、GloVe 2014）是标配；2017–2018 年出现了 CoVe、ELMo、ULMFiT 这批搬更高层表示的工作，本文结果表里多处对手就是「+ ELMo」。Transformer 刚出来一年，LSTM 仍是主流。GLUE 评测 2018 年 4 月刚发布，本文用了其中 8 个任务。更早的无监督预训练（Hinton 2006 的深度信念网络、逐层预训练、去噪自编码器）曾是训不动深层网络的权宜办法，后来在视觉里被大规模有监督预训练取代；本文在语言上把它重新做成了主流（这段历史判断是我补充的，待核实）。</p>
+<p><b>名字和发布</b>：原文全文没有出现「GPT」，GPT-1 是后来为了和 GPT-2、GPT-3 区分才叫开的。原文页眉写着「Preprint. Work in progress.」，没有会议、日期和 arXiv 编号，具体发布时间待核实。</p>
+</details>
+
+<details class="ext"><summary>D · 模型规格、训练设置和参数量（原文 4.1 节）</summary>
+<div class="tbl"><table>
+  <thead><tr><th></th><th>004 base（编码器 + 解码器）</th><th>006（仅解码器）</th></tr></thead>
+  <tbody>
+    <tr><td>层数</td><td>编码器 6 + 解码器 6</td><td>12</td></tr>
+    <tr><td>向量维度</td><td>512</td><td>768</td></tr>
+    <tr><td>注意力头</td><td>8</td><td>12（每头 64 维）</td></tr>
+    <tr><td>前馈网络内部</td><td>2048</td><td>3072</td></tr>
+    <tr><td>激活函数</td><td>ReLU</td><td>GELU</td></tr>
+    <tr><td>位置编码</td><td>固定的 sin / cos</td><td>学出来的，最多 512 个位置</td></tr>
+    <tr><td>词表</td><td>BPE，约 37000（英德）</td><td>BPE，40000 次合并</td></tr>
+    <tr><td>dropout</td><td>0.1</td><td>残差、嵌入、注意力三处都是 0.1</td></tr>
+  </tbody>
+</table></div>
+<ul>
+  <li><b>模型的来历</b>：004 的解码器每层有三块，带掩码的自注意力、回头看编码器的注意力、前馈网络。没有编码器，中间那块就删掉，剩下的就是图 3 的一层。</li>
+  <li><b>预训练</b>：Adam 优化器，每批 64 条随机抽取的、连续 512 个 token 的片段，训练 100 轮。学习率前 2000 步从 0 线性升到 2.5 × 10<sup>−4</sup>，之后按余弦曲线降到 0。用了改进版 L2 正则（w = 0.01，后来叫 AdamW 的做法，细节是我按引用标题推断的）；权重从 N(0, 0.02) 初始化。训练后在这份语料上的 token 级困惑度是 18.4。</li>
+  <li><b>微调</b>：学习率 6.25 × 10<sup>−5</sup>，批大小 32，学习率线性衰减，预热占训练的 0.2%，分类器上加 0.1 的 dropout，λ = 0.5，大多数任务 3 轮。</li>
+  <li><b>GELU</b>：GELU(x) = x · Φ(x)，Φ 是标准正态分布的累积分布函数，可以看成平滑版的 ReLU：GELU(1) = 0.841，GELU(−1) = −0.159。原文没说为什么换。</li>
+  <li><b>参数量（推算）</b>：每层注意力 4 个 768 × 768 矩阵约 236 万，前馈网络 768 × 3072 × 2 约 472 万，每层约 708 万，12 层约 8490 万；词嵌入 40000 × 768 约 3072 万，位置嵌入约 39 万。合计约 1.16 亿（没算偏置、层归一化）。004 base 是 6500 万。</li>
+  <li><b>文本处理</b>：ftfy 清理文本，spaCy 分词。硬件和训练时长原文没写。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>E · 原文的四张结果表（原文 4.2 节、第 5 节，Table 2–5）</summary>
+<p><b>Table 2 · 自然语言推理</b>（准确率；5x 指 5 个模型的集成；空格原文如此）</p>
+<div class="tbl"><table>
+  <thead><tr><th>方法</th><th class="num">MNLI-m</th><th class="num">MNLI-mm</th><th class="num">SNLI</th><th class="num">SciTail</th><th class="num">QNLI</th><th class="num">RTE</th></tr></thead>
+  <tbody>
+    <tr><td>ESIM + ELMo (5x)</td><td class="num">-</td><td class="num">-</td><td class="num">89.3</td><td class="num">-</td><td class="num">-</td><td class="num">-</td></tr>
+    <tr><td>CAFE (5x)</td><td class="num">80.2</td><td class="num">79.0</td><td class="num">89.3</td><td class="num">-</td><td class="num">-</td><td class="num">-</td></tr>
+    <tr><td>Stochastic Answer Network (3x)</td><td class="num">80.6</td><td class="num">80.1</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td></tr>
+    <tr><td>CAFE</td><td class="num">78.7</td><td class="num">77.9</td><td class="num">88.5</td><td class="num">83.3</td><td class="num"></td><td class="num"></td></tr>
+    <tr><td>GenSen</td><td class="num">71.4</td><td class="num">71.3</td><td class="num">-</td><td class="num">-</td><td class="num">82.3</td><td class="num">59.2</td></tr>
+    <tr><td>Multi-task BiLSTM + Attn</td><td class="num">72.2</td><td class="num">72.1</td><td class="num">-</td><td class="num">-</td><td class="num">82.1</td><td class="num">61.7</td></tr>
+    <tr><td><b class="n">本文（单模型）</b></td><td class="num"><b>82.1</b></td><td class="num"><b>81.4</b></td><td class="num"><b>89.9</b></td><td class="num"><b>88.3</b></td><td class="num"><b>88.1</b></td><td class="num">56.0</td></tr>
+  </tbody>
+</table></div>
+<p><b>Table 3 · 问答与常识推理</b>（准确率；9x 指 9 个模型的集成）</p>
+<div class="tbl"><table>
+  <thead><tr><th>方法</th><th class="num">Story Cloze</th><th class="num">RACE-m</th><th class="num">RACE-h</th><th class="num">RACE</th></tr></thead>
+  <tbody>
+    <tr><td>val-LS-skip</td><td class="num">76.5</td><td class="num">-</td><td class="num">-</td><td class="num">-</td></tr>
+    <tr><td>Hidden Coherence Model</td><td class="num">77.6</td><td class="num">-</td><td class="num">-</td><td class="num">-</td></tr>
+    <tr><td>Dynamic Fusion Net (9x)</td><td class="num">-</td><td class="num">55.6</td><td class="num">49.4</td><td class="num">51.2</td></tr>
+    <tr><td>BiAttention MRU (9x)</td><td class="num">-</td><td class="num">60.2</td><td class="num">50.3</td><td class="num">53.3</td></tr>
+    <tr><td><b class="n">本文</b></td><td class="num"><b>86.5</b></td><td class="num"><b>62.9</b></td><td class="num"><b>57.4</b></td><td class="num"><b>59.0</b></td></tr>
+  </tbody>
+</table></div>
+<p><b>Table 4 · 语义相似与文本分类</b>（mc = Matthews 相关，acc = 准确率，pc = Pearson 相关）</p>
+<div class="tbl"><table>
+  <thead><tr><th>方法</th><th class="num">CoLA (mc)</th><th class="num">SST-2 (acc)</th><th class="num">MRPC (F1)</th><th class="num">STS-B (pc)</th><th class="num">QQP (F1)</th><th class="num">GLUE</th></tr></thead>
+  <tbody>
+    <tr><td>Sparse byte mLSTM</td><td class="num">-</td><td class="num">93.2</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">-</td></tr>
+    <tr><td>TF-KLD</td><td class="num">-</td><td class="num">-</td><td class="num">86.0</td><td class="num">-</td><td class="num">-</td><td class="num">-</td></tr>
+    <tr><td>ECNU（混合集成）</td><td class="num">-</td><td class="num">-</td><td class="num">-</td><td class="num">81.0</td><td class="num">-</td><td class="num">-</td></tr>
+    <tr><td>单任务 BiLSTM + ELMo + Attn</td><td class="num">35.0</td><td class="num">90.2</td><td class="num">80.2</td><td class="num">55.5</td><td class="num">66.1</td><td class="num">64.8</td></tr>
+    <tr><td>多任务 BiLSTM + ELMo + Attn</td><td class="num">18.9</td><td class="num">91.6</td><td class="num">83.5</td><td class="num">72.8</td><td class="num">63.3</td><td class="num">68.9</td></tr>
+    <tr><td><b class="n">本文</b></td><td class="num"><b>45.4</b></td><td class="num">91.3</td><td class="num">82.3</td><td class="num"><b>82.0</b></td><td class="num"><b>70.3</b></td><td class="num"><b>72.8</b></td></tr>
+  </tbody>
+</table></div>
+<p><b>Table 5 · 消融</b>（MNLI 列是 matched、mismatched 的平均）</p>
+<div class="tbl"><table>
+  <thead><tr><th>变体</th><th class="num">平均</th><th class="num">CoLA</th><th class="num">SST-2</th><th class="num">MRPC</th><th class="num">STS-B</th><th class="num">QQP</th><th class="num">MNLI</th><th class="num">QNLI</th><th class="num">RTE</th></tr></thead>
+  <tbody>
+    <tr><td><b class="n">完整（Transformer + 辅助目标）</b></td><td class="num"><b>74.7</b></td><td class="num">45.4</td><td class="num">91.3</td><td class="num">82.3</td><td class="num">82.0</td><td class="num">70.3</td><td class="num">81.8</td><td class="num">88.1</td><td class="num">56.0</td></tr>
+    <tr><td>去掉预训练</td><td class="num">59.9</td><td class="num">18.9</td><td class="num">84.0</td><td class="num">79.4</td><td class="num">30.9</td><td class="num">65.5</td><td class="num">75.7</td><td class="num">71.2</td><td class="num">53.8</td></tr>
+    <tr><td>去掉辅助目标</td><td class="num">75.0</td><td class="num">47.9</td><td class="num">92.0</td><td class="num">84.9</td><td class="num">83.2</td><td class="num">69.8</td><td class="num">81.1</td><td class="num">86.9</td><td class="num">54.4</td></tr>
+    <tr><td>LSTM + 辅助目标</td><td class="num">69.1</td><td class="num">30.3</td><td class="num">90.5</td><td class="num">83.2</td><td class="num">71.8</td><td class="num">68.1</td><td class="num">73.7</td><td class="num">81.1</td><td class="num">54.6</td></tr>
+  </tbody>
+</table></div>
+<ul>
+  <li><b>「9 / 12」我逐项数过</b>：刷新的是 MNLI、SNLI、SciTail、QNLI、Story Cloze、RACE、STS-B、QQP、CoLA；没刷新的是 RTE、MRPC、SST-2。图 9 的 MNLI 用 matched 那一列。</li>
+  <li><b>一处前后不一致</b>：原文第 1 节写「GLUE 提高 5.5%」，但 Table 4 是 72.8 对 68.9，差 3.9，以表为准。</li>
+  <li>原文把消融的 14.8 写成「14.8% decrease」，其实是平均分差 14.8 分；完整行平均 597.2 / 8 ≈ 74.7，我验算过。</li>
+  <li>辅助目标逐项看：MNLI、QNLI、QQP、RTE 上有帮助，CoLA、SST-2、MRPC、STS-B 上不加更好；左图「最多高 9%」没写相对哪个基线，我理解是相对只搬词嵌入。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>F · 后来的发展和前后篇衔接（原文之外）</summary>
+<p><b>路线被继承</b>：GPT-2（第 007 篇）继续仅解码器加猜词预训练，把规模做大、把零样本推到前台；BERT（第 008 篇）保留预训练加微调，换成双向编码器和完形填空式目标；GPT-3（第 011 篇）用上下文里的几个示范代替微调，「把任务写成一条序列」和第 4 节的思路相通；InstructGPT（第 018 篇）在预训练模型后面接人类反馈的微调；LoRA（第 014 篇）针对全参数微调的成本。</p>
+<p><b>被改进或取代的部分</b>（我的归纳，待核实）：微调时的辅助猜词，后来大多不再加；遍历式输入改写，随着提示的兴起换成了自然语言指令，但 BERT 仍沿用分隔符拼句子对；学出来的位置嵌入，后来被旋转位置编码等取代。</p>
+<p><b>继承自</b>：<a href="../004-transformer/index.html">004 Transformer</a>（整套零件，只取解码器那一半）；<a href="../001-nplm/index.html">001 NPLM</a>（用前文猜下一个词）；<a href="../002-seq2seq/index.html">002 Seq2Seq</a>、<a href="../003-bahdanau-attention/index.html">003 注意力</a>（逐词生成）；<a href="../005-adam/index.html">005 Adam</a>（优化器）。零件怎么一路演化，可以看 <a href="../../specials/transformer/index.html">Transformer 特辑</a>。</p>
+<p><b>对 004 的推进</b>：从有监督翻译到无监督预训练加有监督微调，第一次让 Transformer 在没标注的文本上学习；简化成仅解码器；把输入统一成一条序列，一份预训练参数服务多种任务。</p>
+<p><b>留下的问题</b>：只能从左往右读（→ 008）；零样本只是手工规则（→ 007、011）；BPE 对多语言不够通用（→ 007 的字节级 BPE）；模型和数据该做多大（→ 009、010）；微调成本（→ 014）；模型未必听话（→ 018，经 015、016 铺垫）。</p>
+</details>
+
+
+<footer>
+  AI 论文解读 · 006 · 原文：Alec Radford, Karthik Narasimhan, Tim Salimans, Ilya Sutskever. <i>Improving Language Understanding by Generative Pre-Training.</i> OpenAI, 2018（预印本）。<br>
+  图中标「示意」的数字是为了讲清机制设定的例子，都验算过；标「推算」的是我按原文规格估算的，原文没给。实验数字出自原文 Table 2–5。原文 Figure 1、2 的图源为原文。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>

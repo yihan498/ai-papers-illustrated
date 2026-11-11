@@ -1,0 +1,12 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="左边几行灰线代表一本书的文字，箭头指向中间一个蓝色方块代表预训练模型，再分出三个小框代表不同任务">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <g class="mutF"><rect x="20" y="40" width="50" height="5" rx="2"/><rect x="20" y="54" width="44" height="5" rx="2"/><rect x="20" y="68" width="50" height="5" rx="2"/><rect x="20" y="82" width="38" height="5" rx="2"/><rect x="20" y="96" width="48" height="5" rx="2"/><rect x="20" y="110" width="42" height="5" rx="2"/></g>
+  <path d="M78 78 L96 78" style="fill:none;stroke:var(--new);stroke-width:2"/>
+  <path d="M92 73 L99 78 L92 83 Z" style="fill:var(--new)"/>
+  <rect class="new" x="102" y="44" width="56" height="68" rx="8"/>
+  <path d="M158 78 L178 46 M158 78 L178 78 M158 78 L178 110" style="fill:none;stroke:var(--new);stroke-width:1.6"/>
+  <rect class="newT" x="180" y="36" width="40" height="20" rx="4"/>
+  <rect class="newT" x="180" y="68" width="40" height="20" rx="4"/>
+  <rect class="newT" x="180" y="100" width="40" height="20" rx="4"/>
+  <text x="120" y="160" class="mo sm m" text-anchor="middle">预训练 + 微调</text>
+</svg>
