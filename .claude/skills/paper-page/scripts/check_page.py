@@ -72,6 +72,7 @@ def main():
         pg = ctx.new_page()
         pg.goto(url)
         pg.wait_for_timeout(1500)
+        pg.evaluate("document.querySelectorAll('details').forEach(d => d.open = true)")  # 附录折叠块里的图也要截、也要查溢出
         for i, f in enumerate(pg.query_selector_all("figure.fig")):
             f.screenshot(path=os.path.join(out, f"fig{i:02d}.png"))
         over = pg.evaluate(OVERFLOW_JS)
@@ -83,6 +84,7 @@ def main():
         m = ctx2.new_page()
         m.goto(url)
         m.wait_for_timeout(1000)
+        m.evaluate("document.querySelectorAll('details').forEach(d => d.open = true)")
         sw = m.evaluate("document.documentElement.scrollWidth")
         if sw > 390:
             ok = False
