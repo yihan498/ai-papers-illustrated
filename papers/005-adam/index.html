@@ -189,48 +189,39 @@ html{scroll-behavior:smooth}
       <text class="sm m" x="340" y="242" text-anchor="middle">每个参数各自走一遍这条流水线，只多存两个数：m 和 v</text>
     </svg>
     </div>
-    <figcaption>分子 m̂ 决定往哪走，分母 √v̂ 把每个参数的梯度拉到同一个尺度，所以一步大约走 α 那么远。中间的「÷ (1 − βᵗ)」是本文补上的关键一环，第 3 节专门讲。</figcaption>
+    <figcaption>分子 m̂ 决定往哪走，分母 √v̂ 把每个参数的梯度拉到同一个尺度，所以一步大约走 α 那么远。中间的「÷ (1 − βᵗ)」是本文补上的关键一环，「第三步」专门讲。</figcaption>
   </figure>
 
   <nav class="toc" aria-label="目录">
-    <a href="#s1"><span>1</span>引言：SGD 卡在哪</a>
-    <a href="#s2"><span>2</span>算法：两个平均，一次相除</a>
-    <a href="#s3"><span>3</span>偏差修正：补上开头偏小</a>
-    <a href="#s4"><span>4</span>收敛性分析</a>
-    <a href="#s5"><span>5</span>和前人方法的关系</a>
-    <a href="#s6"><span>6</span>实验：结论</a>
-    <a href="#s7"><span>7</span>扩展：AdaMax 与时间平均</a>
-    <a href="#s8"><span>8</span>结论</a>
-    <a href="#after"><span>→</span>读完之后（原文之外）</a>
+    <a href="#s1"><span>1</span>要解决的问题：SGD 卡在哪</a>
+    <a href="#s2"><span>2</span>Adam 的一步：两个平均，一次相除</a>
+    <a href="#s3"><span>3</span>第一步：用平均梯度代替这一步的梯度</a>
+    <a href="#s4"><span>4</span>第二步：用梯度的典型大小去除</a>
+    <a href="#s5"><span>5</span>第三步：偏差修正，补上开头偏小</a>
+    <a href="#s6"><span>6</span>合起来：走一遍，再看三个性质</a>
+    <a href="#s7"><span>7</span>证据：四组实验</a>
+    <a href="#s8"><span>8</span>局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
   </nav>
 
   <div class="howto">
     <span class="alab">怎么读这一页</span>
     <ul>
-      <li><b>主线是因果链</b>：SGD 的两个毛病，前人各补了一半，直接拼起来又会踩两个坑，Adam 的每个零件对着哪个坑。</li>
-      <li><b>公式</b>放在直觉之后：先白话和小数字，再给精确写法，紧跟一张「每个符号是什么」的对照表。小数字都用程序验算过，为讲解设定的标「示意」。</li>
-      <li><b>📎 注解</b>是就地解释的概念（指数移动平均、遗憾），<b>🧭 延伸</b>是可以跳过的补充，实验设置和理论细节折叠在里面。</li>
-      <li>本篇和前四篇不同，不讲「模型长什么样」，只讲「怎么训练」。损失、梯度、SGD、学习率在 001 <a href="../001-nplm/index.html">NPLM</a> 讲过，梯度裁剪在 002 <a href="../002-seq2seq/index.html">Seq2Seq</a> 讲过，这里只提一句。读完回头看 004 <a href="../004-transformer/index.html">Transformer</a> 里那行「β₁ = 0.9，β₂ = 0.98，ε = 10⁻⁹」，就知道每个数在管什么。</li>
+      <li><b>正文只走一条线</b>：SGD 的两个毛病，前人各补了一半，直接拼起来又会踩两个坑 → Adam 的一步和三个零件，各对着哪个毛病 → 哪个实验证明了哪一步。只读每节的标题和每段第一句，也能串起来。</li>
+      <li><b>算法的七行伪代码就在正文</b>（第 2 节），每一行配了白话。推导、符号表、概念解释（指数移动平均、遗憾）、收敛性证明、和前人方法的关系、实验设置、扩展、当时的背景，都在页尾的<b>附录</b>里，默认折叠，标明对应原文第几节。</li>
+      <li>小数字都用程序验算过：为讲解设定的标「示意」。</li>
+      <li>本篇和前四篇不同，不讲「模型长什么样」，只讲「怎么训练」。损失、梯度、SGD、学习率在 001 <a href="../001-nplm/index.html">NPLM</a> 讲过，梯度裁剪在 002 <a href="../002-seq2seq/index.html">Seq2Seq</a> 讲过，这里只提一句。读完回头看 004 <a href="../004-transformer/index.html">Transformer</a> 里那行「β₁ = 0.9，β₂ = 0.98，ε = 10⁻⁹」，附录 G 逐个讲了每个数在管什么。</li>
     </ul>
   </div>
 </header>
 
 
-<!-- ================= 1 ================= -->
-<h2 id="s1"><span class="no">1</span>引言：SGD 卡在哪</h2>
 
-<h3>从 001 到 004，优化器一直在变</h3>
-<p>每个模型训练时都要一个<b>优化器（optimizer）</b>：拿到梯度之后，具体怎么更新参数的规则。回头看前四篇用的：</p>
-<div class="tbl"><table>
-  <thead><tr><th>篇</th><th>优化器</th></tr></thead>
-  <tbody>
-    <tr><td>001 NPLM</td><td>随机梯度下降 SGD，学习率 10⁻³ 起步并逐渐减小</td></tr>
-    <tr><td>002 Seq2Seq</td><td>SGD，不加动量，学习率固定 0.7，之后每半轮减半，外加梯度裁剪</td></tr>
-    <tr><td>003 Bahdanau 注意力</td><td>小批量 SGD + Adadelta（每个参数各自调步长）</td></tr>
-    <tr><td>004 Transformer</td><td><b class="n">Adam</b>，β₁ = 0.9，β₂ = 0.98，ε = 10⁻⁹，外加学习率预热</td></tr>
-  </tbody>
-</table></div>
-<p>从「所有参数共用一个学习率」，到「每个参数各自调步长」，再到 Adam，是同一条演化线。本篇讲清这条线的终点。注意：同一个模型、同一份数据，换优化器，训练快慢和能不能训得动可能差很多，但模型能表示什么不变。</p>
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>要解决的问题：SGD 卡在哪</h2>
+
+<p>每个模型训练时都要一个<b>优化器（optimizer）</b>：拿到梯度之后，具体怎么更新参数的规则。</p>
+<p>从「所有参数共用一个学习率」，到「每个参数各自调步长」，再到 Adam，是同一条演化线。本篇讲清这条线的终点（前四篇各用了什么优化器，见附录 H）。注意：同一个模型、同一份数据，换优化器，训练快慢和能不能训得动可能差很多，但模型能表示什么不变。</p>
 <p>SGD 的更新式是 θ ← θ − α · g：θ 是参数，g 是这一小批数据算出的梯度，α 是学习率。每个参数的步长等于 α 乘自己的梯度。原文第 1 节把要优化的目标限定为<b>随机目标函数</b>：目标由一批批数据的子函数相加而成，或者带着 dropout 这类额外噪声；参数维度很高，所以排除二阶方法，只用一阶梯度。在这个前提下，SGD 有两个毛病。</p>
 
 <h3>毛病一：一个学习率，管不了所有参数</h3>
@@ -327,7 +318,7 @@ html{scroll-behavior:smooth}
     <text class="sm to" x="340" y="244" text-anchor="middle">AdaGrad 的步长按 1/√t 衰减，后面学不动；只看最近一段的平均不会这样</text>
   </svg>
   </div>
-  <figcaption>步长以 α 为单位。AdaGrad 第 t 步的步长是 1/√t（第 100 步 1/√100 = 0.1）。如果目标本身在变（原文叫「非平稳」），学习率早早衰减到接近 0，后面就学不动了。RMSProp 和 Adam 用滑动平均，旧梯度会被逐渐忘掉，步长保持在 1 附近（Adam 这里靠偏差修正，第 3 节）。</figcaption>
+  <figcaption>步长以 α 为单位。AdaGrad 第 t 步的步长是 1/√t（第 100 步 1/√100 = 0.1）。如果目标本身在变（原文叫「非平稳」），学习率早早衰减到接近 0，后面就学不动了。RMSProp 和 Adam 用滑动平均，旧梯度会被逐渐忘掉，步长保持在 1 附近（Adam 这里靠偏差修正，第三步）。</figcaption>
 </figure>
 
 <h3>直接把两条路线拼起来，会踩两个坑</h3>
@@ -335,16 +326,16 @@ html{scroll-behavior:smooth}
 <div class="tbl"><table>
   <thead><tr><th>坑</th><th>为什么会出现</th><th>本文怎么补</th></tr></thead>
   <tbody>
-    <tr><td><b>开头步长过大</b></td><td>要兼顾稀疏梯度，梯度平方的平均得看很长的历史（β₂ 接近 1）。可平均值从 0 起步，β₂ 越接近 1 开头越偏小；它在分母上，于是开头步长越大。RMSProp 就栽在这里，没有修正时常常发散</td><td>偏差修正（第 3 节）</td></tr>
-    <tr><td><b>动量怎么加</b></td><td>RMSProp 加动量的一种做法是对「已经缩放过的梯度」做动量，两件事搅在一起</td><td>先分别估好梯度的均值 m 和尺度 v，最后再相除（第 2 节）</td></tr>
+    <tr><td><b>开头步长过大</b></td><td>要兼顾稀疏梯度，梯度平方的平均得看很长的历史（β₂ 接近 1）。可平均值从 0 起步，β₂ 越接近 1 开头越偏小；它在分母上，于是开头步长越大。RMSProp 就栽在这里，没有修正时常常发散</td><td>偏差修正（第三步）</td></tr>
+    <tr><td><b>动量怎么加</b></td><td>RMSProp 加动量的一种做法是对「已经缩放过的梯度」做动量，两件事搅在一起</td><td>先分别估好梯度的均值 m 和尺度 v，最后再相除（第一、二步）</td></tr>
   </tbody>
 </table></div>
 <p>另外两条路也不通：用二阶方法精确算曲率，参数是百万级时 d × d 的矩阵存不下也求不了逆（原文只说高阶方法「不适合」，这条原因是我补充的）；人工给每个参数调学习率，参数成千上万，不可能。所以需要的是：<b>不用二阶信息、只多存两个向量、自动给每个参数配步长、开头也稳</b>。这就是 Adam 的设计目标。</p>
 
 
 <!-- ================= 2 ================= -->
-<h2 id="s2"><span class="no">2</span>算法：两个平均，一次相除</h2>
-<p>先把原文 Algorithm 1 原样列出。所有向量运算都是<b>逐元素</b>的，也就是每个参数各算各的：</p>
+<h2 id="s2"><span class="no">2</span>Adam 的一步：两个平均，一次相除</h2>
+<p>两个毛病和两个坑都摆出来了，Adam 的做法可以一次看全：先把原文 Algorithm 1 原样列出。所有向量运算都是<b>逐元素</b>的，也就是每个参数各算各的：</p>
 <pre class="mono">初始化： m₀ = 0，v₀ = 0，t = 0
 循环直到收敛：
   t ← t + 1
@@ -357,27 +348,22 @@ html{scroll-behavior:smooth}
 <div class="tbl"><table>
   <thead><tr><th>行</th><th>解决的问题</th><th>在哪讲</th></tr></thead>
   <tbody>
-    <tr><td>②</td><td>噪声大、方向抖（毛病二）</td><td>2 节「m」</td></tr>
-    <tr><td>③ 和 ⑥ 里的除法</td><td>不同参数尺度悬殊（毛病一）</td><td>2 节「v」</td></tr>
-    <tr><td>④ ⑤</td><td>从 0 起步让开头估计偏小、步长偏大</td><td>第 3 节</td></tr>
-    <tr><td>ε</td><td>v̂ 接近 0 时防止除以 0</td><td>读完之后</td></tr>
+    <tr><td>②</td><td>噪声大、方向抖（毛病二）</td><td>第一步（m）</td></tr>
+    <tr><td>③ 和 ⑥ 里的除法</td><td>不同参数尺度悬殊（毛病一）</td><td>第二步（v）</td></tr>
+    <tr><td>④ ⑤</td><td>从 0 起步让开头估计偏小、步长偏大</td><td>第三步</td></tr>
+    <tr><td>ε</td><td>v̂ 接近 0 时防止除以 0</td><td>附录 G</td></tr>
   </tbody>
 </table></div>
 <p>每个零件都对应一个需求，没有多余的东西。额外存储是每个参数两个数（m 和 v），计算只是几次逐元素乘加，和 SGD 在一个量级。摘要里说它「计算高效、内存需求小」，指的就是这个。名字 Adam 来自 adaptive moment estimation，<b>自适应矩估计</b>。</p>
 <p>原文给的默认值：α = 0.001，β₁ = 0.9，β₂ = 0.999，ε = 10⁻⁸。</p>
+<p>下面三节按这几行的顺序拆开：先讲 ② 行的 m，再讲 ③ 行和 ⑥ 行里的除法，最后讲 ④ ⑤ 两行的偏差修正，每一节末尾点出它对着上面哪个毛病。</p>
 
-<aside class="anno"><span class="alab">📎 注解 · 指数移动平均（EMA）：m 和 v 都是它</span>
-<p><b>直觉</b>：你想知道「这几天的平均气温」，但不想存下所有历史数据。办法是手里只留一个「当前平均值」，每天来了新温度，就按「旧平均 × 0.9 + 新温度 × 0.1」更新。越新的数据权重越大，越旧的越快被遗忘，而且只需存一个数。</p>
-<div class="formula">m<sub>t</sub> = β · m<sub>t−1</sub> + (1 − β) · x<sub>t</sub><span class="fsrc">（原文 Algorithm 1 的 m 那一行）</span></div>
-<div class="tbl"><table>
-  <thead><tr><th>符号</th><th>白话</th></tr></thead>
-  <tbody>
-    <tr><td><code>x<sub>t</sub></code></td><td>第 t 步的新数据（这里是梯度）</td></tr>
-    <tr><td><code>m<sub>t−1</sub></code></td><td>到上一步为止的平均值</td></tr>
-    <tr><td><code>β</code></td><td>0 到 1 之间，遗忘的快慢。越接近 1，旧平均占比越大，越平滑也越迟钝</td></tr>
-    <tr><td><code>1 − β</code></td><td>新数据的权重</td></tr>
-  </tbody>
-</table></div>
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>第一步：用平均梯度代替这一步的梯度</h2>
+<h3>做什么</h3>
+<p>更新量的分子不用这一步的 gₜ，而用它的 EMA mₜ。β₁ = 0.9，相当于平均最近约 10 步。原文把它叫<b>梯度的一阶矩估计</b>：「矩」是统计术语，一阶矩就是均值 E[g]，m 是它的估计。</p>
+<p>这个平均叫<b>指数移动平均（EMA）</b>：手里只留一个「当前平均值」，每一步按「旧平均 × β₁ + 新梯度 × (1 − β₁)」更新，越新的梯度权重越大，越旧的忘得越快，每个参数只多存一个数。权重怎么随步数衰减见图 4，符号表见附录 B。</p>
 <figure class="fig">
   <span class="tag">图 4 · β = 0.9 时，每一步旧数据在平均里占多少权重（按公式算出）</span>
   <div class="sv">
@@ -398,11 +384,8 @@ html{scroll-behavior:smooth}
   </div>
   <figcaption>第 k 步以前的数据，权重是 (1 − β) · βᵏ。所以粗略地说，EMA 在「最近 1/(1 − β) 步」上取平均：β = 0.9 看约 10 步，0.999 看约 1000 步。这是经验说法，不是原文的表述。</figcaption>
 </figure>
-<p><b>为什么不用「最近 N 步的普通平均」？</b>普通平均要存 N 个历史值，EMA 只存一个。上亿参数的模型存不下 N 份梯度，EMA 每个参数只多 1 个数。</p>
-</aside>
-
-<h3>m：用最近梯度的平均代替这一步的梯度</h3>
-<p>更新量的分子不用这一步的 gₜ，而用它的 EMA mₜ。β₁ = 0.9，相当于平均最近约 10 步。原文把它叫<b>梯度的一阶矩估计</b>：「矩」是统计术语，一阶矩就是均值 E[g]，m 是它的估计。</p>
+<p>动量本身不是本文的新东西，原文引用了 Sutskever 等 2013 年的工作，实验里也拿 SGD + Nesterov 动量做对比。<b>本文的新意在于把动量和下面的自适应步长放进一个统一的更新式。</b></p>
+<h3>为什么这样就行</h3>
 <p>为什么有效：平均 N 个独立的带噪估计，噪声幅度大约缩小到 1/√N，稳定的真实信号却不会被削弱，于是信号占比上升（统计常识，不是原文的论证）。看一个小例子，某个参数连续 10 步的梯度大方向一直为正，偶尔被噪声翻成负：</p>
 <figure class="fig">
   <span class="tag">图 5 · 噪声被平均掉：梯度偶尔翻号，m̂ 只是往下掉一块（示意，β₁ = 0.9）</span>
@@ -422,111 +405,34 @@ html{scroll-behavior:smooth}
     <text class="sm m" x="355" y="230" text-anchor="middle">第几步　　灰柱 = 这一步的梯度 g　　蓝线 = 修正后的平均 m̂</text>
   </svg>
   </div>
-  <figcaption>梯度序列 [1, 1, 1, −1, 1, 1, −1, 1, 1, 1] 是为讲解设定的。<b>遇到 −1 时 m̂ 不会立刻翻成负</b>，第 4 步只从 1.0 掉到 0.42，大方向保住了。第 10 步 m̂ = 0.613，接近十个梯度的普通平均 0.6。前三步恰好是 1，是偏差修正的功劳（第 3 节）。</figcaption>
+  <figcaption>梯度序列 [1, 1, 1, −1, 1, 1, −1, 1, 1, 1] 是为讲解设定的。<b>遇到 −1 时 m̂ 不会立刻翻成负</b>，第 4 步只从 1.0 掉到 0.42，大方向保住了。第 10 步 m̂ = 0.613，接近十个梯度的普通平均 0.6。前三步恰好是 1，是偏差修正的功劳（第三步）。</figcaption>
 </figure>
-<p>动量本身不是本文的新东西，原文引用了 Sutskever 等 2013 年的工作，实验里也拿 SGD + Nesterov 动量做对比。<b>本文的新意在于把动量和下面的自适应步长放进一个统一的更新式。</b></p>
+<p>这一步对着<b>毛病二</b>（小批量梯度有噪声，方向来回抖）：噪声被平均掉，信号留下来。精确写法就是上面 ② 行，EMA 的式子和符号表见附录 B。</p>
 
-<h3>v：用梯度的「典型大小」去除</h3>
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>第二步：用梯度的「典型大小」去除</h2>
+<h3>做什么</h3>
 <p>回到毛病一。一个参数的梯度<b>一直很大</b>，说明这条路很陡，一步迈小一点；<b>一直很小</b>，说明很平缓，可以大胆迈。具体做法：用这个参数梯度的典型大小去<b>除</b>它的更新量，相当于把所有参数的梯度拉到同一个尺度上。</p>
 <p>典型大小用均方根量：梯度平方的平均，再开根号。梯度平方的平均 E[g²] 叫<b>二阶（原点）矩</b>，原文称「未中心化的方差」，因为方差要先减均值再平方，这里没减。</p>
-<div class="formula">v<sub>t</sub> = β<sub>2</sub> · v<sub>t−1</sub> + (1 − β<sub>2</sub>) · g<sub>t</sub><sup>2</sup><span class="fsrc">（原文 Algorithm 1，g² 是逐元素平方）</span></div>
-<p>形式和 m 完全一样，只是被平均的是梯度的平方。β₂ 默认 0.999，大约看最近 1000 步。图 1 里的 A、B 就这样解决了：A 的 g ≈ 100、√v ≈ 100，比值 ≈ 1；B 的 g ≈ 0.01、√v ≈ 0.01，比值也 ≈ 1。两个相差一万倍的参数，一步都约走 α。</p>
+<p>为什么用平方再开根，不用绝对值的平均？原文第 7 节把这件事推广了：平方对应 L2 范数，换成 Lₚ 范数也行，p 趋于无穷得到 AdaMax（附录 F）。L2 是最常用、数学上最顺手的选择，原文没有说一定要平方。</p>
+<h3>为什么这样就行</h3>
+<p>上面 ③ 行的形式和 m 完全一样，只是被平均的是梯度的平方。β₂ 默认 0.999，大约看最近 1000 步。图 1 里的 A、B 就这样解决了：A 的 g ≈ 100、√v ≈ 100，比值 ≈ 1；B 的 g ≈ 0.01、√v ≈ 0.01，比值也 ≈ 1。两个相差一万倍的参数，一步都约走 α。</p>
 <ul>
   <li><b>稀疏梯度</b>：一个参数大部分时候梯度为 0，它的 v 很小；偶尔来一个梯度，m̂/√v̂ 就比较大，得到一次较大的更新。罕见特征出现时，抓住机会学。这是 AdaGrad 擅长的事，Adam 继承了下来。</li>
   <li><b>目标在变</b>：v 是 EMA，旧梯度的影响会衰减。训练后期梯度变小，v 跟着变小，步长不会像 AdaGrad 那样被早期的大梯度永久压住。</li>
 </ul>
-<p>为什么用平方再开根，不用绝对值的平均？原文第 7 节把这件事推广了：平方对应 L2 范数，换成 Lₚ 范数也行，p 趋于无穷得到 AdaMax（第 7 节）。L2 是最常用、数学上最顺手的选择，原文没有说一定要平方。</p>
-
-<h3>完整算一遍：两个参数，四步</h3>
-<p>用默认值 α = 0.001，β₁ = 0.9，β₂ = 0.999。参数 A 的梯度一直很大且稳定，参数 B 的梯度很小且方向不稳（示意）：</p>
-<ul>
-  <li>A：100，80，120，100</li>
-  <li>B：0.01，−0.01，0.01，0.01</li>
-</ul>
-<div class="tbl"><table>
-  <thead><tr><th>t</th><th>参数</th><th class="num">gₜ</th><th class="num">m̂ₜ</th><th class="num">√v̂ₜ</th><th class="num">m̂/√v̂</th><th class="num">Adam 一步</th><th class="num">SGD 一步</th></tr></thead>
-  <tbody>
-    <tr><td>1</td><td>A</td><td class="num">100</td><td class="num">100</td><td class="num">100</td><td class="num">1.000</td><td class="num">0.0010</td><td class="num">0.1</td></tr>
-    <tr><td>1</td><td>B</td><td class="num">0.01</td><td class="num">0.01</td><td class="num">0.01</td><td class="num">1.000</td><td class="num">0.0010</td><td class="num">0.00001</td></tr>
-    <tr><td>2</td><td>A</td><td class="num">80</td><td class="num">89.47</td><td class="num">90.55</td><td class="num">0.988</td><td class="num">0.00099</td><td class="num">0.08</td></tr>
-    <tr><td>2</td><td>B</td><td class="num">−0.01</td><td class="num">−0.0005</td><td class="num">0.01</td><td class="num"><b>−0.053</b></td><td class="num">−0.000053</td><td class="num">−0.00001</td></tr>
-    <tr><td>3</td><td>A</td><td class="num">120</td><td class="num">100.74</td><td class="num">101.33</td><td class="num">0.994</td><td class="num">0.00099</td><td class="num">0.12</td></tr>
-    <tr><td>3</td><td>B</td><td class="num">0.01</td><td class="num">0.0034</td><td class="num">0.01</td><td class="num">0.336</td><td class="num">0.00034</td><td class="num">0.00001</td></tr>
-    <tr><td>4</td><td>A</td><td class="num">100</td><td class="num">100.52</td><td class="num">101.0</td><td class="num">0.995</td><td class="num">0.00100</td><td class="num">0.1</td></tr>
-    <tr><td>4</td><td>B</td><td class="num">0.01</td><td class="num">0.0053</td><td class="num">0.01</td><td class="num">0.529</td><td class="num">0.00053</td><td class="num">0.00001</td></tr>
-  </tbody>
-</table></div>
-<figure class="fig">
-  <span class="tag">图 6 · 比值 m̂/√v̂ 就是「这一步走几个 α」（数据同上表）</span>
-  <div class="sv">
-  <svg class="d" viewBox="0 0 680 232" role="img" aria-label="柱状图，四组对应第 1 到第 4 步。灰色柱是参数 A 的比值：1、0.988、0.994、0.995，几乎一样高。蓝色柱是参数 B 的比值：1、负 0.053、0.336、0.529。第 2 步 B 的梯度翻号，比值接近 0，几乎不动；之后连续同号，比值回升。">
-    <g class="sm b"><rect class="softS" x="20" y="10" width="12" height="12" rx="2"/><text x="38" y="21">A：梯度大而稳</text>
-      <rect class="new" x="170" y="10" width="12" height="12" rx="2"/><text x="188" y="21">B：梯度小且方向不稳</text></g>
-    <line class="ln" x1="40" y1="170" x2="660" y2="170"/>
-    <line class="ln dash" x1="40" y1="70" x2="660" y2="70"/>
-    <text class="sm m mo" x="36" y="74" text-anchor="end">1</text><text class="sm m mo" x="36" y="174" text-anchor="end">0</text>
-    <g class="softS">
-      <rect x="96" y="70" width="28" height="100" rx="3"/><rect x="246" y="71.2" width="28" height="98.8" rx="3"/><rect x="396" y="70.6" width="28" height="99.4" rx="3"/><rect x="546" y="70.5" width="28" height="99.5" rx="3"/>
-    </g>
-    <g class="new">
-      <rect x="132" y="70" width="28" height="100" rx="3"/><rect x="282" y="170" width="28" height="5.3" rx="1"/><rect x="432" y="136.4" width="28" height="33.6" rx="3"/><rect x="582" y="117.1" width="28" height="52.9" rx="3"/>
-    </g>
-    <g class="mo sm" text-anchor="middle"><text x="110" y="64">1.000</text><text x="260" y="64">0.988</text><text x="410" y="64">0.994</text><text x="560" y="64">0.995</text>
-      <text class="tn b" x="296" y="192">−0.053</text><text class="tn b" x="446" y="130">0.336</text><text class="tn b" x="596" y="111">0.529</text></g>
-    <g class="sm m" text-anchor="middle"><text x="128" y="214">第 1 步</text><text x="278" y="214">第 2 步</text><text x="428" y="214">第 3 步</text><text x="578" y="214">第 4 步</text></g>
-    <text class="sm tn" x="296" y="228" text-anchor="middle">B 翻号：几乎不动</text>
-  </svg>
-  </div>
-  <figcaption>四点读法。<b>① 尺度被抹平</b>：A 的梯度是 B 的一万倍，第 1 步两者都走 α；SGD 一个走 0.1、一个走 0.00001。<b>② 方向不稳时步子变小</b>：B 第 2 步梯度翻号，比值只有 −0.053，几乎没动；之后连续同号，比值回升到 0.34、0.53。<b>③</b> A 的梯度在 80 到 120 之间波动，比值却稳在 0.99 到 1.0，因为分子分母同步变化。<b>④</b> 第 1 步恰好都是 α，因为偏差修正让 m̂₁ = g₁、v̂₁ = g₁²。</figcaption>
-</figure>
-
-<h3><span class="no">2.1</span>更新规则的三个性质</h3>
-<p>原文 2.1 节设 ε = 0，把一步的有效步长记作 Δₜ = α · m̂ₜ/√v̂ₜ，然后讲了三个性质。</p>
-<h4>① 步长大致被 α 封顶：一个「信赖域」</h4>
-<p>原文给出两个上界：</p>
-<div class="formula">(1 − β<sub>1</sub>) &gt; √(1 − β<sub>2</sub>) 时：|Δ<sub>t</sub>| ≤ α · (1 − β<sub>1</sub>) / √(1 − β<sub>2</sub>)　　否则：|Δ<sub>t</sub>| ≤ α<span class="fsrc">（原文 2.1 节）</span></div>
-<p>第一种情况只发生在最极端的稀疏：一个梯度在之前所有步都是 0，只有这一步非零。默认值下 (1 − β₁) = 0.1，√(1 − β₂) ≈ 0.0316，上界是 0.1/0.0316 ≈ <b>3.16α</b>。普通情形下，均值的绝对值不超过均方根，所以 m̂/√v̂ 在 ±1 以内，一步不超过约 α。</p>
-<p>原文把这个性质解释为在当前参数周围划了一个<b>信赖域</b>：当前梯度估计只在这个范围内可信。好处是 α 有了直观含义，就是「一步最多走多远」，可以按先验估计它的量级，比如已知好的解离初值大概多远。</p>
-<h4>② 信噪比：方向越不可信，步子越小</h4>
-<p>原文把 m̂/√v̂ 叫作<b>信噪比</b>（并说这是「略微滥用术语」）。信号是梯度均值 m̂，噪声尺度是均方根 √v̂。比值接近 ±1，说明梯度一致、方向可信，迈满步；比值接近 0，说明梯度忽正忽负，步子自动缩小。</p>
-<figure class="fig">
-  <span class="tag">图 7 · 同样的 α，梯度越一致，一步走得越远（示意）</span>
-  <div class="sv">
-  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="三行。第一行梯度一直是 2，八个点在同一高度，比值 m-hat 除以根号 v-hat 等于 1，一步约 α，蓝色长条。第二行梯度均值 0.1、噪声标准差 1，点上下乱跳，比值约 0.0995，一步约 0.1α，短条。第三行纯正负 1 噪声，均值 0，比值趋于 0，原地踏步，几乎没有条。">
-    <g class="sm b"><text x="20" y="20">最近的梯度长这样</text><text x="300" y="20">m̂ / √v̂ = 这一步走几个 α</text></g>
-    <line class="ln" x1="20" y1="66" x2="250" y2="66"/>
-    <g class="mutF"><circle cx="35" cy="46" r="4"/><circle cx="65" cy="46" r="4"/><circle cx="95" cy="46" r="4"/><circle cx="125" cy="46" r="4"/><circle cx="155" cy="46" r="4"/><circle cx="185" cy="46" r="4"/><circle cx="215" cy="46" r="4"/><circle cx="245" cy="46" r="4"/></g>
-    <rect class="new" x="300" y="40" width="300" height="20" rx="4"/><text class="sm mo" x="606" y="55">1</text>
-    <text class="sm m" x="300" y="80">一直是 2：方向可信，迈满步</text>
-
-    <line class="ln" x1="20" y1="136" x2="250" y2="136"/>
-    <g class="mutF"><circle cx="35" cy="124" r="4"/><circle cx="65" cy="148" r="4"/><circle cx="95" cy="130" r="4"/><circle cx="125" cy="152" r="4"/><circle cx="155" cy="118" r="4"/><circle cx="185" cy="141" r="4"/><circle cx="215" cy="127" r="4"/><circle cx="245" cy="146" r="4"/></g>
-    <rect class="new" x="300" y="116" width="29.9" height="20" rx="4"/><text class="sm mo" x="336" y="131">≈ 0.0995</text>
-    <text class="sm m" x="300" y="152">均值 0.1、噪声标准差 1：约 0.1α，几乎原地踏步</text>
-
-    <line class="ln" x1="20" y1="200" x2="250" y2="200"/>
-    <g class="mutF"><circle cx="35" cy="186" r="4"/><circle cx="65" cy="214" r="4"/><circle cx="95" cy="186" r="4"/><circle cx="125" cy="186" r="4"/><circle cx="155" cy="214" r="4"/><circle cx="185" cy="214" r="4"/><circle cx="215" cy="186" r="4"/><circle cx="245" cy="214" r="4"/></g>
-    <rect class="new" x="300" y="190" width="2" height="20" rx="1"/><text class="sm mo" x="310" y="205">→ 0</text>
-    <text class="sm m" x="300" y="228">纯 ±1 噪声、均值 0：步子缩到 0</text>
-  </svg>
-  </div>
-  <figcaption>第二行：二阶矩 = 1 + 0.01 = 1.01，比值 ≈ 0.1/1.005 ≈ 0.0995（数字为讲解设定，点的位置是示意）。原文说：靠近最优点时信噪比通常趋近 0，步长自动减小，<b>相当于一种自动退火</b>。这是作者的观察，原文没有给出严格证明。</figcaption>
-</figure>
-<h4>③ 对梯度整体缩放不敏感</h4>
-<p>把梯度整体乘一个常数 c：m̂ 乘 c，v̂ 乘 c²，√v̂ 乘 c，相除时抵消，(c·m̂)/√(c²·v̂) = m̂/√v̂。比如损失函数乘 10，梯度全部乘 10，SGD 的步子跟着乘 10，Adam 一步不变。对 loss 求和还是求平均，不会改变 Adam 的行为。严格说 ε 会破坏精确的不变，但 ε 很小。</p>
-<aside class="ext"><span class="alab">🧭 延伸 · Adam 和梯度裁剪是两码事（我补充的，跳过不影响理解）</span>
-<p>梯度裁剪是防爆炸：在算出梯度之后、进入优化器之前，梯度范数超过阈值就整体缩小（002 讲过）。Adam 的缩放针对的是<b>每个参数</b>的稳定尺度。一次异常巨大的梯度仍然可能污染 m 和 v，让 v 很长时间偏大，所以大模型训练里两者经常同时用。这一点原文没有讨论，是后来的实践。</p>
-</aside>
+<p>这一步对着<b>毛病一</b>（一个学习率管不了所有参数）：每个参数的步子都被自己梯度的典型大小校准过。精确写法是 ③ 行和 ⑥ 行的分母，v 的递推式见附录 A。</p>
 
 
-<!-- ================= 3 ================= -->
-<h2 id="s3"><span class="no">3</span>偏差修正：补上开头偏小</h2>
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>第三步：偏差修正，补上开头偏小</h2>
 <h3>问题：从 0 起步，开头的平均会偏小</h3>
 <p>m 和 v 都从 0 开始。开头积累的数据很少，0 却占着大部分权重，估计值被拉向 0。比如 β₁ = 0.9、梯度恒为 2：第 1 步 m₁ = 0.9 × 0 + 0.1 × 2 = <b>0.2</b>，真实平均明明是 2，只有十分之一；第 2 步 m₂ = 0.38，仍远低于 2。</p>
 <p>修正的办法是<b>除以 (1 − βᵗ)</b>：第 1 步 1 − 0.9 = 0.1，m̂₁ = 0.2/0.1 = 2，一步到位；第 2 步 1 − 0.9² = 0.19，m̂₂ = 0.38/0.19 = 2。t 变大后 βᵗ 趋于 0，修正因子趋于 1，修正自然退场。</p>
 <p>这对 v 特别要紧。β₂ = 0.999 时，1 − 0.999 在第 1 步只有 0.001，不修正的 v₁ 比真实值小 1000 倍；要到第 1000 步左右才积累到约 63%。而 v 在<b>分母</b>上：v 偏小，√v 偏小，步长就偏大。</p>
 <figure class="fig">
-  <span class="tag">图 8 · 不修正会怎样：平均偏小（左），开头步子冲过头（右）（梯度恒为 2）</span>
+  <span class="tag">图 6 · 不修正会怎样：平均偏小（左），开头步子冲过头（右）（梯度恒为 2）</span>
   <div class="sv">
   <svg class="d" viewBox="0 0 680 252" role="img" aria-label="左图：横轴是第 1 到 20 步，纵轴 0 到 2。赭色曲线是不修正的 m，从 0.2 慢慢爬升，第 20 步才到 1.76；蓝色水平线是修正后的 m-hat，一直等于 2。右图：前 3 步的步长，以 α 为单位。赭色柱是不修正：3.16、4.25、4.95；蓝色柱是修正后：每步都是 1.00。">
     <text class="sm b" x="40" y="20">m 的估计（真值 = 2）</text>
@@ -550,10 +456,164 @@ html{scroll-behavior:smooth}
     <text class="sm" x="520" y="240" text-anchor="middle"><tspan class="to">赭 = 不修正</tspan>　<tspan class="tn">蓝 = 修正后</tspan></text>
   </svg>
   </div>
-  <figcaption>左图按 mₜ = 2(1 − 0.9ᵗ) 算出。右图：不修正时 m₁ = 0.2，v₁ = 0.004，步长 m/√v = 3.16，其实就是 0.1/√0.001。<b>训练最脆弱的开头，步子是应有值的 3 到 5 倍。</b>这正是原文 Figure 4 要验证的现象（第 6 节结论四）。</figcaption>
+  <figcaption>左图按 mₜ = 2(1 − 0.9ᵗ) 算出。右图：不修正时 m₁ = 0.2，v₁ = 0.004，步长 m/√v = 3.16，其实就是 0.1/√0.001。<b>训练最脆弱的开头，步子是应有值的 3 到 5 倍。</b>这正是原文 Figure 4 要验证的现象（见本页第 7 节「证据」的结论四）。</figcaption>
+</figure>
+<h3>为什么除的恰好是 1 − βᵗ</h3>
+<p>把递推展开，vₜ 是之前所有 gᵢ² 的加权和；在梯度的二阶矩平稳的前提下，vₜ 的期望恰好是真值的 (1 − β₂ᵗ) 倍，所以除以 (1 − β₂ᵗ) 就是无偏估计。m 同理。完整的展开和符号表见附录 A。</p>
+<p><b>为什么对稀疏梯度尤其关键</b>（原文第 3 节末尾）：稀疏梯度大部分时刻为 0，要估准二阶矩必须平均很长的历史，也就是 β₂ 要很接近 1。而 β₂ 越接近 1，不修正时开头的 v 偏小越严重。所以「稀疏 + 不修正」是最坏的组合。</p>
+<p>这一步对着拼起来的<b>第一个坑：开头步长过大</b>。精确写法是 ④ ⑤ 两行，推导见附录 A。</p>
+
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>合起来：走一遍，再看三个性质</h2>
+<p>三个零件都讲完了，把它们拼起来走一遍，再看拼出来的更新有什么性质。</p>
+<h3>完整算一遍：两个参数，四步</h3>
+<p>用默认值 α = 0.001，β₁ = 0.9，β₂ = 0.999。参数 A 的梯度一直很大且稳定，参数 B 的梯度很小且方向不稳（示意）：</p>
+<ul>
+  <li>A：100，80，120，100</li>
+  <li>B：0.01，−0.01，0.01，0.01</li>
+</ul>
+<div class="tbl"><table>
+  <thead><tr><th>t</th><th>参数</th><th class="num">gₜ</th><th class="num">m̂ₜ</th><th class="num">√v̂ₜ</th><th class="num">m̂/√v̂</th><th class="num">Adam 一步</th><th class="num">SGD 一步</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>A</td><td class="num">100</td><td class="num">100</td><td class="num">100</td><td class="num">1.000</td><td class="num">0.0010</td><td class="num">0.1</td></tr>
+    <tr><td>1</td><td>B</td><td class="num">0.01</td><td class="num">0.01</td><td class="num">0.01</td><td class="num">1.000</td><td class="num">0.0010</td><td class="num">0.00001</td></tr>
+    <tr><td>2</td><td>A</td><td class="num">80</td><td class="num">89.47</td><td class="num">90.55</td><td class="num">0.988</td><td class="num">0.00099</td><td class="num">0.08</td></tr>
+    <tr><td>2</td><td>B</td><td class="num">−0.01</td><td class="num">−0.0005</td><td class="num">0.01</td><td class="num"><b>−0.053</b></td><td class="num">−0.000053</td><td class="num">−0.00001</td></tr>
+    <tr><td>3</td><td>A</td><td class="num">120</td><td class="num">100.74</td><td class="num">101.33</td><td class="num">0.994</td><td class="num">0.00099</td><td class="num">0.12</td></tr>
+    <tr><td>3</td><td>B</td><td class="num">0.01</td><td class="num">0.0034</td><td class="num">0.01</td><td class="num">0.336</td><td class="num">0.00034</td><td class="num">0.00001</td></tr>
+    <tr><td>4</td><td>A</td><td class="num">100</td><td class="num">100.52</td><td class="num">101.0</td><td class="num">0.995</td><td class="num">0.00100</td><td class="num">0.1</td></tr>
+    <tr><td>4</td><td>B</td><td class="num">0.01</td><td class="num">0.0053</td><td class="num">0.01</td><td class="num">0.529</td><td class="num">0.00053</td><td class="num">0.00001</td></tr>
+  </tbody>
+</table></div>
+<figure class="fig">
+  <span class="tag">图 7 · 比值 m̂/√v̂ 就是「这一步走几个 α」（数据同上表）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 232" role="img" aria-label="柱状图，四组对应第 1 到第 4 步。灰色柱是参数 A 的比值：1、0.988、0.994、0.995，几乎一样高。蓝色柱是参数 B 的比值：1、负 0.053、0.336、0.529。第 2 步 B 的梯度翻号，比值接近 0，几乎不动；之后连续同号，比值回升。">
+    <g class="sm b"><rect class="softS" x="20" y="10" width="12" height="12" rx="2"/><text x="38" y="21">A：梯度大而稳</text>
+      <rect class="new" x="170" y="10" width="12" height="12" rx="2"/><text x="188" y="21">B：梯度小且方向不稳</text></g>
+    <line class="ln" x1="40" y1="170" x2="660" y2="170"/>
+    <line class="ln dash" x1="40" y1="70" x2="660" y2="70"/>
+    <text class="sm m mo" x="36" y="74" text-anchor="end">1</text><text class="sm m mo" x="36" y="174" text-anchor="end">0</text>
+    <g class="softS">
+      <rect x="96" y="70" width="28" height="100" rx="3"/><rect x="246" y="71.2" width="28" height="98.8" rx="3"/><rect x="396" y="70.6" width="28" height="99.4" rx="3"/><rect x="546" y="70.5" width="28" height="99.5" rx="3"/>
+    </g>
+    <g class="new">
+      <rect x="132" y="70" width="28" height="100" rx="3"/><rect x="282" y="170" width="28" height="5.3" rx="1"/><rect x="432" y="136.4" width="28" height="33.6" rx="3"/><rect x="582" y="117.1" width="28" height="52.9" rx="3"/>
+    </g>
+    <g class="mo sm" text-anchor="middle"><text x="110" y="64">1.000</text><text x="260" y="64">0.988</text><text x="410" y="64">0.994</text><text x="560" y="64">0.995</text>
+      <text class="tn b" x="296" y="192">−0.053</text><text class="tn b" x="446" y="130">0.336</text><text class="tn b" x="596" y="111">0.529</text></g>
+    <g class="sm m" text-anchor="middle"><text x="128" y="214">第 1 步</text><text x="278" y="214">第 2 步</text><text x="428" y="214">第 3 步</text><text x="578" y="214">第 4 步</text></g>
+    <text class="sm tn" x="296" y="228" text-anchor="middle">B 翻号：几乎不动</text>
+  </svg>
+  </div>
+  <figcaption>四点读法。<b>① 尺度被抹平</b>：A 的梯度是 B 的一万倍，第 1 步两者都走 α；SGD 一个走 0.1、一个走 0.00001。<b>② 方向不稳时步子变小</b>：B 第 2 步梯度翻号，比值只有 −0.053，几乎没动；之后连续同号，比值回升到 0.34、0.53。<b>③</b> A 的梯度在 80 到 120 之间波动，比值却稳在 0.99 到 1.0，因为分子分母同步变化。<b>④</b> 第 1 步恰好都是 α，因为偏差修正让 m̂₁ = g₁、v̂₁ = g₁²。</figcaption>
 </figure>
 
-<h3>推导：为什么除以的恰好是 1 − βᵗ</h3>
+<h3>更新规则的三个性质</h3>
+<p>原文 2.1 节设 ε = 0，把一步的有效步长记作 Δₜ = α · m̂ₜ/√v̂ₜ，然后讲了三个性质。</p>
+<h4>① 步长大致被 α 封顶：一个「信赖域」</h4>
+<p>原文给出两个上界，式子见附录 A：一般情况下一步不超过 α，只有梯度极端稀疏时才能到约 3.16α，下面说细一点。</p>
+<p>第一种情况（(1 − β₁) &gt; √(1 − β₂)）只发生在最极端的稀疏：一个梯度在之前所有步都是 0，只有这一步非零。默认值下 (1 − β₁) = 0.1，√(1 − β₂) ≈ 0.0316，上界是 0.1/0.0316 ≈ <b>3.16α</b>。普通情形下，均值的绝对值不超过均方根，所以 m̂/√v̂ 在 ±1 以内，一步不超过约 α。</p>
+<p>原文把这个性质解释为在当前参数周围划了一个<b>信赖域</b>：当前梯度估计只在这个范围内可信。好处是 α 有了直观含义，就是「一步最多走多远」，可以按先验估计它的量级，比如已知好的解离初值大概多远。</p>
+<h4>② 信噪比：方向越不可信，步子越小</h4>
+<p>原文把 m̂/√v̂ 叫作<b>信噪比</b>（并说这是「略微滥用术语」）。信号是梯度均值 m̂，噪声尺度是均方根 √v̂。比值接近 ±1，说明梯度一致、方向可信，迈满步；比值接近 0，说明梯度忽正忽负，步子自动缩小。</p>
+<figure class="fig">
+  <span class="tag">图 8 · 同样的 α，梯度越一致，一步走得越远（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="三行。第一行梯度一直是 2，八个点在同一高度，比值 m-hat 除以根号 v-hat 等于 1，一步约 α，蓝色长条。第二行梯度均值 0.1、噪声标准差 1，点上下乱跳，比值约 0.0995，一步约 0.1α，短条。第三行纯正负 1 噪声，均值 0，比值趋于 0，原地踏步，几乎没有条。">
+    <g class="sm b"><text x="20" y="20">最近的梯度长这样</text><text x="300" y="20">m̂ / √v̂ = 这一步走几个 α</text></g>
+    <line class="ln" x1="20" y1="66" x2="250" y2="66"/>
+    <g class="mutF"><circle cx="35" cy="46" r="4"/><circle cx="65" cy="46" r="4"/><circle cx="95" cy="46" r="4"/><circle cx="125" cy="46" r="4"/><circle cx="155" cy="46" r="4"/><circle cx="185" cy="46" r="4"/><circle cx="215" cy="46" r="4"/><circle cx="245" cy="46" r="4"/></g>
+    <rect class="new" x="300" y="40" width="300" height="20" rx="4"/><text class="sm mo" x="606" y="55">1</text>
+    <text class="sm m" x="300" y="80">一直是 2：方向可信，迈满步</text>
+
+    <line class="ln" x1="20" y1="136" x2="250" y2="136"/>
+    <g class="mutF"><circle cx="35" cy="124" r="4"/><circle cx="65" cy="148" r="4"/><circle cx="95" cy="130" r="4"/><circle cx="125" cy="152" r="4"/><circle cx="155" cy="118" r="4"/><circle cx="185" cy="141" r="4"/><circle cx="215" cy="127" r="4"/><circle cx="245" cy="146" r="4"/></g>
+    <rect class="new" x="300" y="116" width="29.9" height="20" rx="4"/><text class="sm mo" x="336" y="131">≈ 0.0995</text>
+    <text class="sm m" x="300" y="152">均值 0.1、噪声标准差 1：约 0.1α，几乎原地踏步</text>
+
+    <line class="ln" x1="20" y1="200" x2="250" y2="200"/>
+    <g class="mutF"><circle cx="35" cy="186" r="4"/><circle cx="65" cy="214" r="4"/><circle cx="95" cy="186" r="4"/><circle cx="125" cy="186" r="4"/><circle cx="155" cy="214" r="4"/><circle cx="185" cy="214" r="4"/><circle cx="215" cy="186" r="4"/><circle cx="245" cy="214" r="4"/></g>
+    <rect class="new" x="300" y="190" width="2" height="20" rx="1"/><text class="sm mo" x="310" y="205">→ 0</text>
+    <text class="sm m" x="300" y="228">纯 ±1 噪声、均值 0：步子缩到 0</text>
+  </svg>
+  </div>
+  <figcaption>第二行：二阶矩 = 1 + 0.01 = 1.01，比值 ≈ 0.1/1.005 ≈ 0.0995（数字为讲解设定，点的位置是示意）。原文说：靠近最优点时信噪比通常趋近 0，步长自动减小，<b>相当于一种自动退火</b>。这是作者的观察，原文没有给出严格证明。</figcaption>
+</figure>
+<h4>③ 对梯度整体缩放不敏感</h4>
+<p>把梯度整体乘一个常数 c：m̂ 乘 c，v̂ 乘 c²，√v̂ 乘 c，相除时抵消，(c·m̂)/√(c²·v̂) = m̂/√v̂。比如损失函数乘 10，梯度全部乘 10，SGD 的步子跟着乘 10，Adam 一步不变。对 loss 求和还是求平均，不会改变 Adam 的行为。严格说 ε 会破坏精确的不变，但 ε 很小。</p>
+<p>这三个性质就是两个毛病被解决之后的样子：尺度被抹平（毛病一），方向不可信时步子自动变小（毛病二）。</p>
+
+
+<!-- ================= 7 ================= -->
+<h2 id="s7"><span class="no">7</span>证据：四组实验</h2>
+<p>理论上，原文只在凸问题上证明了 O(√T) 的遗憾界，对深度学习不构成直接保证（附录 C），所以要看实验。</p>
+<p>四组实验。比较时所有优化器用同一个参数初始化，学习率、动量等超参数在密集网格上搜索，报告每个方法的<b>最优设置</b>。结果全部是曲线图，<b>原文没有数值表</b>，所以下面只有定性结论。</p>
+
+<h3>结论一：凸问题上，稀疏特征也不输 AdaGrad</h3>
+<figure class="fig">
+  <span class="tag">原文 Figure 1 · 逻辑回归：MNIST（左）与 IMDB 词袋（右）</span>
+  <img class="orig" src="orig-fig1.png" alt="原文 Figure 1。左图 MNIST 逻辑回归，横轴是遍历整个数据集的轮数 0 到 45，纵轴训练损失 0.2 到 0.7。蓝线 AdaGrad 下降最慢，45 轮时约 0.46；绿线 SGDNesterov 和红线 Adam 很快降到 0.3 以下，Adam 略低。右图 IMDB 词袋特征逻辑回归，带 dropout，横轴 0 到 160 轮。红线 SGDNesterov 噪声很大，停在 0.35 左右；Adagrad、RMSProp、Adam 三条线都降到 0.25 附近，Adam 的青色线最低。" loading="lazy" width="957" height="479">
+  <figcaption>这张图在说什么：<b>稠密特征上 Adam 和动量 SGD 打平，稀疏特征上 Adam 和 AdaGrad 一样快</b>。怎么看：纵轴是训练损失，越低越好。左图 MNIST 是稠密特征，红线（Adam）和绿线（SGD + Nesterov 动量）贴在一起，都比蓝线（AdaGrad）快得多。右图 IMDB 影评用 10000 维稀疏词袋，加了 50% dropout 噪声，这是自适应学习率的主场：红线（SGD）远远落后，青线（Adam）和 AdaGrad 一样快甚至略低。说明 Adam 继承了 AdaGrad 处理稀疏梯度的本事。这两个都是凸问题，原文说它们印证了原文第 4 节的分析（附录 C）。图源：Kingma、Ba 2014 原文。</figcaption>
+</figure>
+
+<h3>结论二：非凸、带噪的多层网络上收敛最好</h3>
+<p>这是论文的核心实验。2 个隐藏层、每层 1000 个 ReLU 单元，MNIST，带 dropout。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 2(a) · 多层网络 + dropout</span>
+  <img class="orig narrow" src="orig-fig2.png" alt="原文 Figure 2a：MNIST 多层神经网络加 dropout，横轴是遍历整个数据集的轮数 0 到 200，纵轴是对数刻度的训练损失，从 10 的负 1 次方到 10 的负 2 次方以下。五条线：AdaGrad、RMSProp、SGDNesterov、AdaDelta、Adam。品红色的 Adam 一直在最下面，200 轮时明显低于其他四条。" loading="lazy" width="442" height="457">
+  <figcaption>这张图在说什么：<b>五种一阶方法里，Adam 的训练损失一直最低</b>。怎么看：纵轴是对数刻度，往下一格就是小 10 倍。品红线是 Adam，从第 50 轮起就和其他四条（AdaGrad、RMSProp、SGD + Nesterov、AdaDelta）拉开距离。图源：Kingma、Ba 2014 原文。</figcaption>
+</figure>
+<p>原文同时和准牛顿方法 SFO 比。去掉 dropout、目标是确定性的时候（原文 Figure 2b），Adam 按迭代数和按实际耗时都比 SFO 快；作者说 SFO 每次迭代慢 5 到 10 倍，内存还随小批量的划分数线性增长。加上 dropout 后，SFO 因为假设子函数是确定的，<b>直接无法收敛</b>。这回答了前面「二阶方法不适合」那一条。</p>
+
+<h3>结论三：卷积网络上只比动量 SGD 好一点</h3>
+<p>CIFAR-10，三段「5×5 卷积 + 3×3 最大池化」再接 1000 个 ReLU 的全连接层，带 dropout（原文 Figure 3）。前 3 轮 Adam 和 AdaGrad 都降得很快；到 45 轮，Adam 和 SGD 都比 AdaGrad 快得多，但 Adam 比动量 SGD 只有原文所说的<b>「微小提升」</b>。这个实验最诚实：</p>
+<ul>
+  <li>作者的解释：几轮之后 v̂ 趋近于 0，被 ε 主导，二阶矩在这里不是好的近似，起作用的主要是 m（降低小批量的方差）。AdaGrad 没有一阶矩，所以慢得多。这是作者的解释，没有进一步的拆零件实验验证。</li>
+  <li>作者最后落在「省事」上：Adam 能自动适应不同层的尺度，不用像 SGD 那样手工给每层挑学习率。从「效果更好」退到「更省事」，没有声称更好。</li>
+</ul>
+
+<h3>结论四：偏差修正不是装饰</h3>
+<p>这是唯一一个直接验证「某个零件有用」的实验。模型是变分自编码器（VAE），网格扫过 β₁ ∈ {0, 0.9}、β₂ ∈ {0.99, 0.999, 0.9999}、log₁₀α 从 −5 到 −1，对比有修正和无修正（无修正就是带动量的 RMSProp）。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 4 · 有偏差修正（红）与无修正（绿），训练 10 轮（左）和 100 轮（右）</span>
+  <img class="orig" src="orig-fig4.png" alt="原文 Figure 4：左右两大块，左边是训练 10 轮后，右边是 100 轮后。每块是 2 行 3 列的小图，行是 β1 等于 0 和 0.9，列是 β2 等于 0.99、0.999、0.9999。每个小图横轴是 log10 学习率，从负 5 到负 1，纵轴是损失 95 到 140。红线是有偏差修正，绿线是无修正。β2 等于 0.99 时两条线几乎重合；β2 越接近 1，绿线越早在较小的学习率处冲出图外，红线则还能在更大的学习率下保持低损失。" loading="lazy" width="1106" height="406">
+  <figcaption>这张图在说什么：<b>β₂ 越接近 1，不修正越容易炸；最好的结果来自大 β₂ 加修正</b>。怎么看：每个小图横轴是学习率（对数），纵轴是损失，越低越好，线冲出图顶就是训练不稳。最左一列 β₂ = 0.99，红绿几乎重合；往右 β₂ 变成 0.999、0.9999，绿线（不修正）在较小的学习率就冲出去，β₂ = 0.9999 训练 10 轮时绿线干脆没有落在图里的点，红线（有修正）仍然稳。原文总结：Adam 不管超参数怎么设，都不比 RMSProp 差。它把图 6 那个「开头步子冲过头」的小例子落到了真实训练上。图源：Kingma、Ba 2014 原文。</figcaption>
+</figure>
+<h3>作者的结论</h3>
+<p>原文的结论很克制：</p>
+<ul>
+  <li>Adam 是一个简单、计算高效的随机优化算法，结合了 AdaGrad 处理稀疏梯度和 RMSProp 处理非平稳目标的优点。</li>
+  <li>实现简单，内存需求小。</li>
+  <li>实验证实了凸问题上收敛率的分析；作者发现 Adam 对各种非凸优化问题都「稳健且适用」。</li>
+</ul>
+<p>「Adam 是最好的优化器」是后来的流行印象，原文自己没有这么说。</p>
+
+
+<!-- ================= 8 ================= -->
+<h2 id="s8"><span class="no">8</span>局限和后来</h2>
+<p>实验只给了这些，下面几条是我补充的局限（原文没有）：</p>
+<ul>
+  <li>所有结果都是曲线，没有数值，也没有多次随机种子的误差范围，看不出差距是否显著。</li>
+  <li>比的都是<b>训练损失</b>，不是测试集准确率。优化得快不等于泛化得好。后来有工作讨论自适应方法的泛化是否不如 SGD（如 Wilson 等 2017，细节待核实）。</li>
+  <li>模型都很小，没有语言模型、机器翻译这类序列模型。Adam 在 Transformer 上好用，要等 004 的实践来证实，不是本文的证据。</li>
+  <li>「默认值就好用、几乎免调」是 Adam 的核心卖点，但实验里各方法都是网格搜索出的最优设置，这个卖点并没有被直接检验。6.4 节也说明最好的结果要靠大 β₂ 加修正，超参数并非完全免调。</li>
+  <li>每个参数多存 m 和 v 两个数，「内存小」对 2014 年的小模型成立；模型大到百亿参数时，这两份状态成了显存的大头（后来的 Adafactor 等就是针对这点，待核实）。</li>
+</ul>
+<p>Adam 后来成了深度学习的默认优化器，也出现了 AdamW、AMSGrad、省显存的变体，见附录 H。</p>
+
+
+<!-- ================= after ================= -->
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块默认折叠，点开看。标题里写了对应原文的第几节。</p>
+
+<details class="ext"><summary>A · 公式、推导和符号表（原文 Algorithm 1、2.1 节、第 3 节）</summary>
+<p><b>v 的递推式（Algorithm 1 第 ③ 行）</b></p>
+<div class="formula">v<sub>t</sub> = β<sub>2</sub> · v<sub>t−1</sub> + (1 − β<sub>2</sub>) · g<sub>t</sub><sup>2</sup><span class="fsrc">（原文 Algorithm 1，g² 是逐元素平方）</span></div>
+<p><b>步长的两个上界（原文 2.1 节）</b></p>
+<div class="formula">(1 − β<sub>1</sub>) &gt; √(1 − β<sub>2</sub>) 时：|Δ<sub>t</sub>| ≤ α · (1 − β<sub>1</sub>) / √(1 − β<sub>2</sub>)　　否则：|Δ<sub>t</sub>| ≤ α<span class="fsrc">（原文 2.1 节）</span></div>
+<p><b>偏差修正的推导（原文第 3 节）</b></p>
 <p>原文第 3 节以 v 为例推导（m 完全类似）。第一步，把递推展开：</p>
 <div class="formula">v<sub>t</sub> = (1 − β<sub>2</sub>) · Σ<sub>i=1..t</sub> β<sub>2</sub><sup>t−i</sup> · g<sub>i</sub><sup>2</sup><span class="fsrc">（原文 Eq. 1）</span></div>
 <p>vₜ 是之前所有 gᵢ² 的加权和，越近权重越大，就是图 4 的权重。第二步，取期望。如果每一步梯度的二阶矩都一样（平稳），E[gᵢ²] 可以提到求和外面；剩下的是一个等比数列，(1 − β₂) · Σ β₂^(t−i) = 1 − β₂ᵗ：</p>
@@ -568,27 +628,41 @@ html{scroll-behavior:smooth}
   </tbody>
 </table></div>
 <p>读法：估计量的期望 = 真值 × (1 − β₂ᵗ)，所以除以 (1 − β₂ᵗ) 就得到无偏估计。验算：t = 1 时 v₁ = 0.001 × g₁²，除以 0.001 刚好是 g₁²。</p>
-<p><b>为什么对稀疏梯度尤其关键</b>（原文第 3 节末尾）：稀疏梯度大部分时刻为 0，要估准二阶矩必须平均很长的历史，也就是 β₂ 要很接近 1。而 β₂ 越接近 1，不修正时开头的 v 偏小越严重。所以「稀疏 + 不修正」是最坏的组合。</p>
-<aside class="ext"><span class="alab">🧭 延伸 · 原文措辞的两处小坑（跳过不影响理解）</span>
+<p><b>原文措辞的两处小坑</b></p>
 <ul>
   <li>第 3 节谈 ζ 时，原文写的是 β₁，按上下文应指二阶矩的衰减率 β₂，像是笔误。</li>
   <li>第 3 节末尾原文写「choosing a small value of β₂」，字面上和 6.4 节「β₂ 接近 1」相反。但第 2 节有一句「尤其当衰减率很小（即 β 接近 1）时」，可见作者把 1 − β 叫作衰减率，「small」指的是衰减慢，并不矛盾。</li>
 </ul>
-</aside>
+</details>
 
+<details class="ext"><summary>B · 概念：指数移动平均、梯度裁剪（原文之外）</summary>
+<p><b>指数移动平均（EMA）：m 和 v 都是它</b></p>
+<p><b>直觉</b>：你想知道「这几天的平均气温」，但不想存下所有历史数据。办法是手里只留一个「当前平均值」，每天来了新温度，就按「旧平均 × 0.9 + 新温度 × 0.1」更新。越新的数据权重越大，越旧的越快被遗忘，而且只需存一个数。</p>
+<div class="formula">m<sub>t</sub> = β · m<sub>t−1</sub> + (1 − β) · x<sub>t</sub><span class="fsrc">（原文 Algorithm 1 的 m 那一行）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th></tr></thead>
+  <tbody>
+    <tr><td><code>x<sub>t</sub></code></td><td>第 t 步的新数据（这里是梯度）</td></tr>
+    <tr><td><code>m<sub>t−1</sub></code></td><td>到上一步为止的平均值</td></tr>
+    <tr><td><code>β</code></td><td>0 到 1 之间，遗忘的快慢。越接近 1，旧平均占比越大，越平滑也越迟钝</td></tr>
+    <tr><td><code>1 − β</code></td><td>新数据的权重</td></tr>
+  </tbody>
+</table></div>
+<p><b>为什么不用「最近 N 步的普通平均」？</b>普通平均要存 N 个历史值，EMA 只存一个。上亿参数的模型存不下 N 份梯度，EMA 每个参数只多 1 个数。</p>
+<p><b>Adam 和梯度裁剪是两码事（我补充的）</b></p>
+<p>梯度裁剪是防爆炸：在算出梯度之后、进入优化器之前，梯度范数超过阈值就整体缩小（002 讲过）。Adam 的缩放针对的是<b>每个参数</b>的稳定尺度。一次异常巨大的梯度仍然可能污染 m 和 v，让 v 很长时间偏大，所以大模型训练里两者经常同时用。这一点原文没有讨论，是后来的实践。</p>
+</details>
 
-<!-- ================= 4 ================= -->
-<h2 id="s4"><span class="no">4</span>收敛性分析</h2>
-<aside class="anno"><span class="alab">📎 注解 · 凸函数与「遗憾」</span>
+<details class="ext"><summary>C · 收敛性分析（原文第 4 节，证明在原文附录 10.1）</summary>
+<p><b>凸函数与「遗憾」</b></p>
 <p><b>凸函数</b>：碗形，只有一个谷底，局部最优就是全局最优。凸问题的好处是可以证明定理。神经网络的损失不是凸的。</p>
 <p><b>遗憾（regret）</b>，来自 Zinkevich 2003 的在线学习框架：每一步 t 有一个事先不知道的凸损失 fₜ，你先选参数 θₜ，之后才看到 fₜ，付出 fₜ(θₜ)。事后回头看，如果一直用「全程最好的固定参数 θ*」，总损失是 Σ fₜ(θ*)。两者之差就是遗憾：</p>
 <div class="formula">R(T) = Σ<sub>t=1..T</sub> [ f<sub>t</sub>(θ<sub>t</sub>) − f<sub>t</sub>(θ*) ]<span class="fsrc">（原文 Eq. 5）</span></div>
 <p>白话：R(T) 衡量「你比事后诸葛亮差多少」。如果 R(T) 增长得比 T 慢，平均每步的遗憾 R(T)/T 就趋于 0，说明最终和最好的固定参数一样好。</p>
-</aside>
 <p>原文第 4 节在在线凸优化框架下证明：Adam 的遗憾是 <b>O(√T)</b>，所以平均遗憾 R(T)/T = O(1/√T)，趋于 0（Corollary 4.2）。摘要说这个结果「与此前已知的最好结果相当」，<b>不是更好</b>。</p>
 <p>界里的项都和每个维度<b>实际出现的梯度大小</b>有关。梯度稀疏时，实际梯度和远小于最坏情况。原文引用 Duchi 2011 说，自适应方法可以达到 O(log d · √T)，好于非自适应方法的 O(√(dT))。</p>
 <p class="note"><span class="lab">读这个定理要知道的局限</span>它只对<b>凸</b>问题成立，原文 6.2 节自己说收敛分析不适用于非凸问题，所以对深度学习不构成直接保证。定理还要求学习率按 1/√t 衰减、β₁ 也随时间衰减，而实际使用通常是常数，理论设定和实用设定有距离。</p>
-<details class="ext"><summary>🧭 延伸 · 定理的条件和完整的界（跳过不影响理解）</summary>
+<p><b>定理的条件和完整的界</b></p>
 <p><b>条件（Theorem 4.1）</b>：梯度有界（‖∇f‖₂ ≤ G，‖∇f‖∞ ≤ G∞）；参数之间的距离有界（D、D∞）；β₁²/√β₂ &lt; 1；学习率 αₜ = α/√t；β₁ 随时间指数衰减，β₁,ₜ = β₁ · λᵗ⁻¹。</p>
 <p><b>完整的界</b>（三项都是对每个维度 i 求和，γ = β₁²/√β₂）：</p>
 <div class="formula">R(T) ≤ D² / (2α(1−β<sub>1</sub>)) · Σ<sub>i</sub> √(T · v̂<sub>T,i</sub>) + α(1+β<sub>1</sub>)G<sub>∞</sub> / ((1−β<sub>1</sub>)√(1−β<sub>2</sub>)(1−γ)<sup>2</sup>) · Σ<sub>i</sub> ‖g<sub>1:T,i</sub>‖<sub>2</sub> + 常数项<span class="fsrc">（原文 Theorem 4.1）</span></div>
@@ -596,12 +670,10 @@ html{scroll-behavior:smooth}
 <p><b>后世评价（原文之外，细节以原论文为准）</b>：Reddi 等人 2018 年的论文《On the Convergence of Adam and Beyond》（ICLR 2018）指出 Adam 的收敛性证明有问题，构造了反例，并提出变体 AMSGrad。原文致谢里还提到，有读者发现了 AdaMax 推导里的一个错误，已更正。</p>
 </details>
 
-
-<!-- ================= 5 ================= -->
-<h2 id="s5"><span class="no">5</span>和前人方法的关系</h2>
-<h3>和 RMSProp：去掉偏差修正，就是带动量的 RMSProp</h3>
+<details class="ext"><summary>D · 和前人方法的关系（原文第 5 节、6.4 节开头）</summary>
+<p><b>和 RMSProp：去掉偏差修正，就是带动量的 RMSProp</b></p>
 <p>原文 6.4 节开头说，Adam 去掉偏差修正，就是带动量的 RMSProp。差别有两处：RMSProp 对<b>已经缩放过的梯度</b>做动量，Adam 分别估 E[g] 和 E[g²] 再相除；RMSProp 没有修正，β₂ 接近 1 时开头步长很大，经常发散。</p>
-<h3>和 AdaGrad：AdaGrad 是 Adam 的一个极限特例</h3>
+<p><b>和 AdaGrad：AdaGrad 是 Adam 的一个极限特例</b></p>
 <p>原文第 5 节给出严格的对应。取 β₁ = 0（不要动量），让 β₂ 无限接近 1。因为有偏差修正，v̂ₜ 趋于所有历史梯度平方的<b>平均</b>（权重变得均匀）；再把学习率换成逐步衰减的 αₜ = α · t<sup>−1/2</sup>：</p>
 <div class="formula">α<sub>t</sub> · g<sub>t</sub> / √v̂<sub>t</sub> = α · t<sup>−1/2</sup> · g<sub>t</sub> / √( (1/t) Σ<sub>i</sub> g<sub>i</sub><sup>2</sup> ) = α · g<sub>t</sub> / √( Σ<sub>i</sub> g<sub>i</sub><sup>2</sup> )<span class="fsrc">（原文第 5 节）</span></div>
 <p>最右边正是 AdaGrad 的更新。这个对应<b>依赖偏差修正</b>：原文强调，没有修正（像 RMSProp），β₂ 无限接近 1 会带来无限大的偏差和无限大的更新。Adam 比 AdaGrad 多出来的是：遗忘速度可调（β₂ 不必趋于 1），可以加动量（β₁ &gt; 0）。</p>
@@ -616,45 +688,10 @@ html{scroll-behavior:smooth}
 </table></div>
 <p class="punch">Adam 的零件都是现成的。原创在于把它们<em>按统计量的口径统一起来</em>（一阶矩、二阶矩），并补上偏差修正这个漏洞。</p>
 <p>原文第 5 节还提到和<b>自然梯度</b>的联系：v̂ 近似 Fisher 信息矩阵的对角线，Adam 用的是它平方根的逆，比自然梯度更保守。读者只需知道 v̂ 可以和更正统的二阶方法联系起来，原文只点到为止，这里也不展开。同期被列出的还有 vSGD、AdaDelta、SFO 等。</p>
+</details>
 
-
-<!-- ================= 6 ================= -->
-<h2 id="s6"><span class="no">6</span>实验：结论</h2>
-<p>四组实验。比较时所有优化器用同一个参数初始化，学习率、动量等超参数在密集网格上搜索，报告每个方法的<b>最优设置</b>。结果全部是曲线图，<b>原文没有数值表</b>，所以下面只有定性结论。</p>
-
-<h3>结论一：凸问题上，稀疏特征也不输 AdaGrad</h3>
-<figure class="fig">
-  <span class="tag">原文 Figure 1 · 逻辑回归：MNIST（左）与 IMDB 词袋（右）</span>
-  <img class="orig" src="orig-fig1.png" alt="原文 Figure 1。左图 MNIST 逻辑回归，横轴是遍历整个数据集的轮数 0 到 45，纵轴训练损失 0.2 到 0.7。蓝线 AdaGrad 下降最慢，45 轮时约 0.46；绿线 SGDNesterov 和红线 Adam 很快降到 0.3 以下，Adam 略低。右图 IMDB 词袋特征逻辑回归，带 dropout，横轴 0 到 160 轮。红线 SGDNesterov 噪声很大，停在 0.35 左右；Adagrad、RMSProp、Adam 三条线都降到 0.25 附近，Adam 的青色线最低。" loading="lazy" width="957" height="479">
-  <figcaption>这张图在说什么：<b>稠密特征上 Adam 和动量 SGD 打平，稀疏特征上 Adam 和 AdaGrad 一样快</b>。怎么看：纵轴是训练损失，越低越好。左图 MNIST 是稠密特征，红线（Adam）和绿线（SGD + Nesterov 动量）贴在一起，都比蓝线（AdaGrad）快得多。右图 IMDB 影评用 10000 维稀疏词袋，加了 50% dropout 噪声，这是自适应学习率的主场：红线（SGD）远远落后，青线（Adam）和 AdaGrad 一样快甚至略低。说明 Adam 继承了 AdaGrad 处理稀疏梯度的本事。这两个都是凸问题，原文说它们印证了第 4 节的分析。图源：Kingma、Ba 2014 原文。</figcaption>
-</figure>
-
-<h3>结论二：非凸、带噪的多层网络上收敛最好</h3>
-<p>这是论文的核心实验。2 个隐藏层、每层 1000 个 ReLU 单元，MNIST，带 dropout。</p>
-<figure class="fig">
-  <span class="tag">原文 Figure 2(a) · 多层网络 + dropout</span>
-  <img class="orig narrow" src="orig-fig2.png" alt="原文 Figure 2a：MNIST 多层神经网络加 dropout，横轴是遍历整个数据集的轮数 0 到 200，纵轴是对数刻度的训练损失，从 10 的负 1 次方到 10 的负 2 次方以下。五条线：AdaGrad、RMSProp、SGDNesterov、AdaDelta、Adam。品红色的 Adam 一直在最下面，200 轮时明显低于其他四条。" loading="lazy" width="442" height="457">
-  <figcaption>这张图在说什么：<b>五种一阶方法里，Adam 的训练损失一直最低</b>。怎么看：纵轴是对数刻度，往下一格就是小 10 倍。品红线是 Adam，从第 50 轮起就和其他四条（AdaGrad、RMSProp、SGD + Nesterov、AdaDelta）拉开距离。图源：Kingma、Ba 2014 原文。</figcaption>
-</figure>
-<p>原文同时和准牛顿方法 SFO 比。去掉 dropout、目标是确定性的时候（原文 Figure 2b），Adam 按迭代数和按实际耗时都比 SFO 快；作者说 SFO 每次迭代慢 5 到 10 倍，内存还随小批量的划分数线性增长。加上 dropout 后，SFO 因为假设子函数是确定的，<b>直接无法收敛</b>。这回答了第 1 节「二阶方法遇到随机噪声就失效」那一条。</p>
-
-<h3>结论三：卷积网络上只比动量 SGD 好一点</h3>
-<p>CIFAR-10，三段「5×5 卷积 + 3×3 最大池化」再接 1000 个 ReLU 的全连接层，带 dropout（原文 Figure 3）。前 3 轮 Adam 和 AdaGrad 都降得很快；到 45 轮，Adam 和 SGD 都比 AdaGrad 快得多，但 Adam 比动量 SGD 只有原文所说的<b>「微小提升」</b>。这个实验最诚实：</p>
-<ul>
-  <li>作者的解释：几轮之后 v̂ 趋近于 0，被 ε 主导，二阶矩在这里不是好的近似，起作用的主要是 m（降低小批量的方差）。AdaGrad 没有一阶矩，所以慢得多。这是作者的解释，没有进一步的拆零件实验验证。</li>
-  <li>作者最后落在「省事」上：Adam 能自动适应不同层的尺度，不用像 SGD 那样手工给每层挑学习率。从「效果更好」退到「更省事」，没有声称更好。</li>
-</ul>
-
-<h3>结论四：偏差修正不是装饰</h3>
-<p>这是唯一一个直接验证「某个零件有用」的实验。模型是变分自编码器（VAE），网格扫过 β₁ ∈ {0, 0.9}、β₂ ∈ {0.99, 0.999, 0.9999}、log₁₀α 从 −5 到 −1，对比有修正和无修正（无修正就是带动量的 RMSProp）。</p>
-<figure class="fig">
-  <span class="tag">原文 Figure 4 · 有偏差修正（红）与无修正（绿），训练 10 轮（左）和 100 轮（右）</span>
-  <img class="orig" src="orig-fig4.png" alt="原文 Figure 4：左右两大块，左边是训练 10 轮后，右边是 100 轮后。每块是 2 行 3 列的小图，行是 β1 等于 0 和 0.9，列是 β2 等于 0.99、0.999、0.9999。每个小图横轴是 log10 学习率，从负 5 到负 1，纵轴是损失 95 到 140。红线是有偏差修正，绿线是无修正。β2 等于 0.99 时两条线几乎重合；β2 越接近 1，绿线越早在较小的学习率处冲出图外，红线则还能在更大的学习率下保持低损失。" loading="lazy" width="1106" height="406">
-  <figcaption>这张图在说什么：<b>β₂ 越接近 1，不修正越容易炸；最好的结果来自大 β₂ 加修正</b>。怎么看：每个小图横轴是学习率（对数），纵轴是损失，越低越好，线冲出图顶就是训练不稳。最左一列 β₂ = 0.99，红绿几乎重合；往右 β₂ 变成 0.999、0.9999，绿线（不修正）在较小的学习率就冲出去，β₂ = 0.9999 训练 10 轮时绿线干脆没有落在图里的点，红线（有修正）仍然稳。原文总结：Adam 不管超参数怎么设，都不比 RMSProp 差。它把图 8 那个「开头步子冲过头」的小例子落到了真实训练上。图源：Kingma、Ba 2014 原文。</figcaption>
-</figure>
-
-<details class="ext"><summary>🧭 延伸 · 实验设置细节，和我补充的局限（跳过不影响理解）</summary>
-<h4>设置（原文第 6 节）</h4>
+<details class="ext"><summary>E · 实验设置细节（原文第 6 节）</summary>
+<p><b>设置（原文第 6 节）</b></p>
 <div class="tbl"><table>
   <thead><tr><th>实验</th><th>设置</th><th>对比对象</th></tr></thead>
   <tbody>
@@ -666,44 +703,19 @@ html{scroll-behavior:smooth}
   </tbody>
 </table></div>
 <p>Nesterov 动量是动量的一种改进版：先按惯性往前探一步，再在那里算梯度。</p>
-<h4>我补充的局限（原文没有）</h4>
-<ul>
-  <li>所有结果都是曲线，没有数值，也没有多次随机种子的误差范围，看不出差距是否显著。</li>
-  <li>比的都是<b>训练损失</b>，不是测试集准确率。优化得快不等于泛化得好。后来有工作讨论自适应方法的泛化是否不如 SGD（如 Wilson 等 2017，细节待核实）。</li>
-  <li>模型都很小，没有语言模型、机器翻译这类序列模型。Adam 在 Transformer 上好用，要等 004 的实践来证实，不是本文的证据。</li>
-  <li>「默认值就好用、几乎免调」是 Adam 的核心卖点，但实验里各方法都是网格搜索出的最优设置，这个卖点并没有被直接检验。6.4 节也说明最好的结果要靠大 β₂ 加修正，超参数并非完全免调。</li>
-  <li>每个参数多存 m 和 v 两个数，「内存小」对 2014 年的小模型成立；模型大到百亿参数时，这两份状态成了显存的大头（后来的 Adafactor 等就是针对这点，待核实）。</li>
-</ul>
 </details>
 
-
-<!-- ================= 7 ================= -->
-<h2 id="s7"><span class="no">7</span>扩展：AdaMax 与时间平均</h2>
-<aside class="ext"><span class="alab">🧭 延伸 · 两个扩展（和主线无关，跳过不影响理解）</span>
-<h4>7.1 AdaMax：把「平方的平均」换成「最大值」</h4>
+<details class="ext"><summary>F · 扩展：AdaMax 与时间平均（原文第 7 节）</summary>
+<p><b>7.1 AdaMax：把「平方的平均」换成「最大值」</b></p>
 <p>Adam 的分母相当于梯度的 L2 范数（平方、平均、开根）。推广到 Lₚ 范数，p 大时数值不稳定，但 p 趋于无穷时反而得到一个简单稳定的形式：</p>
 <div class="formula">u<sub>t</sub> = max( β<sub>2</sub> · u<sub>t−1</sub>, |g<sub>t</sub>| )　　θ<sub>t</sub> = θ<sub>t−1</sub> − ( α / (1 − β<sub>1</sub><sup>t</sup>) ) · m<sub>t</sub> / u<sub>t</sub><span class="fsrc">（原文 Algorithm 2）</span></div>
 <p>u 是「近期梯度绝对值的最大值，带衰减」。它不需要偏差修正，步长上界也更简单：|Δₜ| ≤ α。原文推荐 α = 0.002，β₁ = 0.9，β₂ = 0.999。</p>
-<h4>7.2 时间平均</h4>
+<p><b>7.2 时间平均</b></p>
 <p>最后一步的参数因为随机梯度而带噪，对参数本身也做一次 EMA 往往泛化更好：θ̄ₜ = β₂ · θ̄ₜ₋₁ + (1 − β₂) · θₜ，同样要除以 (1 − β₂ᵗ) 修正。是「多加一行」的实用技巧。</p>
-</aside>
+</details>
 
-
-<!-- ================= 8 ================= -->
-<h2 id="s8"><span class="no">8</span>结论</h2>
-<p>原文的结论很克制：</p>
-<ul>
-  <li>Adam 是一个简单、计算高效的随机优化算法，结合了 AdaGrad 处理稀疏梯度和 RMSProp 处理非平稳目标的优点。</li>
-  <li>实现简单，内存需求小。</li>
-  <li>实验证实了凸问题上收敛率的分析；作者发现 Adam 对各种非凸优化问题都「稳健且适用」。</li>
-</ul>
-<p>「Adam 是最好的优化器」是后来的流行印象，原文自己没有这么说。</p>
-
-
-<!-- ================= after ================= -->
-<h2 id="after">读完之后（原文之外）</h2>
-
-<h3>回到 004：β₁ = 0.9、β₂ = 0.98、ε = 10⁻⁹ 是什么意思</h3>
+<details class="ext"><summary>G · 回到 004：β₁、β₂、ε 到底在管什么（原文之外，原文 6.3 节一处）</summary>
+<p><b>回到 004：β₁ = 0.9、β₂ = 0.98、ε = 10⁻⁹ 是什么意思</b></p>
 <p>004 训练 Transformer 时写的那行超参数，现在可以逐个读懂了：</p>
 <div class="tbl"><table>
   <thead><tr><th>超参数</th><th>管什么</th><th class="num">本文默认</th><th class="num">004 取值</th><th>白话</th></tr></thead>
@@ -711,11 +723,11 @@ html{scroll-behavior:smooth}
     <tr><td><b>β₁</b></td><td>m 的遗忘快慢（动量）</td><td class="num">0.9</td><td class="num">0.9</td><td>平均约最近 10 步的梯度。越接近 1 惯性越大，越平滑也越迟钝；β₁ = 0 就是不要动量</td></tr>
     <tr><td><b>β₂</b></td><td>v 的遗忘快慢（尺度）</td><td class="num">0.999</td><td class="num"><b>0.98</b></td><td>用约最近 1000 步（默认）或 50 步（004）的梯度平方，估这个参数的典型梯度大小</td></tr>
     <tr><td><b>ε</b></td><td>分母的下限保险</td><td class="num">10⁻⁸</td><td class="num"><b>10⁻⁹</b></td><td>防止 √v̂ 接近 0 时除出巨大的步长</td></tr>
-    <tr><td>α</td><td>学习率</td><td class="num">0.001</td><td class="num">预热公式</td><td>步长上限的尺度（2.1 节性质 ①）</td></tr>
+    <tr><td>α</td><td>学习率</td><td class="num">0.001</td><td class="num">预热公式</td><td>步长上限的尺度（正文「三个性质」的 ①）</td></tr>
   </tbody>
 </table></div>
 <p><b>β₂ 大还是小</b>：大（0.999），尺度估计稳，不怕单个异常大梯度，但跟不上尺度的变化，开头要靠偏差修正救场；小（0.98），跟得快，但样本少、估计抖。极端稀疏需要大 β₂，所以默认是 0.999。</p>
-<p><b>004 为什么取 0.98</b>：两篇论文都没有明说。用 2.1 节的公式能算出一件事：β₂ = 0.98 时 √(1 − β₂) ≈ 0.141，大于 1 − β₁ = 0.1，落在第二种情况，一步的上界就是 α，比默认设置的 3.16α 保守。</p>
+<p><b>004 为什么取 0.98</b>：两篇论文都没有明说。用原文 2.1 节的上界公式（见附录 A）能算出一件事：β₂ = 0.98 时 √(1 − β₂) ≈ 0.141，大于 1 − β₁ = 0.1，落在第二种情况，一步的上界就是 α，比默认设置的 3.16α 保守。</p>
 <p class="note"><span class="lab">我推测的，待核实</span>Transformer 训练初期，梯度尺度随学习率预热快速变化，较小的 β₂ 让 v 更快跟上实际尺度，不被早期的异常梯度长期影响。ε 取 10⁻⁹ 比默认小一个数量级，等于更晚才开始压扁小梯度，可能是和 β₂ = 0.98 配合，让小梯度的参数仍有有效更新。这不是 004 或 005 的论述。</p>
 <p><b>ε 不是一个无关紧要的小数</b>：当一个参数的梯度本身比 ε 小得多，ε 会把它的更新压扁。</p>
 <div class="tbl"><table>
@@ -727,8 +739,20 @@ html{scroll-behavior:smooth}
   </tbody>
 </table></div>
 <p>原文 6.3 节在卷积网络里看到的就是这个：几轮之后 v̂ 趋于 0，被 ε 主导。一句话记三个数：<b>β₁ 管方向平滑到什么程度，β₂ 管尺度参考多长的历史，ε 管梯度小到什么程度就不再放大</b>。</p>
+</details>
 
-<h3>当时的技术背景（2014）</h3>
+<details class="ext"><summary>H · 当时的背景、后来的发展和前后篇衔接（原文之外）</summary>
+<p><b>前四篇用的优化器</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>篇</th><th>优化器</th></tr></thead>
+  <tbody>
+    <tr><td>001 NPLM</td><td>随机梯度下降 SGD，学习率 10⁻³ 起步并逐渐减小</td></tr>
+    <tr><td>002 Seq2Seq</td><td>SGD，不加动量，学习率固定 0.7，之后每半轮减半，外加梯度裁剪</td></tr>
+    <tr><td>003 Bahdanau 注意力</td><td>小批量 SGD + Adadelta（每个参数各自调步长）</td></tr>
+    <tr><td>004 Transformer</td><td><b class="n">Adam</b>，β₁ = 0.9，β₂ = 0.98，ε = 10⁻⁹，外加学习率预热</td></tr>
+  </tbody>
+</table></div>
+<p><b>当时的技术背景（2014）</b></p>
 <ul>
   <li><b>时间线</b>：2014 年 12 月挂上 arXiv，ICLR 2015 发表。同一年 002 Seq2Seq、003 注意力刚出现，深度学习正处在 2012 年 ImageNet 之后的爆发期。</li>
   <li><b>主流优化器</b>：SGD 加动量（含 Nesterov 版本）是主力，配合人工设计的学习率衰减。自适应方法刚起步：AdaGrad（2011）、AdaDelta（2012）、RMSProp（2012）。002 用固定学习率手工衰减，003 用 Adadelta，同一年的论文用的优化器并不统一。</li>
@@ -736,18 +760,16 @@ html{scroll-behavior:smooth}
   <li><b>硬件</b>：GPU 训练，显存稀缺，「每个参数只多存两个数」是实打实的卖点。</li>
   <li><b>作者</b>：一作 Kingma 是 VAE 的作者之一，6.4 节的实验用的就是 VAE。原文脚注说，两人的署名顺序是在 Google Hangout 上抛硬币决定的。</li>
 </ul>
-
-<h3>后来发展到什么程度</h3>
+<p><b>后来发展到什么程度</b></p>
 <p>下面都是原文之外的后世评价，细节需要时请核实。</p>
 <ul>
   <li><b>成了深度学习的默认优化器</b>。本系列里 004 的训练就用了 Adam，后面各篇大多用它的变体，具体设置到对应篇再看。</li>
   <li><b>AdamW</b>：Loshchilov 和 Hutter 指出，在 Adam 里加 L2 正则和「权重衰减」并不等价，把权重衰减从梯度里分离出来效果更好。这就是 AdamW，今天训练大模型的标准选择（具体年份待核实）。原文没有讨论权重衰减。</li>
-  <li><b>理论质疑</b>：第 4 节提到的收敛性证明问题和 AMSGrad；还有自适应方法泛化性的讨论。这些不影响 Adam 的实际流行。</li>
+  <li><b>理论质疑</b>：附录 C 提到的收敛性证明问题和 AMSGrad；还有自适应方法泛化性的讨论。这些不影响 Adam 的实际流行。</li>
   <li><b>省显存的变体</b>：m、v 在大模型上是负担，后来出现了不存完整 v 的变体（如 Adafactor，待核实），以及把优化器状态量化等做法。</li>
   <li><b>仍然活着的思想</b>：按参数自适应步长；动量；偏差修正（任何从 0 起步的 EMA 都适用，是个通用技巧）；学习率预热加衰减和 Adam 搭配使用（004）。</li>
 </ul>
-
-<h3>前后篇衔接</h3>
+<p><b>前后篇衔接</b></p>
 <p><b>继承自</b>：<a href="../001-nplm/index.html">001 NPLM</a>（反向传播、SGD、学习率，本文是对 SGD 的改进）；<a href="../002-seq2seq/index.html">002 Seq2Seq</a>（梯度消失与爆炸、梯度裁剪，以及本文要免除的手工调学习率）；<a href="../003-bahdanau-attention/index.html">003 Bahdanau 注意力</a>（用的 Adadelta 是 Adam 的近亲，本文把它列为对比对象）；<a href="../004-transformer/index.html">004 Transformer</a>（直接用了 Adam，本篇把它的 β₁、β₂、ε 解释清楚）。论文外：AdaGrad、RMSProp、动量。</p>
 <p><b>和 004 的关系</b>：004 是「模型结构」的变革，005 是「训练方式」的变革。Transformer 去掉 RNN 之后能高度并行、能叠深，Adam 让这种深网络稳定地训得动。注意本文（2014）早于 004（2017），是 004 用了本文，不是本文回应 004。编号是按读者的知识依赖排的，不严格按年份。</p>
 <p><b>留下的问题</b>：</p>
@@ -757,6 +779,7 @@ html{scroll-behavior:smooth}
   <li>全量微调要为每个参数存 m 和 v，成本高 → 第 014 篇 LoRA 只训练极少量参数，也省下了优化器状态（这是我按目录顺序做的推断，到 014 再核实）</li>
   <li>怎么训练一个没有明确损失函数的目标（人类偏好）→ 第 015、016、018 篇</li>
 </ul>
+</details>
 
 
 <footer>

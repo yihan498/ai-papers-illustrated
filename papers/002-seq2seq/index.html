@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Seq2Seq 图解</title>
-<meta name="description" content="Bengio 2003《A Neural Probabilistic Language Model》图解：词向量 + 神经网络预测下一个词。">
+<meta name="description" content="Sutskever 等 2014《Sequence to Sequence Learning with Neural Networks》图解：用一个 LSTM 读、另一个 LSTM 写，把一句话变成另一句话。">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -112,6 +112,12 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var
 @media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
 pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
 
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
 footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
 @media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
 @media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
@@ -185,20 +191,25 @@ html{scroll-behavior:smooth}
   </figure>
 
   <nav class="toc" aria-label="目录">
-    <a href="#s1"><span>1</span>引言：要解决什么问题</a>
-    <a href="#s2"><span>2</span>模型：两个 LSTM</a>
-    <a href="#s3"><span>3</span>实验：英译法</a>
-    <a href="#s4"><span>4</span>相关工作</a>
-    <a href="#s5"><span>5</span>结论</a>
-    <a href="#after"><span>→</span>读完之后（原文之外）</a>
+    <a href="#s1"><span>1</span>要解决的问题</a>
+    <a href="#s2"><span>2</span>第一步：换成 LSTM</a>
+    <a href="#s3"><span>3</span>第二步：读成一个向量，逐词写出译文</a>
+    <a href="#s4"><span>4</span>第三步：把原文倒过来读</a>
+    <a href="#s5"><span>5</span>第四步：训练，梯度一路传回原文</a>
+    <a href="#s6"><span>6</span>第五步：解码，束搜索</a>
+    <a href="#s7"><span>7</span>证据一：直接翻译超过统计翻译</a>
+    <a href="#s8"><span>8</span>证据二：长句子没有崩</a>
+    <a href="#s9"><span>9</span>证据三：8000 个数装下了意思</a>
+    <a href="#s10"><span>10</span>结论、局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
   </nav>
 
   <div class="howto">
     <span class="alab">怎么读这一页</span>
     <ul>
-      <li><b>正文</b>按原文的章节顺序走。带编号的标题（3.1、3.3 等）和原文章节号一致，可以对着 PDF 读；不带编号的小标题是为了好读加的分段。</li>
-      <li><b>📎 注解</b>：第一次遇到、可能看不懂的概念，就地解释。已经懂的可以跳过，不影响主线。</li>
-      <li><b>🧭 延伸</b>：原文之外的补充，比如推算、历史、后来怎么样了。</li>
+      <li><b>正文只走一条线</b>：要解决什么问题 → 分五步讲怎么做、为什么这样就行 → 哪个实验证明了什么。只读每节的标题和每段第一句，也能串起来。</li>
+      <li>公式、概念解释（RNN、三个门、短语统计翻译、BLEU）、训练设置、相关工作、当时的背景和后来，都在页尾的<b>附录</b>里，默认折叠，标明对应原文第几节。</li>
+      <li>小数字例子都验算过：为讲解设定的标「示意」，按原文规格估算的标「推算」。</li>
       <li>上一篇 <a href="../001-nplm/index.html">001 NPLM</a> 讲过的概念（语言模型、对数似然、softmax、梯度下降、词向量）这里只提一句，不重讲。</li>
     </ul>
   </div>
@@ -206,13 +217,14 @@ html{scroll-behavior:smooth}
 
 
 <!-- ================= 1 ================= -->
-<h2 id="s1"><span class="no">1</span>引言：要解决什么问题</h2>
+<h2 id="s1"><span class="no">1</span>要解决的问题</h2>
 
 <h3>深度网络很强，但只吃固定长度</h3>
 <p>原文开头先肯定深度网络：它能在少数几步里做任意的并行计算，只要有足够的标注数据，反向传播就能找到好参数。语音识别、图像识别都已经被它改写了。</p>
 <p>但它有一个硬限制：<b>输入和输出都必须能编码成固定维数的向量</b>。一张固定尺寸的图片变成一个类别，没问题；001 篇的「前 n−1 个词 → 下一个词」也没问题。可是语音识别、机器翻译、问答，输入和输出都是事先不知道长度的序列。</p>
 
 <h3>翻译难在哪：三个难点</h3>
+<p>翻译正是这种情况：原文和译文长度不一样，词和词的对应会交叉，有时连主语和宾语都要整个换位置（图 1）。</p>
 <figure class="fig">
   <span class="tag">图 1 · 序列到序列的三个难点</span>
   <div class="sv">
@@ -236,69 +248,13 @@ html{scroll-behavior:smooth}
   <figcaption>「我想你」在法语里说成「你让我想念」，主语和宾语整个换了位置。翻译模型必须先看完整句，才知道第一个法文词该写什么。</figcaption>
 </figure>
 <p>原文还提到，当时另一种序列方法 CTC 只能处理「单调对齐」，也就是输入输出从左到右一一对应的情况，适合语音识别，不适合翻译。</p>
-
-<aside class="anno"><span class="alab">📎 注解 · 翻译模型就是「带条件的语言模型」</span>
-<p>001 篇的语言模型回答：看到前面几个词，下一个词是什么，写成 P(下一词 | 前文)。</p>
-<p>翻译多了一个条件：看到一整句英文，再看到已经译出的几个法文词，下一个法文词是什么，写成 P(下一个法文词 | 整句英文, 已译出的法文)。还是一个词一个词地往后猜，只是猜的时候多看着一句原文。原文第 1 节的原话是：解码器「本质上是一个循环神经网络语言模型，只不过以输入序列为条件」。</p>
-<p>001 留下的两个限制，本篇都要突破：<b>窗口固定</b>（001 最多只看前 5 个词），以及<b>只能往后续写</b>，不能把一个序列变成另一个序列。</p>
-</aside>
-
-<h3>本文的想法和结果</h3>
-<p>想法很直接：<b>一个 LSTM 把输入序列一步一步读完，得到一个固定维数的向量；另一个 LSTM 从这个向量出发，一步一步写出输出序列。</b>选 LSTM 是因为它能学到长距离的依赖关系，而原文和对应的译文之间隔着整整一句话。</p>
-<p>原文第 1 节预告了主要结果：</p>
-<ul>
-  <li>WMT'14 英译法，5 个深层 LSTM 集成直接翻译，BLEU <b class="n">34.81</b>，超过短语统计翻译基线的 <b class="o">33.30</b>。这是纯神经网络翻译第一次在大规模任务上赢过统计翻译，而且它的词表只有 8 万词，遇到生词就要被扣分。</li>
-  <li>拿它给统计翻译的 1000 个候选重新打分，BLEU 到 36.5，离当时最好的结果 37.0 只差一点。</li>
-  <li>出乎作者意料：长句子并没有崩。</li>
-  <li>一个简单的技巧带来了很大提升：<b>把原文倒过来读</b>（3.3）。</li>
-  <li>学出来的句子向量真的装进了「意思」：对词序敏感，对主动、被动语态不敏感（3.8）。</li>
-</ul>
-
-
-<!-- ================= 2 ================= -->
-<h2 id="s2"><span class="no">2</span>模型：两个 LSTM</h2>
-
-<h3>出发点：RNN</h3>
-<p>原文第 2 节从循环神经网络（RNN）讲起。它天然能处理序列，但普通 RNN 有两个问题：一是每读一个词就输出一个词，输入输出必须等长、一一对齐，做不了翻译；二是记不住远处的东西。</p>
-
-<aside class="anno"><span class="alab">📎 注解 · RNN：边读边记笔记</span>
-<p>你读一句话时，不是只盯着最后两个词，而是边读边在脑子里更新「到目前为止这句话在说什么」。RNN 也是这样：一个词一个词地读，每读一个，就更新一次手里的笔记。这份笔记叫<b>隐藏状态 h</b>，是一个固定长度的向量。原文第 2 节的公式：</p>
-<div class="formula">hₜ = sigm( W<sup>hx</sup> · xₜ + W<sup>hh</sup> · hₜ₋₁ )　　yₜ = W<sup>yh</sup> · hₜ</div>
-<ul>
-  <li>xₜ 是第 t 个词的词向量（001 篇里那张「坐标卡」），hₜ₋₁ 是上一步的笔记，hₜ 是读完这个词的新笔记。</li>
-  <li><b>每一步用的都是同一组权重。</b>读第 1 个词和读第 50 个词，用的是同一套「记笔记的方法」，所以参数量和句子长度无关。</li>
-  <li>sigm 是 sigmoid，一条 S 形的平滑曲线，作用和 001 篇里的 tanh 一样。</li>
-</ul>
-<figure class="fig">
-  <span class="tag">图 2 · 把「循环」展开成时间线</span>
-  <div class="sv">
-  <svg class="d" viewBox="0 0 680 200" role="img" aria-label="三个相同的 RNN 格子依次读入我、爱、猫，笔记从 0.1 0.5 变成 0.4 0.3，最后变成 0.7 负 0.2，浓缩了整句。">
-    <text class="m sm" x="340" y="34" text-anchor="middle">三个格子是同一个小网络、同一组权重，只是在不同时刻被反复使用</text>
-    <rect class="newT" x="80" y="70" width="100" height="50" rx="8"/><text class="lg" x="130" y="101" text-anchor="middle">RNN</text>
-    <rect class="newT" x="260" y="70" width="100" height="50" rx="8"/><text class="lg" x="310" y="101" text-anchor="middle">RNN</text>
-    <rect class="newT" x="440" y="70" width="100" height="50" rx="8"/><text class="lg" x="490" y="101" text-anchor="middle">RNN</text>
-    <line class="newS" x1="180" y1="95" x2="256" y2="95" marker-end="url(#ahN)"/><text class="mo sm" x="218" y="86" text-anchor="middle">[0.1, 0.5]</text><text class="m sm" x="218" y="112" text-anchor="middle">h₁</text>
-    <line class="newS" x1="360" y1="95" x2="436" y2="95" marker-end="url(#ahN)"/><text class="mo sm" x="398" y="86" text-anchor="middle">[0.4, 0.3]</text><text class="m sm" x="398" y="112" text-anchor="middle">h₂</text>
-    <line class="newS" x1="540" y1="95" x2="588" y2="95" marker-end="url(#ahN)"/>
-    <text class="mo sm tn b" x="594" y="92">[0.7, −0.2]</text><text class="m sm" x="594" y="112">h₃：整句的笔记</text>
-    <text class="lg" x="130" y="176" text-anchor="middle">我</text><text class="lg" x="310" y="176" text-anchor="middle">爱</text><text class="lg" x="490" y="176" text-anchor="middle">猫</text>
-    <line class="mutS" x1="130" y1="156" x2="130" y2="124" marker-end="url(#ah)"/><line class="mutS" x1="310" y1="156" x2="310" y2="124" marker-end="url(#ah)"/>
-    <line class="mutS" x1="490" y1="156" x2="490" y2="124" marker-end="url(#ah)"/>
-  </svg>
-  </div>
-  <figcaption>每一步把「当前词 + 旧笔记」加工成新笔记。读完最后一个词，手里那份笔记就浓缩了整句话。（示意数字，真实的笔记有上千维）</figcaption>
-</figure>
-<p>和 001 的前馈网络比：001 只能看固定窗口、各位置可以同时算；RNN 原则上能看无限远，代价是必须一步一步串行算，第 t 步要等第 t−1 步算完。</p>
-</aside>
-
-<h3>最简单的方案，以及它为什么训练不动</h3>
+<h3>最直接的想法，为什么训练不动</h3>
+<p>原文第 2 节从循环神经网络（RNN）讲起。它天然能处理序列，但普通 RNN 有两个问题：一是每读一个词就输出一个词，输入输出必须等长、一一对齐，做不了翻译；二是记不住远处的东西。RNN 的读法见附录 C。</p>
 <p>原文第 2 节给出了最简单的序列到序列方案：用一个 RNN 把整句原文读成一个固定长度的向量，再用另一个 RNN 从这个向量写出译文。原则上这可行，因为所有相关信息都交给了 RNN。但作者紧接着说：<b>由于产生的长距离依赖，这样的 RNN 很难训练。</b></p>
-
-<aside class="anno"><span class="alab">📎 注解 · 梯度消失和梯度爆炸</span>
-<p>训练靠反向传播算梯度（001 篇讲过）。在 RNN 里，梯度要<b>沿时间往回走</b>：第 50 步的输出错了，根源在第 1 个词，误差信号就要从第 50 步一路传回第 1 步，每往回一步，都要乘一次同一个权重矩阵，再乘一次 sigmoid 的斜率。</p>
+<p><b>为什么长距离依赖难训练？</b>训练靠反向传播算梯度（001 篇讲过）。在 RNN 里，梯度要<b>沿时间往回走</b>：第 50 步的输出错了，根源在第 1 个词，误差信号就要从第 50 步一路传回第 1 步，每往回一步，都要乘一次同一个权重矩阵，再乘一次 sigmoid 的斜率。</p>
 <p>同一个数连乘几十次，结果只有两种：</p>
 <figure class="fig">
-  <span class="tag">图 3 · 同一个数连乘 50 次（纵轴是对数刻度）</span>
+  <span class="tag">图 2 · 同一个数连乘 50 次（纵轴是对数刻度）</span>
   <div class="sv">
   <svg class="d" viewBox="0 0 680 246" role="img" aria-label="对数刻度折线图：每步乘 1.1，50 步后变成约 117，梯度爆炸；每步乘 0.9，50 步后只剩约 0.005，梯度消失；每步乘 0.99，50 步后还剩约 0.61，这是 LSTM 传送带的情况。">
     <line class="ln" x1="80" y1="20" x2="80" y2="200"/>
@@ -322,16 +278,21 @@ html{scroll-behavior:smooth}
   </div>
   <figcaption>每步打 9 折，传到第 1 步时信号几乎为 0，模型不知道第 1 个词该怎么调，这是<b>梯度消失</b>；每步放大 1.1 倍，信号越传越大，参数一步被推得很远，训练崩掉，这是<b>梯度爆炸</b>。sigmoid 的斜率最大只有 0.25，所以普通 RNN 更常见的是消失。（真实情况是矩阵连乘，道理相同）</figcaption>
 </figure>
-<p>两个问题各有对策：消失靠改结构，换成 LSTM；爆炸靠<b>梯度裁剪</b>，见 3.4。</p>
-</aside>
+<p>两个问题各有对策：消失靠改结构，换成 LSTM（下一节）；爆炸靠<b>梯度裁剪</b>（第 5 节）。</p>
 
-<h3>换成 LSTM</h3>
+<h3>本文的想法和结果</h3>
+<p>想法很直接：<b>一个 LSTM 把输入序列一步一步读完，得到一个固定维数的向量；另一个 LSTM 从这个向量出发，一步一步写出输出序列。</b>选 LSTM 是因为它能学到长距离的依赖关系，而原文和对应的译文之间隔着整整一句话。</p>
+<p>接下来分五步讲这个想法怎么做、为什么行。</p>
+
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>第一步：换成 LSTM，让远处的信息留得住</h2>
+
+<h3>做什么：给笔记加一条传送带</h3>
 <p>原文的回答是用长短期记忆网络（LSTM），具体是 Graves 2013 年的版本。它已知能学到长距离依赖，正适合这里「读完整句才开始写」的情况。</p>
-
-<aside class="anno"><span class="alab">📎 注解 · LSTM：给笔记加一条传送带</span>
 <p>普通 RNN 每读一个词，都把整份笔记<b>重写</b>一遍，重写几十次后，最早的内容早就被冲掉了。LSTM（Hochreiter 和 Schmidhuber，1997）加了一条<b>传送带</b>，叫细胞状态 c。信息放在传送带上一路往后传，每一步只做两件小事：擦掉一部分，添上一部分。不需要动的东西就不动，它就能一直留着。</p>
 <figure class="fig">
-  <span class="tag">图 4 · 传送带和三个门</span>
+  <span class="tag">图 3 · 传送带和三个门</span>
   <div class="sv">
   <svg class="d" viewBox="0 0 680 250" role="img" aria-label="一条传送带从左到右，先经过遗忘门乘一个 0 到 1 的数擦掉一点，再经过加号添上新内容乘输入门，最后从传送带上取一部分，经 tanh 乘输出门，得到对外的笔记 h。三个门都由当前词和上一步笔记算出来。">
     <line x1="30" y1="80" x2="650" y2="80" style="stroke:var(--new);stroke-width:6;stroke-linecap:round"/>
@@ -354,24 +315,22 @@ html{scroll-behavior:smooth}
   </div>
   <figcaption>⊙ 表示逐维相乘：<b>cₜ = fₜ ⊙ cₜ₋₁ + iₜ ⊙ 新内容</b>，hₜ = oₜ ⊙ tanh(cₜ)。门是 sigmoid 算出的 0 到 1 之间的数，0 是全关，1 是全开。</figcaption>
 </figure>
-<div class="tbl"><table>
-  <thead><tr><th>门</th><th>回答的问题</th><th>例子：读 “The cat, which was black, <b>was</b> …”</th></tr></thead>
-  <tbody>
-    <tr><td>遗忘门 f</td><td>传送带上哪些旧信息该擦掉？</td><td>开始读新句子时，擦掉上一句的主语</td></tr>
-    <tr><td>输入门 i</td><td>当前这个词的哪些信息要写上去？</td><td>读到 cat 时写入「主语是单数」</td></tr>
-    <tr><td>输出门 o</td><td>传送带上哪些信息此刻要拿出来用？</td><td>到了要填动词的位置，取出「单数」，于是写 was 不写 were</td></tr>
-  </tbody>
-</table></div>
+<h3>为什么这样就行：加法让梯度不缩水</h3>
 <p><b>为什么能缓解梯度消失：</b>关键是传送带那一行用的是<b>加法</b>。遗忘门接近 1 时，cₜ 约等于 cₜ₋₁ 加上一点新东西，梯度沿传送带往回传，每步大约乘以 1，而不是乘以 0.25 甚至更小。比如传送带某一维记着「主语是单数」，值为 0.8，接下来 10 个词都和主语无关，遗忘门在这一维一直是 0.99：10 步后还剩 0.8 × 0.99¹⁰ ≈ 0.72。普通 RNN 如果每步只留一半，10 步后只剩 0.8 × 0.5¹⁰ ≈ 0.0008。（示意数字）</p>
-<p>LSTM 有两份状态，传送带 c 和对外的 h，本文各 1000 维。这一点在 3.8 算「8000 维句子向量」时会用到。它不怕消失，但仍然可能爆炸，所以还要加梯度裁剪。</p>
-</aside>
+<p>LSTM 有两份状态，传送带 c 和对外的 h，本文各 1000 维。这一点在第 9 节算「8000 维句子向量」时会用到。它不怕消失，但仍然可能爆炸，所以还要加梯度裁剪。</p>
+<p>这一步对着上面的第二个毛病（记不住远处）：传送带那一行用加法，梯度沿它往回传时每步约乘 1，远处的信息传得回来。三个门各管什么，见附录 D 的表；爆炸这一半还要靠第 5 节的梯度裁剪。</p>
+
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>第二步：读成一个向量，再逐词写出译文</h2>
+
+<p>有了记得住远处的 LSTM，整体做法就是图 0：一个 LSTM 把原文读完，得到一个固定长度的向量 v；另一个 LSTM 从 v 出发，一个词一个词地写出译文。</p>
 
 <h3>目标：把整句的概率拆成一个词一个词地猜</h3>
-<p>LSTM 要估计的是：给定原文 x₁…x<sub>T</sub>，译文是 y₁…y<sub>T′</sub> 的概率，T′ 可以不等于 T。做法是先把原文读成向量 v，再把整句译文的概率拆成每个词的概率连乘（原文公式 1）：</p>
-<div class="formula">p(y₁, …, y<sub>T′</sub> | x₁, …, x<sub>T</sub>) = ∏ₜ p(yₜ | v, y₁, …, yₜ₋₁)</div>
+<p>LSTM 要估计的是：给定原文 x₁…x<sub>T</sub>，译文是 y₁…y<sub>T′</sub> 的概率，T′ 可以不等于 T。做法是先把原文读成向量 v，再把整句译文的概率拆成每个词的概率连乘（原文公式 1，精确写法见附录 A 式 1）。</p>
 <p>第 t 个词的概率只看两样东西：原文的意思 v，以及已经写出的前 t−1 个译文词。每一个 p(yₜ | …) 都是在 8 万个法文词上做一次 softmax。</p>
 <figure class="fig">
-  <span class="tag">图 5 · 译文 la voiture 的整句概率</span>
+  <span class="tag">图 4 · 译文 la voiture 的整句概率</span>
   <div class="sv">
   <svg class="d" viewBox="0 0 680 196" role="img" aria-label="第一步看到 v，真实词 la 概率 0.6；第二步看到 v 和 la，真实词 voiture 概率 0.5；第三步看到 v、la、voiture，真实词结束符概率 0.9；整句概率 0.6 乘 0.5 乘 0.9 等于 0.27。">
     <text class="m sm" x="20" y="18">模型看到的</text><text class="m sm" x="250" y="18">真实的下一个词</text><text class="m sm" x="370" y="18">模型给它的概率</text>
@@ -387,6 +346,7 @@ html{scroll-behavior:smooth}
   </div>
   <figcaption>拆成连乘是<b>链式法则</b>，是精确的，不是近似。001 篇也是这么拆的，但它为了算得动只保留了前 n−1 个词；这里能看到所有已经写出的词，因为 LSTM 的笔记把全部历史都装进去了。（示意数字）</figcaption>
 </figure>
+<p>换句话说，解码器就是 001 篇的语言模型，只是猜每个词时多看着一整句原文（对比见附录 B）。</p>
 
 <h3>&lt;EOS&gt;：让模型自己决定什么时候停</h3>
 <p>原文要求每个句子末尾都加一个特殊符号 &lt;EOS&gt;（end of sentence）。编码器读到它，就知道原文读完了；解码器每一步都可以选择输出它，一旦输出，翻译就结束。于是「译文写多长」不用事先规定，变成了模型每一步都在做的一个选择。原文的说法是，这让模型能在所有可能长度的序列上定义概率分布。今天的大模型知道什么时候停止回答，靠的也是类似的结束符。</p>
@@ -395,42 +355,85 @@ html{scroll-behavior:smooth}
 <p>原文第 2 节说，实际用的模型在三个地方和上面的描述不同：</p>
 <ol>
   <li><b>编码器和解码器用两个不同的 LSTM。</b>读英文和写法文是两件事，各用一套参数。参数多了，计算量几乎不变，因为每个词只经过其中一个。作者还提到，这样以后方便同时训练多个语言对。</li>
-  <li><b>用 4 层的深层 LSTM。</b>第 1 层读词向量，第 2 层读第 1 层的输出，依此类推，越往上提炼出的信息越抽象。深层明显好于浅层，3.4 有数字。</li>
-  <li><b>把原文倒过来读。</b>原本是把 a, b, c 译成 α, β, γ，现在改成把 c, b, a 译成 α, β, γ。只倒原文，不倒译文。这是本文最出名的技巧，3.3 专门讲。</li>
+  <li><b>用 4 层的深层 LSTM。</b>第 1 层读词向量，第 2 层读第 1 层的输出，依此类推，越往上提炼出的信息越抽象。深层明显好于浅层，附录 G 有数字。</li>
+  <li><b>把原文倒过来读。</b>原本是把 a, b, c 译成 α, β, γ，现在改成把 c, b, a 译成 α, β, γ。只倒原文，不倒译文。这是本文最出名的技巧，第 4 节专门讲。</li>
 </ol>
+<p>这一步对着上面的第一个毛病（变长输入输出）：不管原文多长，两个 LSTM 之间交接的都是同一个长度的向量 v，变长的问题就这样化解了。</p>
 
 
-<!-- ================= 3 ================= -->
-<h2 id="s3"><span class="no">3</span>实验：英译法</h2>
-<p>实验做了两种用法：一是直接翻译，不借助任何参考系统；二是给统计翻译系统的候选译文重新打分。</p>
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>第三步：把原文倒过来读</h2>
 
-<h3><span class="no">3.1</span>数据</h3>
-<p>WMT'14 英译法训练集里挑出的 1200 万句对，约 3.48 亿个法文词、3.04 亿个英文词。英文保留最常见的 16 万个词，法文保留 8 万个，其余都换成 UNK（未知词）。</p>
+<p>做法只有一个：把原文的词序倒过来再喂给编码器（a b c 读成 c b a），译文的顺序不变。</p>
+<p>倒过来之后，测试集困惑度从 <b class="o">5.8</b> 降到 <b class="n">4.7</b>，直接翻译的 BLEU 从 <b class="o">25.9</b> 升到 <b class="n">30.6</b>。一个简单的数据变换，带来将近 5 个 BLEU。</p>
+<p>作者说他们对这个现象<b>没有完整的解释</b>，下面是他们的假说：看原文词和它对应的译文词之间隔了几步。</p>
+<figure class="fig">
+  <span class="tag">图 5 · 正序和倒序：平均距离一样，最短距离变了</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="正序 a b c 结束符 α β γ，三对之间的距离都是 4；倒序 c b a 结束符 α β γ，a 到 α 距离 2，b 到 β 距离 4，c 到 γ 距离 6，平均还是 4，最短变成 2。">
+    <text class="b" x="10" y="104">正序</text>
+    <g text-anchor="middle"><text class="lg" x="80" y="104">a</text><text class="lg" x="160" y="104">b</text><text class="lg" x="240" y="104">c</text>
+      <text class="mo sm m" x="320" y="102">&lt;EOS&gt;</text><text class="lg" x="400" y="104">α</text><text class="lg" x="480" y="104">β</text><text class="lg" x="560" y="104">γ</text></g>
+    <path class="mutS" d="M80 86 Q240 14 400 86"/><path class="mutS" d="M160 86 Q320 14 480 86"/><path class="mutS" d="M240 86 Q400 14 560 86"/>
+    <g class="mo sm" text-anchor="middle"><text x="240" y="44">4</text><text x="320" y="44">4</text><text x="400" y="44">4</text></g>
+    <text class="sm" x="600" y="86">平均 4</text><text class="sm" x="600" y="104">最短 4</text>
+    <line class="ln" x1="10" y1="128" x2="670" y2="128"/>
+    <text class="b" x="10" y="234">倒序</text>
+    <g text-anchor="middle"><text class="lg" x="80" y="234">c</text><text class="lg" x="160" y="234">b</text><text class="lg" x="240" y="234">a</text>
+      <text class="mo sm m" x="320" y="232">&lt;EOS&gt;</text><text class="lg" x="400" y="234">α</text><text class="lg" x="480" y="234">β</text><text class="lg" x="560" y="234">γ</text></g>
+    <path class="mutS" d="M80 216 Q320 106 560 216"/><path class="mutS" d="M160 216 Q320 140 480 216"/><path class="newS" d="M240 216 Q320 178 400 216"/>
+    <g class="mo sm" text-anchor="middle" style="paint-order:stroke;stroke:var(--card);stroke-width:5px">
+      <text x="320" y="165">6</text><text x="320" y="182">4</text><text class="tn b" x="320" y="201">2</text></g>
+    <text class="sm" x="600" y="216">平均 4</text><text class="sm tn b" x="600" y="234">最短 2</text>
+  </svg>
+  </div>
+  <figcaption>原文的说法是，倒序降低了问题的<b>最小时间间隔</b>（minimal time lag）。句子越长差别越明显：30 个词的句子正序时每一对都隔着 30 步左右，倒序后开头几对只隔一两步。</figcaption>
+</figure>
+<p><b>为什么「最短距离」重要：</b>距离越远梯度越弱（图 2）。只隔一两步时梯度很强，模型很快就能学会 a 对应 α。有了这几个近处的抓手，训练一开始就有清楚的信号，原文的说法是让反向传播更容易在原文和译文之间「建立联系」。开头几个词译对了，后面的词是在正确的前缀上继续写，整句也跟着变容易学。</p>
+<p><b>作者自己的意外：</b>他们原本以为倒序只会让译文开头更准，结尾会更差，因为原文最后一个词被推到了最前面，离对应的译文更远了。结果倒序训练出的模型在<b>长句</b>上反而好得多（第 8 节）。他们据此推测，倒序让 LSTM 更好地利用了自己的记忆。</p>
+<p>这一步也对着第二个毛病：把相隔远的词对拉近，梯度更强，训练更容易。
+</p>
 
-<aside class="anno"><span class="alab">📎 注解 · 当时的主流：短语统计翻译（SMT）</span>
-<p>2014 年的 Google 翻译用的就是这一套，它把翻译拆成很多手工设计的组件：</p>
-<ol>
-  <li><b>对齐模型</b>：从大量双语句子里统计英文哪个词对应法文哪个词；</li>
-  <li><b>短语表</b>：统计「英文短语 → 法文短语」的翻译概率，比如 red car → voiture rouge；</li>
-  <li><b>调序模型</b>：处理两种语言词序不同的问题；</li>
-  <li><b>语言模型</b>：通常就是 n-gram（001 篇），保证译文读起来通顺；</li>
-  <li>把这些打分加权组合，搜索出总分最高的译文。</li>
-</ol>
-<p><b>它的问题：</b>组件多，每个都要专家设计和调参；各组件分开训练，没有一起优化「译得准不准」这个整体目标；短语表是离散的表格，又回到了 001 篇里「数次数」的老路。</p>
-<p><b>n-best 列表：</b>SMT 可以不只给一个最好的译文，而是给出它认为最好的 1000 个候选，叫「1000-best 列表」。在本文之前，神经网络在翻译里主要就是干这个：给这 1000 个候选重新打分、重新排序。它不负责翻译，只当二审评委。</p>
-</aside>
 
-<h3><span class="no">3.2</span>训练目标、解码和重打分</h3>
-<p><b>训练目标</b>：给定原文 S，让模型给正确译文 T 的对数概率尽量大，对训练集所有句对求平均：</p>
-<div class="formula">最大化　(1 / |S|) · Σ<sub>(T,S)∈S</sub> log p(T | S)</div>
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>第四步：训练，一个目标，梯度一路传回原文</h2>
+
+<h3>做什么</h3>
+<p><b>训练目标</b>：给定原文 S，让模型给正确译文 T 的对数概率尽量大，对训练集所有句对求平均（精确写法见附录 A 式 2）。</p>
 <p>这和 001 篇的「最大化对数似然」完全一样，只是多了一个条件。训练时，解码器每一步喂进去的是<b>真实</b>的上一个词，不是模型自己上一步猜的词，这样每一步都在标准答案的基础上学下一个词，训练更稳。这种做法后来叫 teacher forcing，原文没有用这个名字，它就是标准 LSTM 语言模型的训练方式。</p>
 <p><b>梯度一路从译文传回原文。</b>解码器在某一步猜错了，误差先传回解码器各层，再穿过向量 v 传进编码器，一直传到原文每个词的词向量。所有参数一起学，目标只有一个：译得准。这就是「端到端」。SMT 的组件则是分开训练的。</p>
-<p><b>解码</b>：训练完以后，要找的是概率最高的那句译文，T̂ = argmax<sub>T</sub> p(T | S)。词表有 8 万词，一句 20 个词的译文就有 80000²⁰ 种可能，穷举不可能，于是用<b>束搜索</b>近似。</p>
+<h3>梯度裁剪，防爆炸</h3>
+<p><b>梯度裁剪，防爆炸：</b>LSTM 不太会梯度消失，但可能爆炸。每一批算出梯度 g 后，先算它的长度 s = ‖g‖，如果 s 超过 5，就把 g 等比例缩小到长度正好是 5，即 g ← 5g / s。</p>
+<figure class="fig">
+  <span class="tag">图 6 · 梯度裁剪：方向不变，只把步子缩到安全范围</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="一个长度为 20 的梯度箭头超出了半径为 5 的虚线圆，裁剪后变成同一方向、长度正好为 5 的短箭头。">
+    <circle class="ln dash" cx="100" cy="150" r="78" style="fill:var(--new-tint)"/>
+    <line class="oldS" x1="100" y1="150" x2="396" y2="40" marker-end="url(#ahO)"/>
+    <line x1="100" y1="150" x2="172" y2="123" style="stroke:var(--new);stroke-width:3.5" marker-end="url(#ahN)"/>
+    <circle class="inkF" cx="100" cy="150" r="3.5"/>
+    <text class="mo sm to b" x="340" y="30">原梯度 ‖g‖ = 20</text>
+    <text class="mo sm tn b" x="186" y="128">裁剪后 ‖g‖ = 5</text>
+    <text class="sm m" x="186" y="224">虚线圈：长度上限 5</text>
+    <g class="sm">
+      <text x="460" y="86">20 &gt; 5，超了</text>
+      <text class="mo" x="460" y="110">g ← 5g / 20 = 0.25 g</text>
+      <text class="m" x="460" y="134">方向不变，长度缩成 5</text>
+    </g>
+  </svg>
+  </div>
+  <figcaption>偶尔一批数据会让梯度暴增，不裁剪的话，参数会被一步推到很远，前面学到的东西就毁了。（示意数字）</figcaption>
+</figure>
+<p>这一步补上第二个毛病里爆炸的那一半。学习率、批大小、按长度分桶、8 块 GPU 并行等训练设置，见附录 G。</p>
 
-<aside class="anno"><span class="alab">📎 注解 · 束搜索：每一步只留最好的几个</span>
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>第五步：解码，每一步只留最好的几个</h2>
+
+<p><b>解码</b>：训练完以后，要找的是概率最高的那句译文，T̂ = argmax<sub>T</sub> p(T | S)。词表有 8 万词，一句 20 个词的译文就有 80000²⁰ 种可能，穷举不可能，于是用<b>束搜索</b>近似。</p>
 <p><b>贪心解码</b>每一步只挑当前概率最高的那个词，容易短视：第一步看起来最好的词，可能让后面整句都不顺。<b>束搜索</b>每一步保留累计概率最高的 B 个候选前缀，下一步从这 B 个前缀各自展开，再从所有展开结果里留下最好的 B 个。B = 1 就退化成贪心。</p>
 <figure class="fig">
-  <span class="tag">图 6 · 束宽 B = 2 的束搜索</span>
+  <span class="tag">图 7 · 束宽 B = 2 的束搜索</span>
   <div class="sv">
   <svg class="d" viewBox="0 0 680 232" role="img" aria-label="第一步有 la 0.5、le 0.3、une 0.2，保留 la 和 le，剪掉 une。第二步展开出 la voiture 0.20、la maison 0.15、le voiture 0.03、le chat 0.24，保留 le chat 和 la voiture。le 第一步只排第二，最终反超。">
     <rect class="softS" x="20" y="98" width="60" height="34" rx="8"/><text x="50" y="120" text-anchor="middle">开始</text>
@@ -452,122 +455,28 @@ html{scroll-behavior:smooth}
   </div>
   <figcaption>le 在第 1 步只排第二，但它后面接 chat 的概率很高，最终反超了 la。贪心解码在第 1 步就会把 le 扔掉，永远找不到 le chat。（示意数字）</figcaption>
 </figure>
-</aside>
 <p>原文的做法：某个候选一旦接上 &lt;EOS&gt;，就把它从束里拿出来，放进「已完成」的集合。作者发现 B = 1 就已经不错，B = 2 就拿到了束搜索的大部分好处。</p>
 <p><b>重打分</b>：另一种用法是不让 LSTM 自己翻译，而是给 SMT 的 1000 个候选打分，把 LSTM 的分和 SMT 的分各占一半取平均，重新排序。</p>
+<p>这一步把逐词的概率变成一句完整的译文，是第 3 节「逐词写出」在推理时的做法。</p>
 
-<h3><span class="no">3.3</span>把原文倒过来读</h3>
-<p>倒过来之后，测试集困惑度从 <b class="o">5.8</b> 降到 <b class="n">4.7</b>，直接翻译的 BLEU 从 <b class="o">25.9</b> 升到 <b class="n">30.6</b>。一个简单的数据变换，带来将近 5 个 BLEU。</p>
-<p>作者说他们对这个现象<b>没有完整的解释</b>，下面是他们的假说：看原文词和它对应的译文词之间隔了几步。</p>
-<figure class="fig">
-  <span class="tag">图 7 · 正序和倒序：平均距离一样，最短距离变了</span>
-  <div class="sv">
-  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="正序 a b c 结束符 α β γ，三对之间的距离都是 4；倒序 c b a 结束符 α β γ，a 到 α 距离 2，b 到 β 距离 4，c 到 γ 距离 6，平均还是 4，最短变成 2。">
-    <text class="b" x="10" y="104">正序</text>
-    <g text-anchor="middle"><text class="lg" x="80" y="104">a</text><text class="lg" x="160" y="104">b</text><text class="lg" x="240" y="104">c</text>
-      <text class="mo sm m" x="320" y="102">&lt;EOS&gt;</text><text class="lg" x="400" y="104">α</text><text class="lg" x="480" y="104">β</text><text class="lg" x="560" y="104">γ</text></g>
-    <path class="mutS" d="M80 86 Q240 14 400 86"/><path class="mutS" d="M160 86 Q320 14 480 86"/><path class="mutS" d="M240 86 Q400 14 560 86"/>
-    <g class="mo sm" text-anchor="middle"><text x="240" y="44">4</text><text x="320" y="44">4</text><text x="400" y="44">4</text></g>
-    <text class="sm" x="600" y="86">平均 4</text><text class="sm" x="600" y="104">最短 4</text>
-    <line class="ln" x1="10" y1="128" x2="670" y2="128"/>
-    <text class="b" x="10" y="234">倒序</text>
-    <g text-anchor="middle"><text class="lg" x="80" y="234">c</text><text class="lg" x="160" y="234">b</text><text class="lg" x="240" y="234">a</text>
-      <text class="mo sm m" x="320" y="232">&lt;EOS&gt;</text><text class="lg" x="400" y="234">α</text><text class="lg" x="480" y="234">β</text><text class="lg" x="560" y="234">γ</text></g>
-    <path class="mutS" d="M80 216 Q320 106 560 216"/><path class="mutS" d="M160 216 Q320 140 480 216"/><path class="newS" d="M240 216 Q320 178 400 216"/>
-    <g class="mo sm" text-anchor="middle" style="paint-order:stroke;stroke:var(--card);stroke-width:5px">
-      <text x="320" y="165">6</text><text x="320" y="182">4</text><text class="tn b" x="320" y="201">2</text></g>
-    <text class="sm" x="600" y="216">平均 4</text><text class="sm tn b" x="600" y="234">最短 2</text>
-  </svg>
-  </div>
-  <figcaption>原文的说法是，倒序降低了问题的<b>最小时间间隔</b>（minimal time lag）。句子越长差别越明显：30 个词的句子正序时每一对都隔着 30 步左右，倒序后开头几对只隔一两步。</figcaption>
-</figure>
-<p><b>为什么「最短距离」重要：</b>距离越远梯度越弱（图 3）。只隔一两步时梯度很强，模型很快就能学会 a 对应 α。有了这几个近处的抓手，训练一开始就有清楚的信号，原文的说法是让反向传播更容易在原文和译文之间「建立联系」。开头几个词译对了，后面的词是在正确的前缀上继续写，整句也跟着变容易学。</p>
-<p><b>作者自己的意外：</b>他们原本以为倒序只会让译文开头更准，结尾会更差，因为原文最后一个词被推到了最前面，离对应的译文更远了。结果倒序训练出的模型在<b>长句</b>上反而好得多（3.7）。他们据此推测，倒序让 LSTM 更好地利用了自己的记忆。</p>
 
-<h3><span class="no">3.4</span>训练细节</h3>
+<!-- ================= 7 ================= -->
+<h2 id="s7"><span class="no">7</span>证据一：直接翻译，第一次超过统计翻译</h2>
+
+<p>原文第 1 节先预告了主要结果，下面三节逐条给出证据：</p>
 <ul>
-  <li>4 层 LSTM，每层 1000 个单元，词向量 1000 维。输入词表 16 万，输出词表 8 万。</li>
-  <li>深层明显好于浅层：<b>每多加一层，困惑度降低将近 10%</b>。作者的猜测是层数多了，隐藏状态总量变大，能装下更多信息。</li>
-  <li>所有参数用 [−0.08, 0.08] 之间的均匀分布初始化。</li>
-  <li>不带动量的 SGD，学习率固定 0.7；5 轮之后，每半轮把学习率减半，一共训练 7.5 轮。</li>
-  <li>每批 128 个句子，梯度除以 128。</li>
+  <li>WMT'14 英译法，5 个深层 LSTM 集成直接翻译，BLEU <b class="n">34.81</b>，超过短语统计翻译基线的 <b class="o">33.30</b>。这是纯神经网络翻译第一次在大规模任务上赢过统计翻译，而且它的词表只有 8 万词，遇到生词就要被扣分。</li>
+  <li>拿它给统计翻译的 1000 个候选重新打分，BLEU 到 36.5，离当时最好的结果 37.0 只差一点。</li>
+  <li>出乎作者意料：长句子并没有崩。</li>
+  <li>一个简单的技巧带来了很大提升：<b>把原文倒过来读</b>（第 4 节）。</li>
+  <li>学出来的句子向量真的装进了「意思」：对词序敏感，对主动、被动语态不敏感（第 9 节）。</li>
 </ul>
-<p><b>梯度裁剪，防爆炸：</b>LSTM 不太会梯度消失，但可能爆炸。每一批算出梯度 g 后，先算它的长度 s = ‖g‖，如果 s 超过 5，就把 g 等比例缩小到长度正好是 5，即 g ← 5g / s。</p>
-<figure class="fig">
-  <span class="tag">图 8 · 梯度裁剪：方向不变，只把步子缩到安全范围</span>
-  <div class="sv">
-  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="一个长度为 20 的梯度箭头超出了半径为 5 的虚线圆，裁剪后变成同一方向、长度正好为 5 的短箭头。">
-    <circle class="ln dash" cx="100" cy="150" r="78" style="fill:var(--new-tint)"/>
-    <line class="oldS" x1="100" y1="150" x2="396" y2="40" marker-end="url(#ahO)"/>
-    <line x1="100" y1="150" x2="172" y2="123" style="stroke:var(--new);stroke-width:3.5" marker-end="url(#ahN)"/>
-    <circle class="inkF" cx="100" cy="150" r="3.5"/>
-    <text class="mo sm to b" x="340" y="30">原梯度 ‖g‖ = 20</text>
-    <text class="mo sm tn b" x="186" y="128">裁剪后 ‖g‖ = 5</text>
-    <text class="sm m" x="186" y="224">虚线圈：长度上限 5</text>
-    <g class="sm">
-      <text x="460" y="86">20 &gt; 5，超了</text>
-      <text class="mo" x="460" y="110">g ← 5g / 20 = 0.25 g</text>
-      <text class="m" x="460" y="134">方向不变，长度缩成 5</text>
-    </g>
-  </svg>
-  </div>
-  <figcaption>偶尔一批数据会让梯度暴增，不裁剪的话，参数会被一步推到很远，前面学到的东西就毁了。（示意数字）</figcaption>
-</figure>
-<p><b>按长度分桶：</b>大部分句子 20 到 30 个词，少数超过 100 个。随机抽 128 句放一批，短句要等长句跑完，大量计算被浪费。所以把长度相近的句子放进同一批，速度快了 2 倍。</p>
-<p><b>参数量：</b>一共 3.84 亿，其中纯循环连接 6400 万（编码器、解码器各 3200 万）。</p>
 
-<aside class="ext"><span class="alab">🧭 延伸 · 3.84 亿参数大部分在词表上</span>
-<p>原文只给了总数和循环连接的数，按原文给的尺寸可以推出其余部分在哪（下面的拆分是推算的，原文没有逐项列出）：</p>
-<div class="tbl"><table>
-  <thead><tr><th>部分</th><th>计算</th><th class="num">参数量</th></tr></thead>
-  <tbody>
-    <tr><td>英文词向量表</td><td>16 万词 × 1000 维</td><td class="num">160M</td></tr>
-    <tr><td>法文词向量表</td><td>8 万词 × 1000 维</td><td class="num">80M</td></tr>
-    <tr><td>输出层 softmax</td><td>1000 × 8 万词</td><td class="num">80M</td></tr>
-    <tr><td>LSTM 循环连接</td><td>2 个 LSTM × 4 层 × 每层约 8M</td><td class="num">64M</td></tr>
-    <tr><td><b>合计</b></td><td></td><td class="num"><b>384M</b></td></tr>
-  </tbody>
-</table></div>
-<p>每层约 8M：LSTM 有 4 组变换（3 个门 + 新内容），每组的输入是 1000 维的下层输出加 1000 维的上一步笔记，输出 1000 维，4 × 2000 × 1000 = 8M。真正负责理解和生成的 LSTM 只占六分之一，大头是词表，和 001 篇的结论一样：<b>词表大小是主要负担。</b></p>
-</aside>
-
-<h3><span class="no">3.5</span>并行：8 块 GPU 的流水线</h3>
-<p>单块 GPU 每秒只能处理约 1700 个词，太慢。作者用了一台 8 GPU 的机器：</p>
-<figure class="fig">
-  <span class="tag">图 9 · 4 块 GPU 各管一层 LSTM，4 块 GPU 分担 softmax</span>
-  <div class="sv">
-  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="左边四层 LSTM 竖着叠起来，每层放在一块 GPU 上，像流水线一样把结果往上一层交；右边 softmax 的 8 万个法文词切成 4 份，每块 GPU 负责 2 万个词。结果每秒 6300 词，训练约 10 天。">
-    <rect class="newT" x="30" y="30" width="250" height="32" rx="8"/><text class="sm" x="155" y="51" text-anchor="middle">第 4 层 LSTM · GPU 4</text>
-    <rect class="newT" x="30" y="76" width="250" height="32" rx="8"/><text class="sm" x="155" y="97" text-anchor="middle">第 3 层 LSTM · GPU 3</text>
-    <rect class="newT" x="30" y="122" width="250" height="32" rx="8"/><text class="sm" x="155" y="143" text-anchor="middle">第 2 层 LSTM · GPU 2</text>
-    <rect class="newT" x="30" y="168" width="250" height="32" rx="8"/><text class="sm" x="155" y="189" text-anchor="middle">第 1 层 LSTM · GPU 1</text>
-    <line class="mutS" x1="155" y1="166" x2="155" y2="156" marker-end="url(#ah)"/><line class="mutS" x1="155" y1="120" x2="155" y2="110" marker-end="url(#ah)"/>
-    <line class="mutS" x1="155" y1="74" x2="155" y2="64" marker-end="url(#ah)"/>
-    <text class="sm m" x="155" y="222" text-anchor="middle">一层算完一个词就交给上一层，各层同时在忙</text>
-    <line class="newS" x1="282" y1="46" x2="336" y2="80" marker-end="url(#ahN)"/>
-    <text class="sm b" x="340" y="40">softmax：8 万个法文词切成 4 份</text>
-    <rect class="newT" x="340" y="60" width="74" height="60" rx="8"/><rect class="newT" x="422" y="60" width="74" height="60" rx="8"/>
-    <rect class="newT" x="504" y="60" width="74" height="60" rx="8"/><rect class="newT" x="586" y="60" width="74" height="60" rx="8"/>
-    <g text-anchor="middle" class="sm"><text x="377" y="86">GPU 5</text><text x="459" y="86">GPU 6</text><text x="541" y="86">GPU 7</text><text x="623" y="86">GPU 8</text></g>
-    <g text-anchor="middle" class="sm m"><text x="377" y="106">2 万词</text><text x="459" y="106">2 万词</text><text x="541" y="106">2 万词</text><text x="623" y="106">2 万词</text></g>
-    <text class="sm m" x="340" y="144">每块 GPU 乘一个 1000 × 20000 的矩阵</text>
-    <text class="mo tn b" x="340" y="182">每秒 6,300 词 · 训练约 10 天</text>
-    <text class="sm m" x="340" y="204">单卡每秒约 1,700 词</text>
-  </svg>
-  </div>
-  <figcaption>思路和 001 篇一样：输出层太大，就切开分给几台机器。2003 年要切给 64 个 CPU，2014 年 8 块 GPU 就能训练一个 3.84 亿参数的模型。</figcaption>
-</figure>
-
-<h3><span class="no">3.6</span>实验结果</h3>
-
-<aside class="anno"><span class="alab">📎 注解 · BLEU：机器翻译怎么打分</span>
-<p>拿机器译文和人工参考译文比，看有多少词和短语是重合的。具体是：分别统计 1 到 4 个词的片段里，机器译文有多大比例出现在参考译文中；把这四个比例做几何平均；如果机器译文比参考译文短，再乘一个惩罚，否则只输出一个最有把握的词就能拿高分。结果换算成 0 到 100，越高越好。</p>
-<p>例子：参考译文 the cat is on the mat，机器译文 the cat sat on the mat。单个词 6 个里有 5 个在参考译文中（sat 不在）；两个词的片段 5 个里有 3 个在（the cat、on the、the mat）。片段越长越难完全匹配。</p>
-<p>要注意三点：BLEU 只看字面重合，意思对但换了说法也会被扣分；不同计算脚本给出的数不一样，原文专门说明，同一个最好系统官网报 35.8，用他们的脚本算是 37.0，比较时必须用同一个脚本；本文的模型遇到生词只能输出 UNK，参考译文里是真实的词，每个 UNK 都会被扣分。</p>
-</aside>
+<p>实验做了两种用法：一是直接翻译，不借助任何参考系统；二是给统计翻译系统的候选译文重新打分。</p>
+<p>实验在 WMT'14 英译法上做（数据和训练设置见附录 G），用 BLEU 打分，越高越好（BLEU 怎么算见附录 F）；对照的是当时的主流短语统计翻译（SMT，见附录 E）。</p>
 
 <figure class="fig">
-  <span class="tag">图 10 · 直接翻译的 BLEU（原文 Table 1）</span>
+  <span class="tag">图 8 · 直接翻译的 BLEU（原文 Table 1）</span>
   <div class="sv">
   <svg class="d" viewBox="0 0 680 290" role="img" aria-label="横向柱状图：SMT 基线 33.30；Bahdanau 等 28.45；单个正序 LSTM beam 12 是 26.17；单个倒序 LSTM beam 12 是 30.59；5 个倒序集成 beam 1 是 33.00；beam 2 是 34.50；beam 12 是 34.81，超过 SMT 基线。">
     <g class="sm" text-anchor="end">
@@ -610,27 +519,29 @@ html{scroll-behavior:smooth}
     <tr><td>理论上限：每句都从 1000 个候选里挑出最好的那个</td><td class="num">≈ 45</td></tr>
   </tbody>
 </table></div>
-
 <h4>怎么读这两张表</h4>
 <ol>
   <li><b>核心结果：34.81 &gt; 33.30。</b>纯神经网络端到端翻译，第一次在大规模任务上以明显的差距超过 SMT 基线，而且是在只有 8 万词的词表、遇到生词就要被扣分的条件下。</li>
   <li><b>倒序的贡献最大。</b>单个模型从 26.17 到 30.59，差 4.4 分，比集成和束搜索带来的提升都大。</li>
   <li><b>束搜索的收益很快饱和。</b>beam 1 → 2 → 12，分数是 33.00 → 34.50 → 34.81。原文还提醒：5 个模型集成加 beam 2，比单个模型加 beam 12 还便宜。</li>
   <li><b>还没到最好。</b>直接翻译和最好的系统（37.0）还差 2 分多，用来重打分时差距缩到 0.5 分。</li>
-  <li><b>几乎同时的注意力模型这里只有 28.45。</b>这不说明注意力不好，第 003 篇的模型规模和训练设置都不同。后来的事实是注意力成了主流（见「读完之后」）。</li>
 </ol>
 <p>集成（ensemble）：训练 5 个模型，它们只有随机初始化和数据顺序不同，翻译时把 5 个模型的预测合起来用。</p>
 
-<h3><span class="no">3.7</span>长句子上的表现</h3>
+<!-- ================= 8 ================= -->
+<h2 id="s8"><span class="no">8</span>证据二：长句子没有崩</h2>
+
 <p>作者自己也很意外：35 个词以内的句子几乎不掉分，只有最长的句子略有下降，而且始终高于基线（原文 Figure 3 左图）。他们原以为有限的记忆会让长句失败，其他研究者也报告过类似模型在长句上很差。Table 3 列了几个长句的译文示例，能看到生词变成了 UNK。</p>
 <p>另一张图（Figure 3 右图）按句子里罕见词的多少排序：罕见词越多，BLEU 越低。这是 8 万词表的直接代价。</p>
 
-<h3><span class="no">3.8</span>模型分析：8000 个数装下了「意思」吗</h3>
+<!-- ================= 9 ================= -->
+<h2 id="s9"><span class="no">9</span>证据三：8000 个数装下了「意思」吗</h2>
+
 <p>深层 LSTM 用 <b>8000 个实数</b>表示一句话：4 层 × 每层 1000 个单元 × 2 份状态（传送带 c 和输出 h）= 8000。</p>
 <p>为什么相信它装的是意思？原文第 1 节的理由是：译文基本上是原文换一种说法，为了能从 v 里把译文写出来，v 必须装下原文的意思。训练目标会逼着编码器学出这样的向量：意思相近的句子靠近，意思不同的远离。这和 001 篇「意思相近的词向量靠近」是同一个思想，从词扩展到了句子。</p>
 <p>验证方法：把一些短语送进编码器，取出向量，用 PCA 压到二维画出来（原文 Figure 2）。PCA 是一种把高维数据投影到平面上、尽量保留差异的方法。</p>
 <figure class="fig">
-  <span class="tag">图 11 · 句子向量按意思聚类（原文 Figure 2，位置示意）</span>
+  <span class="tag">图 9 · 句子向量按意思聚类（原文 Figure 2，位置示意）</span>
   <div class="sv">
   <svg class="d" viewBox="0 0 680 262" role="img" aria-label="左图：John admires Mary 一类句子聚成一堆，Mary admires John 一类聚成另一堆，词一样但顺序不同就分开。右图：I gave her a card in the garden 和它的被动说法聚在一起，She gave me a card in the garden 和它的被动说法聚在另一堆。">
     <rect class="card" x="6" y="10" width="326" height="210" rx="10"/>
@@ -658,9 +569,154 @@ html{scroll-behavior:smooth}
   <figcaption>左图说明向量<b>对词序敏感</b>：如果只数用了哪些词、不管顺序，John admires Mary 和 Mary admires John 就完全一样了。右图说明它<b>对主动、被动语态不敏感</b>：说法变了，意思没变，向量还在一起。（点的位置是示意，聚类关系照原文 Figure 2）</figcaption>
 </figure>
 
+<!-- ================= 10 ================= -->
+<h2 id="s10"><span class="no">10</span>结论、局限和后来</h2>
 
-<!-- ================= 4 ================= -->
-<h2 id="s4"><span class="no">4</span>相关工作</h2>
+<h3>原文的结论</h3>
+<p>原文第 5 节的核心论断（和短语 SMT、001 的逐项对照见附录 I）：一个<b>词表有限</b>、<b>几乎不对问题结构做假设</b>的大型深层 LSTM，在大规模翻译任务上打败了<b>词表无限</b>的标准 SMT 系统。</p>
+<p class="punch">要想办法把问题变成<em>短距离依赖尽可能多</em>的形式，学习会简单得多。</p>
+<p>这是作者从倒序技巧里总结出的启示。他们还推测，标准 RNN 在倒序数据上可能也训练得动，但没有做实验验证。</p>
+<h3>局限和后来</h3>
+<p><b>作者承认的局限</b>：生词只能输出 UNK；直接翻译还没超过最好的系统；倒序为什么有效，没有完整解释。</p>
+<p><b>我补充的局限</b>（原文没当局限讨论）：整句再长、信息再多，也只能压进 8000 个数里，这是一个信息瓶颈，第 003 篇正是从这里出发的；编码和解码都要一个词一个词地串行算，训练和推理都慢。</p>
+<p>整句压成一个向量的瓶颈，是第 003 篇注意力的出发点；后来的发展和前后篇衔接见附录 J。</p>
+
+
+<!-- ================= 附录 ================= -->
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块默认折叠，点开看。标题里写了对应原文的第几节。</p>
+
+<details class="ext"><summary>A · 两个公式（原文第 2 节公式 1，第 3.2 节训练目标）</summary>
+<p><b>式 1：整句概率拆成逐词连乘</b>（原文公式 1）</p>
+<div class="formula">p(y₁, …, y<sub>T′</sub> | x₁, …, x<sub>T</sub>) = ∏ₜ p(yₜ | v, y₁, …, yₜ₋₁)</div>
+<p>第 t 个词的概率只看两样东西：原文的意思 v，以及已经写出的前 t−1 个译文词。每一个 p(yₜ | …) 都是在 8 万个法文词上做一次 softmax。</p>
+<p><b>式 2：训练目标</b>（原文 3.2 节）：给定原文 S，让模型给正确译文 T 的对数概率尽量大，对训练集所有句对求平均</p>
+<div class="formula">最大化　(1 / |S|) · Σ<sub>(T,S)∈S</sub> log p(T | S)</div>
+<p>这和 001 篇的「最大化对数似然」完全一样，只是多了一个条件。</p>
+</details>
+
+<details class="ext"><summary>B · 翻译模型就是「带条件的语言模型」（原文第 1、2 节）</summary>
+<p>001 篇的语言模型回答：看到前面几个词，下一个词是什么，写成 P(下一词 | 前文)。</p>
+<p>翻译多了一个条件：看到一整句英文，再看到已经译出的几个法文词，下一个法文词是什么，写成 P(下一个法文词 | 整句英文, 已译出的法文)。还是一个词一个词地往后猜，只是猜的时候多看着一句原文。原文第 1 节的原话是：解码器「本质上是一个循环神经网络语言模型，只不过以输入序列为条件」。</p>
+<p>001 留下的两个限制，本篇都要突破：<b>窗口固定</b>（001 最多只看前 5 个词），以及<b>只能往后续写</b>，不能把一个序列变成另一个序列。</p>
+</details>
+
+<details class="ext"><summary>C · RNN：边读边记笔记（原文第 2 节）</summary>
+<p>你读一句话时，不是只盯着最后两个词，而是边读边在脑子里更新「到目前为止这句话在说什么」。RNN 也是这样：一个词一个词地读，每读一个，就更新一次手里的笔记。这份笔记叫<b>隐藏状态 h</b>，是一个固定长度的向量。原文第 2 节的公式：</p>
+<div class="formula">hₜ = sigm( W<sup>hx</sup> · xₜ + W<sup>hh</sup> · hₜ₋₁ )　　yₜ = W<sup>yh</sup> · hₜ</div>
+<ul>
+  <li>xₜ 是第 t 个词的词向量（001 篇里那张「坐标卡」），hₜ₋₁ 是上一步的笔记，hₜ 是读完这个词的新笔记。</li>
+  <li><b>每一步用的都是同一组权重。</b>读第 1 个词和读第 50 个词，用的是同一套「记笔记的方法」，所以参数量和句子长度无关。</li>
+  <li>sigm 是 sigmoid，一条 S 形的平滑曲线，作用和 001 篇里的 tanh 一样。</li>
+</ul>
+<figure class="fig">
+  <span class="tag">图 10 · 把「循环」展开成时间线</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 200" role="img" aria-label="三个相同的 RNN 格子依次读入我、爱、猫，笔记从 0.1 0.5 变成 0.4 0.3，最后变成 0.7 负 0.2，浓缩了整句。">
+    <text class="m sm" x="340" y="34" text-anchor="middle">三个格子是同一个小网络、同一组权重，只是在不同时刻被反复使用</text>
+    <rect class="newT" x="80" y="70" width="100" height="50" rx="8"/><text class="lg" x="130" y="101" text-anchor="middle">RNN</text>
+    <rect class="newT" x="260" y="70" width="100" height="50" rx="8"/><text class="lg" x="310" y="101" text-anchor="middle">RNN</text>
+    <rect class="newT" x="440" y="70" width="100" height="50" rx="8"/><text class="lg" x="490" y="101" text-anchor="middle">RNN</text>
+    <line class="newS" x1="180" y1="95" x2="256" y2="95" marker-end="url(#ahN)"/><text class="mo sm" x="218" y="86" text-anchor="middle">[0.1, 0.5]</text><text class="m sm" x="218" y="112" text-anchor="middle">h₁</text>
+    <line class="newS" x1="360" y1="95" x2="436" y2="95" marker-end="url(#ahN)"/><text class="mo sm" x="398" y="86" text-anchor="middle">[0.4, 0.3]</text><text class="m sm" x="398" y="112" text-anchor="middle">h₂</text>
+    <line class="newS" x1="540" y1="95" x2="588" y2="95" marker-end="url(#ahN)"/>
+    <text class="mo sm tn b" x="594" y="92">[0.7, −0.2]</text><text class="m sm" x="594" y="112">h₃：整句的笔记</text>
+    <text class="lg" x="130" y="176" text-anchor="middle">我</text><text class="lg" x="310" y="176" text-anchor="middle">爱</text><text class="lg" x="490" y="176" text-anchor="middle">猫</text>
+    <line class="mutS" x1="130" y1="156" x2="130" y2="124" marker-end="url(#ah)"/><line class="mutS" x1="310" y1="156" x2="310" y2="124" marker-end="url(#ah)"/>
+    <line class="mutS" x1="490" y1="156" x2="490" y2="124" marker-end="url(#ah)"/>
+  </svg>
+  </div>
+  <figcaption>每一步把「当前词 + 旧笔记」加工成新笔记。读完最后一个词，手里那份笔记就浓缩了整句话。（示意数字，真实的笔记有上千维）</figcaption>
+</figure>
+<p>和 001 的前馈网络比：001 只能看固定窗口、各位置可以同时算；RNN 原则上能看无限远，代价是必须一步一步串行算，第 t 步要等第 t−1 步算完。</p>
+</details>
+
+<details class="ext"><summary>D · LSTM 的三个门各管什么（原文第 2 节；LSTM 出自 Hochreiter 和 Schmidhuber，1997）</summary>
+<div class="tbl"><table>
+  <thead><tr><th>门</th><th>回答的问题</th><th>例子：读 “The cat, which was black, <b>was</b> …”</th></tr></thead>
+  <tbody>
+    <tr><td>遗忘门 f</td><td>传送带上哪些旧信息该擦掉？</td><td>开始读新句子时，擦掉上一句的主语</td></tr>
+    <tr><td>输入门 i</td><td>当前这个词的哪些信息要写上去？</td><td>读到 cat 时写入「主语是单数」</td></tr>
+    <tr><td>输出门 o</td><td>传送带上哪些信息此刻要拿出来用？</td><td>到了要填动词的位置，取出「单数」，于是写 was 不写 were</td></tr>
+  </tbody>
+</table></div>
+</details>
+
+<details class="ext"><summary>E · 当时的主流：短语统计翻译 SMT（原文第 1、3.1 节）</summary>
+<p>2014 年的 Google 翻译用的就是这一套，它把翻译拆成很多手工设计的组件：</p>
+<ol>
+  <li><b>对齐模型</b>：从大量双语句子里统计英文哪个词对应法文哪个词；</li>
+  <li><b>短语表</b>：统计「英文短语 → 法文短语」的翻译概率，比如 red car → voiture rouge；</li>
+  <li><b>调序模型</b>：处理两种语言词序不同的问题；</li>
+  <li><b>语言模型</b>：通常就是 n-gram（001 篇），保证译文读起来通顺；</li>
+  <li>把这些打分加权组合，搜索出总分最高的译文。</li>
+</ol>
+<p><b>它的问题：</b>组件多，每个都要专家设计和调参；各组件分开训练，没有一起优化「译得准不准」这个整体目标；短语表是离散的表格，又回到了 001 篇里「数次数」的老路。</p>
+<p><b>n-best 列表：</b>SMT 可以不只给一个最好的译文，而是给出它认为最好的 1000 个候选，叫「1000-best 列表」。在本文之前，神经网络在翻译里主要就是干这个：给这 1000 个候选重新打分、重新排序。它不负责翻译，只当二审评委。</p>
+</details>
+
+<details class="ext"><summary>F · BLEU：机器翻译怎么打分（原文第 3.6 节）</summary>
+<p>拿机器译文和人工参考译文比，看有多少词和短语是重合的。具体是：分别统计 1 到 4 个词的片段里，机器译文有多大比例出现在参考译文中；把这四个比例做几何平均；如果机器译文比参考译文短，再乘一个惩罚，否则只输出一个最有把握的词就能拿高分。结果换算成 0 到 100，越高越好。</p>
+<p>例子：参考译文 the cat is on the mat，机器译文 the cat sat on the mat。单个词 6 个里有 5 个在参考译文中（sat 不在）；两个词的片段 5 个里有 3 个在（the cat、on the、the mat）。片段越长越难完全匹配。</p>
+<p>要注意三点：BLEU 只看字面重合，意思对但换了说法也会被扣分；不同计算脚本给出的数不一样，原文专门说明，同一个最好系统官网报 35.8，用他们的脚本算是 37.0，比较时必须用同一个脚本；本文的模型遇到生词只能输出 UNK，参考译文里是真实的词，每个 UNK 都会被扣分。</p>
+</details>
+
+<details class="ext"><summary>G · 数据、训练设置和参数量（原文 3.1、3.4、3.5 节）</summary>
+<h4>数据</h4>
+<p>WMT'14 英译法训练集里挑出的 1200 万句对，约 3.48 亿个法文词、3.04 亿个英文词。英文保留最常见的 16 万个词，法文保留 8 万个，其余都换成 UNK（未知词）。</p>
+<h4>训练设置</h4>
+<ul>
+  <li>4 层 LSTM，每层 1000 个单元，词向量 1000 维。输入词表 16 万，输出词表 8 万。</li>
+  <li>深层明显好于浅层：<b>每多加一层，困惑度降低将近 10%</b>。作者的猜测是层数多了，隐藏状态总量变大，能装下更多信息。</li>
+  <li>所有参数用 [−0.08, 0.08] 之间的均匀分布初始化。</li>
+  <li>不带动量的 SGD，学习率固定 0.7；5 轮之后，每半轮把学习率减半，一共训练 7.5 轮。</li>
+  <li>每批 128 个句子，梯度除以 128。</li>
+</ul>
+<p><b>按长度分桶：</b>大部分句子 20 到 30 个词，少数超过 100 个。随机抽 128 句放一批，短句要等长句跑完，大量计算被浪费。所以把长度相近的句子放进同一批，速度快了 2 倍。</p>
+<h4>参数量</h4>
+<p><b>参数量：</b>一共 3.84 亿，其中纯循环连接 6400 万（编码器、解码器各 3200 万）。</p>
+<p><b>🧭 延伸 · 3.84 亿参数大部分在词表上</b></p>
+<p>原文只给了总数和循环连接的数，按原文给的尺寸可以推出其余部分在哪（下面的拆分是推算的，原文没有逐项列出）：</p>
+<div class="tbl"><table>
+  <thead><tr><th>部分</th><th>计算</th><th class="num">参数量</th></tr></thead>
+  <tbody>
+    <tr><td>英文词向量表</td><td>16 万词 × 1000 维</td><td class="num">160M</td></tr>
+    <tr><td>法文词向量表</td><td>8 万词 × 1000 维</td><td class="num">80M</td></tr>
+    <tr><td>输出层 softmax</td><td>1000 × 8 万词</td><td class="num">80M</td></tr>
+    <tr><td>LSTM 循环连接</td><td>2 个 LSTM × 4 层 × 每层约 8M</td><td class="num">64M</td></tr>
+    <tr><td><b>合计</b></td><td></td><td class="num"><b>384M</b></td></tr>
+  </tbody>
+</table></div>
+<p>每层约 8M：LSTM 有 4 组变换（3 个门 + 新内容），每组的输入是 1000 维的下层输出加 1000 维的上一步笔记，输出 1000 维，4 × 2000 × 1000 = 8M。真正负责理解和生成的 LSTM 只占六分之一，大头是词表，和 001 篇的结论一样：<b>词表大小是主要负担。</b></p>
+<h4>并行：8 块 GPU 的流水线</h4>
+<p>单块 GPU 每秒只能处理约 1700 个词，太慢。作者用了一台 8 GPU 的机器：</p>
+<figure class="fig">
+  <span class="tag">图 11 · 4 块 GPU 各管一层 LSTM，4 块 GPU 分担 softmax</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="左边四层 LSTM 竖着叠起来，每层放在一块 GPU 上，像流水线一样把结果往上一层交；右边 softmax 的 8 万个法文词切成 4 份，每块 GPU 负责 2 万个词。结果每秒 6300 词，训练约 10 天。">
+    <rect class="newT" x="30" y="30" width="250" height="32" rx="8"/><text class="sm" x="155" y="51" text-anchor="middle">第 4 层 LSTM · GPU 4</text>
+    <rect class="newT" x="30" y="76" width="250" height="32" rx="8"/><text class="sm" x="155" y="97" text-anchor="middle">第 3 层 LSTM · GPU 3</text>
+    <rect class="newT" x="30" y="122" width="250" height="32" rx="8"/><text class="sm" x="155" y="143" text-anchor="middle">第 2 层 LSTM · GPU 2</text>
+    <rect class="newT" x="30" y="168" width="250" height="32" rx="8"/><text class="sm" x="155" y="189" text-anchor="middle">第 1 层 LSTM · GPU 1</text>
+    <line class="mutS" x1="155" y1="166" x2="155" y2="156" marker-end="url(#ah)"/><line class="mutS" x1="155" y1="120" x2="155" y2="110" marker-end="url(#ah)"/>
+    <line class="mutS" x1="155" y1="74" x2="155" y2="64" marker-end="url(#ah)"/>
+    <text class="sm m" x="155" y="222" text-anchor="middle">一层算完一个词就交给上一层，各层同时在忙</text>
+    <line class="newS" x1="282" y1="46" x2="336" y2="80" marker-end="url(#ahN)"/>
+    <text class="sm b" x="340" y="40">softmax：8 万个法文词切成 4 份</text>
+    <rect class="newT" x="340" y="60" width="74" height="60" rx="8"/><rect class="newT" x="422" y="60" width="74" height="60" rx="8"/>
+    <rect class="newT" x="504" y="60" width="74" height="60" rx="8"/><rect class="newT" x="586" y="60" width="74" height="60" rx="8"/>
+    <g text-anchor="middle" class="sm"><text x="377" y="86">GPU 5</text><text x="459" y="86">GPU 6</text><text x="541" y="86">GPU 7</text><text x="623" y="86">GPU 8</text></g>
+    <g text-anchor="middle" class="sm m"><text x="377" y="106">2 万词</text><text x="459" y="106">2 万词</text><text x="541" y="106">2 万词</text><text x="623" y="106">2 万词</text></g>
+    <text class="sm m" x="340" y="144">每块 GPU 乘一个 1000 × 20000 的矩阵</text>
+    <text class="mo tn b" x="340" y="182">每秒 6,300 词 · 训练约 10 天</text>
+    <text class="sm m" x="340" y="204">单卡每秒约 1,700 词</text>
+  </svg>
+  </div>
+  <figcaption>思路和 001 篇一样：输出层太大，就切开分给几台机器。2003 年要切给 64 个 CPU，2014 年 8 块 GPU 就能训练一个 3.84 亿参数的模型。</figcaption>
+</figure>
+</details>
+
+<details class="ext"><summary>H · 相关工作（原文第 4 节）</summary>
 <p>原文第 4 节把之前的工作梳理成一条线：</p>
 <ul>
   <li><b>给 SMT 打分。</b>把神经语言模型用到翻译上，最简单、最有效的办法一直是给 SMT 的候选译文重打分，Table 2 里的用法就是这一路。也有人把原文信息喂进神经语言模型，但都还挂在 SMT 上。</li>
@@ -670,11 +726,9 @@ html{scroll-behavior:smooth}
   <li><b>Pouget-Abadie 等（2014）</b>把原文切成小段分别翻译来缓解长句问题。本文评论说，他们只要把原文倒过来训练，可能就能得到类似的改进。</li>
 </ul>
 <p>本文的立场是：不要 SMT，用一个几乎不对问题结构做任何假设的大网络，直接从原文生成译文。</p>
+</details>
 
-
-<!-- ================= 5 ================= -->
-<h2 id="s5"><span class="no">5</span>结论：和旧方法的本质区别</h2>
-<p>原文第 5 节的核心论断：一个<b>词表有限</b>、<b>几乎不对问题结构做假设</b>的大型深层 LSTM，在大规模翻译任务上打败了<b>词表无限</b>的标准 SMT 系统。</p>
+<details class="ext"><summary>I · 和旧方法的本质区别；和第 003 篇的对照（原文第 5 节、Table 1）</summary>
 <div class="tbl"><table>
   <thead><tr><th></th><th>短语 SMT</th><th>001 神经语言模型</th><th>本文 Seq2Seq</th></tr></thead>
   <tbody>
@@ -685,23 +739,20 @@ html{scroll-behavior:smooth}
     <tr><td>对问题结构的假设</td><td>很多（对齐、短语、调序）</td><td>少</td><td>几乎没有</td></tr>
   </tbody>
 </table></div>
-<p class="punch">要想办法把问题变成<em>短距离依赖尽可能多</em>的形式，学习会简单得多。</p>
-<p>这是作者从倒序技巧里总结出的启示。他们还推测，标准 RNN 在倒序数据上可能也训练得动，但没有做实验验证。</p>
-<p><b>作者承认的局限</b>：生词只能输出 UNK；直接翻译还没超过最好的系统；倒序为什么有效，没有完整解释。</p>
-<p><b>我补充的局限</b>（原文没当局限讨论）：整句再长、信息再多，也只能压进 8000 个数里，这是一个信息瓶颈，第 003 篇正是从这里出发的；编码和解码都要一个词一个词地串行算，训练和推理都慢。</p>
+<ul>
+  <li><b>几乎同时的注意力模型这里只有 28.45。</b>这不说明注意力不好，第 003 篇的模型规模和训练设置都不同。后来的事实是注意力成了主流（见附录 J）。</li>
+</ul>
+</details>
 
-
-<!-- ================= after ================= -->
-<h2 id="after">读完之后（原文之外）</h2>
-
-<h3>当时的技术背景（2014）</h3>
+<details class="ext"><summary>J · 当时的技术背景、后来的发展、前后篇衔接（原文之外）</summary>
+<h4>当时的技术背景（2014）</h4>
 <ul>
   <li><b>深度学习刚起势。</b>2012 年 AlexNet 在图像识别上大胜，GPU 训练成为现实；语音识别也已被深度网络改写。但自然语言处理，尤其是翻译，还没有被攻下。</li>
   <li><b>翻译的主流是短语 SMT</b>，Google 翻译当时用的就是这一套。</li>
   <li><b>本文的信念。</b>原文第 1 节有一段论证：人能很快完成的任务，说明存在一个规模适中的计算能做好它；只要存在一组能把任务做好的大网络参数，有监督的反向传播就能找到它。这是「大网络 + 足够数据 + 少假设」路线的早期宣言。</li>
 </ul>
 
-<h3>后来发展到什么程度</h3>
+<h4>后来发展到什么程度</h4>
 <figure class="fig">
   <span class="tag">图 12 · 从本文往后</span>
   <div class="sv">
@@ -731,7 +782,7 @@ html{scroll-behavior:smooth}
   <li>本文获得 NeurIPS 2024 时间检验奖。第一作者 Ilya Sutskever 后来是 OpenAI 的联合创始人兼首席科学家。本文「大网络 + 大数据 + 少假设」的信念，是后来 Scaling 路线（第 009–011 篇）的思想源头。（这一条是后世评价，不是原文内容）</li>
 </ul>
 
-<h3>前后篇衔接</h3>
+<h4>前后篇衔接</h4>
 <p><b>继承自</b>：第 001 篇（解码器就是一个条件语言模型；同样最大化对数似然；词向量和网络端到端一起学），LSTM（1997），以及 RNN 语言模型（Mikolov 等，2010）。</p>
 <p><b>对 001 的推进</b>：固定窗口 → 能看完整个序列；预测下一个词 → 把一个序列变成另一个序列。</p>
 <p><b>留下的问题</b>：</p>
@@ -740,6 +791,22 @@ html{scroll-behavior:smooth}
   <li>RNN 只能串行计算，难以并行 → 第 004 篇 Transformer</li>
   <li>生词只能输出 UNK → 子词切分（第 007 篇）</li>
 </ul>
+</details>
+
+<details class="ext"><summary>K · 正文各节对应原文的哪一节</summary>
+<ul>
+  <li>第 1 节 要解决的问题：原文第 1、2 节开头</li>
+  <li>第 2 节 换成 LSTM、第 3 节 读成向量逐词写出：原文第 2 节</li>
+  <li>第 4 节 把原文倒过来读：原文 3.3 节</li>
+  <li>第 5 节 训练：原文 3.2、3.4 节</li>
+  <li>第 6 节 解码：原文 3.2 节</li>
+  <li>第 7 节 直接翻译的结果：原文 3.6 节（Table 1、Table 2）</li>
+  <li>第 8 节 长句子：原文 3.7 节（Figure 3、Table 3）</li>
+  <li>第 9 节 句子向量：原文 3.8 节（Figure 2）</li>
+  <li>第 7 节开头预告的主要结果：原文第 1 节</li>
+  <li>第 10 节 结论：原文第 5 节</li>
+</ul>
+</details>
 
 
 <footer>

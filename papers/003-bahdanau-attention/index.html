@@ -195,20 +195,21 @@ html{scroll-behavior:smooth}
   </figure>
 
   <nav class="toc" aria-label="目录">
-    <a href="#s1"><span>1</span>引言：002 留下的瓶颈</a>
-    <a href="#s2"><span>2</span>模型：边写边回头看</a>
-    <a href="#s3"><span>3</span>实验：三个结论</a>
-    <a href="#s4"><span>4</span>相关工作</a>
-    <a href="#s5"><span>5</span>结论</a>
-    <a href="#after"><span>→</span>读完之后（原文之外）</a>
+    <a href="#s1"><span>1</span>要解决的问题</a>
+    <a href="#s2"><span>2</span>第一步：开卷翻译，写每个词现取一份摘要</a>
+    <a href="#s3"><span>3</span>第二步：取的方式要「软」，才能用梯度训练</a>
+    <a href="#s4"><span>4</span>第三步：编码器的向量要左右都看过</a>
+    <a href="#s5"><span>5</span>证据：三个结论</a>
+    <a href="#s6"><span>6</span>局限</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
   </nav>
 
   <div class="howto">
     <span class="alab">怎么读这一页</span>
     <ul>
-      <li><b>主线是因果链</b>：002 的瓶颈是什么，为什么长句会垮，为什么要回头看，为什么要「软」，为什么要双向。每一步都先讲「为什么必须这样」。</li>
-      <li><b>公式</b>放在讲完直觉之后：先白话和小数字，再给精确写法，紧跟一张「每个符号是什么」的对照表，最后一句说这条式子在因果链里起什么作用。</li>
-      <li><b>📎 注解</b>是就地解释的概念，<b>🧭 延伸</b>是可以跳过的补充（GRU、maxout 的完整公式，实验细节）。</li>
+      <li><b>正文只走一条线</b>：要解决什么问题 → 分三步怎么做、为什么必须这样 → 哪个实验证明了什么。只读每节的标题和每段第一句，也能串起来。</li>
+      <li>公式、符号表、GRU 和 maxout 的完整写法、概念注解、和 002 的对比、完整结果表、相关工作、后来的发展，都在页尾的<b>附录</b>里，默认折叠，标明对应原文第几节。</li>
+      <li>标「示意」的数字，是为讲清机制编的小例子；实验数字出自原文 Table 1、Table 2。</li>
       <li>001 <a href="../001-nplm/index.html">NPLM</a>、002 <a href="../002-seq2seq/index.html">Seq2Seq</a> 讲过的概念（RNN、LSTM、梯度消失、softmax、BLEU、束搜索）这里只提一句。</li>
     </ul>
   </div>
@@ -216,7 +217,7 @@ html{scroll-behavior:smooth}
 
 
 <!-- ================= 1 ================= -->
-<h2 id="s1"><span class="no">1</span>引言：002 留下的瓶颈</h2>
+<h2 id="s1"><span class="no">1</span>要解决的问题</h2>
 
 <h3>写每个词，都只能看同一个向量</h3>
 <p>编码器-解码器的写法在 <a href="../002-seq2seq/index.html">002</a> 讲过：一个 RNN 把原文读完，压成一个固定长度的向量 v，另一个 RNN 只凭这个向量写出译文。</p>
@@ -270,7 +271,7 @@ html{scroll-behavior:smooth}
 <ul>
   <li><b>已有观察</b>：基本的编码器-解码器，翻译质量随句子变长快速下降（Cho 等 2014b 的结果，本文 Figure 2 又看到一次）。</li>
   <li><b>作者的推测</b>：原因是固定向量这个瓶颈。原文用的词是 conjecture，推测。</li>
-  <li><b>本文要检验的</b>：去掉瓶颈后，长句应该变好。结果在第 3 节「结论二」。</li>
+  <li><b>本文要检验的</b>：去掉瓶颈后，长句应该变好。结果在后面证据一节的「结论二」。</li>
 </ul>
 <p>注意这仍然是间接证据：论文没有去量「固定向量里到底丢了多少信息」，只是看去掉瓶颈后长句是不是不再垮。</p>
 
@@ -287,26 +288,19 @@ html{scroll-behavior:smooth}
   <li><b>看原文的哪里，要随「当前要写的词」而变。</b>写开头要看原文开头，写结尾要看原文结尾。</li>
   <li><b>这个「选择」必须能用梯度训练</b>，否则没法和整个模型一起学。</li>
 </ol>
-<p>后面第 2 节的每个设计，都是在满足这三条之一。</p>
+<p>后面三步的每个设计，都是在满足这三条之一。</p>
 
-<h3>本文的想法：开卷翻译</h3>
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>第一步：开卷翻译，写每个词现取一份摘要</h2>
+<p>和 002 比，整个模型只改了一处：<b>解码器每一步用的原文摘要，从同一个 c 变成了每步一个 cᵢ</b>。其余（RNN 解码器、逐词猜、softmax、束搜索）都沿用。下面分三步回答：cᵢ 怎么取（这一步）、为什么取的方式必须是「软」的（第二步）、编码器的向量为什么要双向（第三步）。</p>
+
+<h3>做什么：开卷翻译</h3>
 <p>你翻一句长英文。002 的方式像是：把整句读一遍，<b>合上书</b>，凭脑子里一份固定大小的摘要往下写。句子越长，摘要越装不下。</p>
 <p class="punch">003 的方式是<em>开卷</em>：写每一个词时，眼睛回到原文，看着最相关的那几个词写。</p>
 <p>写 zone 时盯着 Area，写 l' 时盯着 the 和 man。看哪里，是模型<b>自己</b>学出来的，没有人告诉它。</p>
 <p>原文里这件事不叫注意力。标题和摘要用的词是 align（对齐）和 (soft-)search（软搜索），「attention」只在 3.1 节很轻地出现了一次（「直观上，这实现了一种注意力机制」），作为这类方法的统称是后来才通行的。</p>
-<p>原文第 1 节预告的结果有三条，后面第 3 节逐条看：</p>
-<ul>
-  <li>每个句长上都比不带注意力的旧模型好，<b>长句不再垮</b>；</li>
-  <li>用更短句子训练的带注意力模型（RNNsearch-30），甚至超过用更长句子训练的旧模型（RNNencdec-50）；</li>
-  <li>学到的「看哪里」可以画出来，和人的直觉一致。</li>
-</ul>
-
-
-<!-- ================= 2 ================= -->
-<h2 id="s2"><span class="no">2</span>模型：边写边回头看</h2>
-<p>和 002 比，整个模型只改了一处：<b>解码器每一步用的原文摘要，从同一个 c 变成了每步一个 cᵢ</b>。其余（RNN 解码器、逐词猜、softmax、束搜索）都沿用。下面三小节依次回答：cᵢ 怎么取（3.1）、为什么取的方式必须是「软」的、编码器的向量为什么要双向（3.2）。</p>
-
-<h3><span class="no">3.1</span>解码器：每写一个词，现取一份摘要</h3>
+<h3>怎么取：打分、变成权重、加权求和</h3>
 <figure class="fig">
   <span class="tag">原文 Figure 1 · 模型结构</span>
   <img class="orig narrow" src="orig-fig1.png" alt="原文 Figure 1：下方是 x1、x2、x3 到 xT 的输入词，每个词上方有前向和后向两个 RNN 方块，得到每个词的向量 h1 到 hT；这些向量通过标有 α t,1、α t,2、α t,3、α t,T 的线连到一个加号，加号再接到解码器的状态 s t-1 和 s t，旁边是写出的词 y t-1 和 y t。" loading="lazy" width="534" height="676">
@@ -348,85 +342,22 @@ html{scroll-behavior:smooth}
   <figcaption>这是一次「看」的全过程。分数只差 1.4（1.91 对 0.54），权重却差了约 4 倍（0.71 对 0.18），因为 softmax 会放大差距。（示意数字，真实的向量有 2000 维）</figcaption>
 </figure>
 
-<p>上面的白话，原文用三个式子写：</p>
-<div class="formula">e<sub>ij</sub> = a( s<sub>i−1</sub>, h<sub>j</sub> )</div>
-<div class="formula">α<sub>ij</sub> = exp( e<sub>ij</sub> ) / Σ<sub>k</sub> exp( e<sub>ik</sub> )<span class="fsrc">（原文 Eq. 6，softmax）</span></div>
-<div class="formula">c<sub>i</sub> = Σ<sub>j</sub> α<sub>ij</sub> · h<sub>j</sub><span class="fsrc">（原文 Eq. 5，加权求和）</span></div>
-<p>打分用的那个函数 a，原文附录 A.1.2 给了它的具体形式：</p>
-<div class="formula">a( s<sub>i−1</sub>, h<sub>j</sub> ) = v<sub>a</sub><sup>T</sup> · tanh( W<sub>a</sub> s<sub>i−1</sub> + U<sub>a</sub> h<sub>j</sub> )<span class="fsrc">（附录 A.1.2）</span></div>
-<div class="tbl"><table>
-  <thead><tr><th>符号</th><th>白话</th><th>对应图 3 里的</th></tr></thead>
-  <tbody>
-    <tr><td><code>i</code>、<code>j</code></td><td>i 是正在写的第 i 个译文词；j 是原文的第 j 个词</td><td>i 是整张图（每写一个词重来一次）；j 是三行</td></tr>
-    <tr><td><code>h<sub>j</sub></code></td><td>原文第 j 个词的向量（原文叫「标注」）</td><td>左边每行的 [1, 0] 之类</td></tr>
-    <tr><td><code>s<sub>i−1</sub></code></td><td>解码器上一步的状态，概括「我已经写了什么、还缺什么」</td><td>图里没画，它是打分时的「提问者」（图 0 的虚线）</td></tr>
-    <tr><td><code>e<sub>ij</sub></code></td><td>写第 i 个词时，原文第 j 个词有多相关的分数</td><td>① 列的 1.91、0、0.54</td></tr>
-    <tr><td><code>α<sub>ij</sub></code></td><td>softmax 之后的权重，全为正，每个 i 下加起来等于 1</td><td>② 列的 0.71、0.11、0.18</td></tr>
-    <tr><td><code>c<sub>i</sub></code></td><td>这一步专用的原文摘要，大小和一个 h 一样</td><td>③ 列最下面的 [0.80, 0.20]</td></tr>
-    <tr><td><code>a</code></td><td>打分的小网络，输入 s 和 h，输出一个数</td><td>① 列的计算过程（图里只画了结果）</td></tr>
-    <tr><td><code>W<sub>a</sub></code>、<code>U<sub>a</sub></code>、<code>v<sub>a</sub></code></td><td>这个小网络的参数：W、U 把 s 和 h 变到同一个空间再相加，v 把结果压成一个分数。都是学出来的</td><td>同上，在 ① 的计算里</td></tr>
-    <tr><td><code>tanh</code></td><td>弯一下的非线性函数（001 讲过）。没有它，两项相加还是线性的，表达力不够</td><td>同上</td></tr>
-  </tbody>
-</table></div>
 <p>有两处值得多想一下。第一，打分用的是<b>上一步</b>的状态 sᵢ₋₁，不是 sᵢ：因为 sᵢ 要靠 cᵢ 才能算出来，而 cᵢ 要靠打分，用 sᵢ 打分就循环了。第二，Uₐhⱼ 和 i 无关，所以每个原文词只需算一次，写每个词时只需新算 Wₐsᵢ₋₁，对齐模型本身并不贵，贵的是每个译文词都要和所有原文词算一遍。</p>
-<p><b>这三步在因果链里的作用：</b>让解码器每一步<b>自己决定看哪里</b>（要求 2），并且从打分到加权求和都是连续的数学运算，所以梯度能一路传回去（要求 3，下一小节）。</p>
+<p><b>这三步在因果链里的作用：</b>让解码器每一步<b>自己决定看哪里</b>（要求 2），并且从打分到加权求和都是连续的数学运算，所以梯度能一路传回去（要求 3，下一步）。</p>
 
-<p>取到 cᵢ 之后，解码器怎么用它？先看新旧的差别。002 里，每一步的条件里是同一个 c；003 里变成了每步各一个 cᵢ：</p>
-<div class="formula">002 / Cho：g( y<sub>t−1</sub>, s<sub>t</sub>, <b>c</b> )　　→　　003：g( y<sub>i−1</sub>, s<sub>i</sub>, <b>c<sub>i</sub></b> )</div>
-<p>完整写出来是原文的 Eq. 4：</p>
-<div class="formula">p( y<sub>i</sub> | y<sub>1</sub>, …, y<sub>i−1</sub>, x ) = g( y<sub>i−1</sub>, s<sub>i</sub>, c<sub>i</sub> )</div>
-<div class="formula">s<sub>i</sub> = f( s<sub>i−1</sub>, y<sub>i−1</sub>, c<sub>i</sub> )</div>
-<div class="tbl"><table>
-  <thead><tr><th>符号</th><th>白话</th><th>对应图 0 里的</th></tr></thead>
-  <tbody>
-    <tr><td><code>y<sub>i</sub></code></td><td>要写出的第 i 个译文词</td><td>右下角的 yᵢ</td></tr>
-    <tr><td><code>x</code></td><td>整句原文（x₁…x<sub>T</sub>）</td><td>最下面一排</td></tr>
-    <tr><td><code>s<sub>i</sub></code></td><td>写完这个词之后，解码器的新笔记（隐藏状态）</td><td>右边的 sᵢ 方块</td></tr>
-    <tr><td><code>f</code></td><td>更新笔记的规则：旧笔记 + 上一个写出的词 + 这一步的摘要 → 新笔记。本文用 GRU</td><td>sᵢ₋₁ 到 sᵢ 的那根箭头</td></tr>
-    <tr><td><code>g</code></td><td>从这些材料算出「下一个词是谁」的概率分布（接 softmax），本文用 maxout 层</td><td>sᵢ 往上到 yᵢ 的那根线</td></tr>
-    <tr><td><code>c<sub>i</sub></code></td><td>这一步的原文摘要，<b>同时</b>参与更新笔记和选词</td><td>从加号流到解码器的那根粗线</td></tr>
-  </tbody>
-</table></div>
-<p><b>这两条式子的作用：</b>让 cᵢ 真正进入「写哪个词」的决策。整篇论文的核心改动，就是式子里 c 多了下标 i。如果把 cᵢ 固定成编码器最后一个状态，模型就退化回旧的 RNNencdec，所以旧模型是它的特例，两者能公平对比。</p>
-<p>式子里的 f 和 g 各有一个零件：<b>GRU</b> 是 LSTM 的精简版，用一个「旋钮」决定旧笔记保留多少、换成多少新内容，目的和 LSTM 一样，让信息和梯度传得更远。<b>maxout</b> 是输出层的一种激活函数：同时算几个候选，只取最大的那个。它们都是工程选择，不是本文的主角。需要精确写法的，看下面这个延伸。</p>
-<aside class="ext"><span class="alab">🧭 延伸 · GRU 和 maxout 的完整公式（给想看公式的人，跳过不影响理解）</span>
-<h4>GRU：f 里面是什么（原文附录 A.1.1，以解码器为例）</h4>
-<div class="formula">z<sub>i</sub> = σ( W<sub>z</sub> e(y<sub>i−1</sub>) + U<sub>z</sub> s<sub>i−1</sub> + C<sub>z</sub> c<sub>i</sub> )</div>
-<div class="formula">r<sub>i</sub> = σ( W<sub>r</sub> e(y<sub>i−1</sub>) + U<sub>r</sub> s<sub>i−1</sub> + C<sub>r</sub> c<sub>i</sub> )</div>
-<div class="formula">s̃<sub>i</sub> = tanh( W e(y<sub>i−1</sub>) + U [ r<sub>i</sub> ⊙ s<sub>i−1</sub> ] + C c<sub>i</sub> )</div>
-<div class="formula">s<sub>i</sub> = (1 − z<sub>i</sub>) ⊙ s<sub>i−1</sub> + z<sub>i</sub> ⊙ s̃<sub>i</sub></div>
-<div class="tbl"><table>
-  <thead><tr><th>符号</th><th>白话</th></tr></thead>
-  <tbody>
-    <tr><td><code>e(y<sub>i−1</sub>)</code></td><td>上一个写出的词的词向量（001 的「坐标卡」，620 维）</td></tr>
-    <tr><td><code>z<sub>i</sub></code>：更新门</td><td>0 到 1 的旋钮，决定每一维笔记「换成新的」的比例</td></tr>
-    <tr><td><code>r<sub>i</sub></code>：重置门</td><td>算新内容时，旧笔记参与多少</td></tr>
-    <tr><td><code>s̃<sub>i</sub></code></td><td>候选的新笔记</td></tr>
-    <tr><td><code>σ</code>、<code>⊙</code></td><td>σ 是输出 0 到 1 的 sigmoid；⊙ 是逐维相乘</td></tr>
-    <tr><td><code>C<sub>z</sub> c<sub>i</sub></code> 等</td><td>cᵢ 同时进入两个门和候选：「什么时候更新、更新什么」都能参考原文。编码器里没有 cᵢ，这几项去掉</td></tr>
-  </tbody>
-</table></div>
-<p>最后一行是关键：新笔记是旧笔记和候选的<b>加权平均</b>。示意：旧 [0.8, 0.8]，候选 [0.2, −0.5]，z = [0.1, 0.9]，新笔记 = [0.74, −0.37]。第一维几乎保留，第二维几乎换新。加法路径让梯度能传远，和 LSTM 的传送带同理。原文叫它 gated hidden unit，「GRU」是后来通行的名字。</p>
-<h4>maxout：g 里面是什么（原文附录 A.2.2）</h4>
-<div class="formula">t̃<sub>i</sub> = U<sub>o</sub> s<sub>i−1</sub> + V<sub>o</sub> E y<sub>i−1</sub> + C<sub>o</sub> c<sub>i</sub></div>
-<div class="formula">t<sub>i,j</sub> = max( t̃<sub>i,2j−1</sub> , t̃<sub>i,2j</sub> )</div>
-<div class="formula">p( y<sub>i</sub> | s<sub>i</sub>, y<sub>i−1</sub>, c<sub>i</sub> ) ∝ exp( y<sub>i</sub><sup>T</sup> W<sub>o</sub> t<sub>i</sub> )</div>
-<div class="tbl"><table>
-  <thead><tr><th>符号</th><th>白话</th></tr></thead>
-  <tbody>
-    <tr><td><code>t̃<sub>i</sub></code></td><td>用「上一步笔记、上一个词、本步摘要」三样东西算出的 1000 维向量，说明选词时同时参考这三样</td></tr>
-    <tr><td><code>t<sub>i,j</sub></code></td><td>相邻两个数一组，取较大的，1000 维变成 500 维。示意：[0.3, −0.5, −1.0, −0.2] → [0.3, −0.2]</td></tr>
-    <tr><td><code>W<sub>o</sub></code> 与 <code>exp</code></td><td>再乘一个矩阵，对所有目标词做 softmax，得到每个词的概率</td></tr>
-  </tbody>
-</table></div>
-<p>这相当于从状态到词概率之间多放了一个隐藏层。原文没有单独做实验去检验 maxout 的贡献。</p>
-</aside>
+<h3>取到之后，解码器怎么用它</h3>
+<p>取到 cᵢ 之后，解码器怎么用它？先看新旧的差别。002 里，每一步的条件里是同一个 c；003 里变成了每步各一个 cᵢ，而且 cᵢ 同时参与「更新笔记 sᵢ」和「选出下一个词 yᵢ」。</p>
+<p><b>这一步的作用：</b>让 cᵢ 真正进入「写哪个词」的决策。整篇论文的核心改动，就是式子里 c 多了下标 i。如果把 cᵢ 固定成编码器最后一个状态，模型就退化回旧的 RNNencdec，所以旧模型是它的特例，两者能公平对比。</p>
+<p>式子里的 f 和 g 各有一个零件：<b>GRU</b> 是 LSTM 的精简版，用一个「旋钮」决定旧笔记保留多少、换成多少新内容，目的和 LSTM 一样，让信息和梯度传得更远。<b>maxout</b> 是输出层的一种激活函数：同时算几个候选，只取最大的那个。它们都是工程选择，不是本文的主角。需要精确写法的，看附录 B。</p>
+<p><b>这一步对着上面的毛病：</b>信息不必再全挤进一个向量，而是分散在每个词的向量里；写每个词时看哪里，随「当前要写的词」而变（要求 1、2）。三个打分与加权的式子、cᵢ 进入解码器的式子，精确写法见附录 A（原文 Eq. 4–6 和附录 A.1.2）。</p>
 
-<h3>为什么要「软」：这样才能用梯度训练</h3>
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>第二步：取的方式要「软」，才能用梯度训练</h2>
+
+<h3>硬的选法为什么不行</h3>
 <p>「对齐」在传统统计翻译里早就有：先用统计模型推断「法文第 i 个词对应英文第 j 个词」。那是一个<b>硬</b>的选择，一个目标词只对应一个源词（或者没有）。</p>
-<aside class="anno"><span class="alab">📎 注解 · 为什么硬选择没法用梯度训练</span>
-<p>训练靠梯度：错了，就看「往哪个方向微调一点点，错误会变小」。硬选择是一个开关，只有「选这个」和「选那个」，没有中间状态。把选择从词 2 改到词 3，是一次跳变，不存在「往词 3 偏一点点」，梯度就没法告诉你该往哪边调。另外，硬对齐是隐藏的，没有标准答案，要对所有可能的对齐求和或采样，计算很复杂。</p>
-</aside>
+<p>硬选择像一个开关，只有「选这个」和「选那个」，没有中间状态，梯度没法告诉你该往哪边调；另外硬对齐是隐藏的，没有标准答案，计算也复杂（展开见附录 C）。</p>
 <figure class="fig">
   <span class="tag">图 4 · 硬对齐是开关，软对齐是旋钮（示意）</span>
   <div class="sv">
@@ -450,12 +381,18 @@ html{scroll-behavior:smooth}
   </div>
   <figcaption>左边只能选一个，右边每个词都分到一点。软的做法让每个权重都是连续可调的，所以「看哪里」这件事也能被梯度推着变好。（0.2、0.6、0.2 为示意）</figcaption>
 </figure>
+
+<h3>软的做法：每个词都给一个权重</h3>
 <p>003 的做法是：<b>不选一个，而是对所有源词都给一个权重</b>（就是图 3 里的 α）。这样 cᵢ 是 α 的连续函数，损失对 α 有梯度，一路反传给对齐小网络的参数。对齐不再是隐藏变量，训练时<b>没有任何「哪个词对哪个词」的标注</b>，它是为了把翻译译好，被顺便学出来的。</p>
 <p>原文还给了一个概率式的说法：把 αᵢⱼ 看成「写 yᵢ 时和 xⱼ 对齐的概率」，cᵢ 就是对所有可能对齐取的<b>期望</b>。硬对齐是以概率 1 选一个，软对齐是带着概率把所有候选平均一下。</p>
 <p>软对齐还有一个额外的好处。原文 5.2.1 举了 [the man] → [l'homme]：the 在法语里可以译成 le、la、les、l'，取决于<b>后面</b>那个词。硬对齐要把 the 单独对到 l'，只看 the 一个词做不出判断；软对齐写 l' 时可以同时看 the 和 man。它也自然处理源词、目标词数量不一样的情况，不用硬把某些词对到「空」。</p>
 <p>我补充的：论文<b>没有</b>和硬对齐的方案做过对照实验，「软优于硬」在本文里主要是设计层面的论证，不是实验结论。</p>
+<p><b>这一步对着要求 3：</b>从打分到加权求和处处连续，所以「看哪里」可以和翻译一起用反向传播训练。softmax 那条式子见附录 A（原文 Eq. 6），硬选择为什么没法训练的展开见附录 C。</p>
 
-<h3><span class="no">3.2</span>编码器：为什么要双向</h3>
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>第三步：编码器的向量要左右都看过</h2>
+<h3>为什么要双向</h3>
 <p>cᵢ 是 hⱼ 的加权和，所以每个 hⱼ 最好把「这个词在整句里的意思」都带上。但普通 RNN 从左读到右，读到第 j 个词时，hⱼ 只知道前文。读到 man 时，它还不知道后面有没有 who 引导的从句。</p>
 <p>办法很朴素：<b>请两个人读。</b>一个从头读到尾，一个从尾读到头，然后把两个人对第 j 个词的笔记并排放在一起。</p>
 <figure class="fig">
@@ -484,39 +421,20 @@ html{scroll-behavior:smooth}
   </div>
   <figcaption>解码器不能这样做：它一个词一个词地写，后面的词还没写出来，没有「后文」可读。双向只能用在整句已知的编码器这一端。（双向 RNN 不是本文发明，1997 年已有，在语音识别里用过。）</figcaption>
 </figure>
-<p>精确写法是把两个方向的向量首尾拼起来：</p>
-<div class="formula">h<sub>j</sub> = [ 前向 h<sub>j</sub> ; 后向 h<sub>j</sub> ]</div>
-<div class="tbl"><table>
-  <thead><tr><th>符号</th><th>白话</th><th>对应图 5 / 图 0 里的</th></tr></thead>
-  <tbody>
-    <tr><td><code>前向 h<sub>j</sub></code></td><td>从第 1 个词读到第 j 个词的笔记，只含前文</td><td>「前向」箭头那一排</td></tr>
-    <tr><td><code>后向 h<sub>j</sub></code></td><td>从最后一个词读回第 j 个词的笔记，只含后文</td><td>「后向」箭头那一排</td></tr>
-    <tr><td><code>[ ; ]</code></td><td>把两个向量首尾拼成一个更长的。各 1000 维，拼起来 hⱼ 是 2000 维</td><td>每个词上面的 h 方块</td></tr>
-  </tbody>
-</table></div>
-<p><b>这条式子的作用：</b>让每个 hⱼ 都「左右都看过」，对齐小网络和解码器才有足够的信息，判断「写到这里，这个词值不值得看」。作者还解释，RNN 更擅长记住最近读到的东西，所以 hⱼ 会以 xⱼ 周围的词为主。这是作者的解释，论文没有实验去验证。</p>
-
-<h3>和旧方法的本质区别</h3>
-<div class="tbl"><table>
-  <thead><tr><th></th><th>002 / RNNencdec（旧）</th><th>003 / RNNsearch（本文）</th></tr></thead>
-  <tbody>
-    <tr><td>编码器输出</td><td>1 个固定向量</td><td>一排向量，原文有几个词就有几个</td></tr>
-    <tr><td>编码器方向</td><td>单向</td><td>双向</td></tr>
-    <tr><td>解码器看原文</td><td>全程同一个 c</td><td>每步一个新的 cᵢ，自己决定看哪里</td></tr>
-    <tr><td>长句信息放在哪</td><td>全挤在一个向量里</td><td>分散在各个 h 里，按需取</td></tr>
-    <tr><td>代价</td><td>无</td><td>每个译文词要和每个原文词打一次分，计算量约为 Tx × Ty，随句长变长平方增长</td></tr>
-    <tr><td>能不能看明白</td><td>向量内部看不出</td><td>权重 α 可以画成热图（第 3 节结论三）</td></tr>
-  </tbody>
-</table></div>
-<p>要提醒的是，003 里的 RNNencdec 不是 002 那个模型（一层，单向，没有倒序，没有集成）。它是 RNNsearch 去掉注意力后的特例，才能公平对比。
-
-</p>
+<p>把两个方向的向量首尾拼起来，就是每个词最终的 hⱼ。（各 1000 维，拼起来 2000 维，精确写法见附录 A。）</p>
+<p><b>这样做的作用：</b>让每个 hⱼ 都「左右都看过」，对齐小网络和解码器才有足够的信息，判断「写到这里，这个词值不值得看」。作者还解释，RNN 更擅长记住最近读到的东西，所以 hⱼ 会以 xⱼ 周围的词为主。这是作者的解释，论文没有实验去验证。</p>
+<p><b>这一步对着的毛病：</b>单向 RNN 的 hⱼ 只含前文，写 l' 这类要看后文才能定的词时信息不够。双向之后，第二步里的软对齐才有足够好的向量可取。（本页没有对照实验分开双向与注意力各自的贡献，见后面「局限」。）</p>
 
 
-<!-- ================= 3 ================= -->
-<h2 id="s3"><span class="no">3</span>实验：三个结论</h2>
-<p>英译法，WMT'14 数据。对手是旧的 RNNencdec，用<b>同样的数据、同样的训练流程</b>各训练两次：只用不超过 30 个词的句子训练，叫 -30；不超过 50 个词的，叫 -50。再加一个传统系统 Moses 当参照。下面只看三个能支撑主线的结论，其余细节收在最后一个折叠的延伸里。</p>
-
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>证据：三个结论</h2>
+<p>英译法，WMT'14 数据。对手是旧的 RNNencdec，用<b>同样的数据、同样的训练流程</b>各训练两次：只用不超过 30 个词的句子训练，叫 -30；不超过 50 个词的，叫 -50。再加一个传统系统 Moses 当参照。下面只看三个能支撑主线的结论，其余细节（完整结果表、训练统计、读数字的注意事项）收在附录 E。</p>
+<p>原文第 1 节预告的结果有三条，下面逐条看：</p>
+<ul>
+  <li>每个句长上都比不带注意力的旧模型好，<b>长句不再垮</b>；</li>
+  <li>用更短句子训练的带注意力模型（RNNsearch-30），甚至超过用更长句子训练的旧模型（RNNencdec-50）；</li>
+  <li>学到的「看哪里」可以画出来，和人的直觉一致。</li>
+</ul>
 <h3>结论一：BLEU 更高</h3>
 <figure class="fig">
   <span class="tag">图 6 · 测试集 BLEU（原文 Table 1，全部句子）</span>
@@ -555,7 +473,7 @@ html{scroll-behavior:smooth}
 </ol>
 
 <h3>结论二：长句不垮了（全篇最重要的证据）</h3>
-<p>第 1 节留下的假说是：固定向量会在长句上垮。如果这个假说对，去掉瓶颈的模型，在长句上应该明显更好。Figure 2 就是这个检验：横轴是句子长度，纵轴是 BLEU。</p>
+<p>前面「为什么长句会垮」留下的假说是：固定向量会在长句上垮。如果这个假说对，去掉瓶颈的模型，在长句上应该明显更好。Figure 2 就是这个检验：横轴是句子长度，纵轴是 BLEU。</p>
 <figure class="fig">
   <span class="tag">图 7 · 只看两条线（示意，形状按原文 Figure 2 估读）</span>
   <div class="sv">
@@ -615,7 +533,128 @@ html{scroll-behavior:smooth}
 </figure>
 <p>三个提醒：对齐是学出来的，没有任何人工标注参与训练；这是<b>定性</b>证据，只是看着合理，没有用人工对齐去做量化评估；权重高也不一定等于「真的被用来做决定」，这是我补充的提醒。</p>
 
-<details class="ext"><summary>🧭 延伸 · 实验细节与读数字的注意事项（跳过不影响理解）</summary>
+<h3>作者的结论</h3>
+<p class="punch">不必把所有信息塞进一个向量。<em>让解码器需要什么，就去取什么。</em></p>
+<p>整条因果链回头看一遍：固定向量装不下长句 → 所以不压成一个向量，每个词留一个 → 所以写每个词时要按需取 → 所以取的方式必须是「软」的、能用梯度训练 → 所以编码器的每个向量要左右都看过。</p>
+
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>局限</h2>
+<p><b>作者承认的局限</b>：生词（UNK）仍是明显短板，留给未来的挑战；对每个译文词都要算所有原文词，计算量随句长平方增长。翻译的句子多半只有 15 到 40 词，影响不大，但可能限制它用在别的任务上（6.1 节）。</p>
+<p><b>我补充的局限</b>（原文没当局限讨论）：没有消融实验，分不清双向和注意力各自的功劳；只做了英法一个语言对；对齐热图是定性证据；对比的旧模型较弱，换成 002 那样的强基线，差距会小多少，本文给不出。</p>
+<p>作者列出的这两条局限，后来各自的去向见附录 G。</p>
+
+
+<!-- ================= 附录 ================= -->
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块默认折叠，点开看。标题里写了对应原文的第几节。</p>
+
+<details class="ext"><summary>A · 公式和符号表（原文 3.1 节 Eq. 4–6、附录 A.1.2、3.2 节）</summary>
+<p><b>取 cᵢ：打分、变权重、加权求和</b></p>
+<p>上面的白话，原文用三个式子写：</p>
+<div class="formula">e<sub>ij</sub> = a( s<sub>i−1</sub>, h<sub>j</sub> )</div>
+<div class="formula">α<sub>ij</sub> = exp( e<sub>ij</sub> ) / Σ<sub>k</sub> exp( e<sub>ik</sub> )<span class="fsrc">（原文 Eq. 6，softmax）</span></div>
+<div class="formula">c<sub>i</sub> = Σ<sub>j</sub> α<sub>ij</sub> · h<sub>j</sub><span class="fsrc">（原文 Eq. 5，加权求和）</span></div>
+<p>打分用的那个函数 a，原文附录 A.1.2 给了它的具体形式：</p>
+<div class="formula">a( s<sub>i−1</sub>, h<sub>j</sub> ) = v<sub>a</sub><sup>T</sup> · tanh( W<sub>a</sub> s<sub>i−1</sub> + U<sub>a</sub> h<sub>j</sub> )<span class="fsrc">（附录 A.1.2）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th><th>对应图 3 里的</th></tr></thead>
+  <tbody>
+    <tr><td><code>i</code>、<code>j</code></td><td>i 是正在写的第 i 个译文词；j 是原文的第 j 个词</td><td>i 是整张图（每写一个词重来一次）；j 是三行</td></tr>
+    <tr><td><code>h<sub>j</sub></code></td><td>原文第 j 个词的向量（原文叫「标注」）</td><td>左边每行的 [1, 0] 之类</td></tr>
+    <tr><td><code>s<sub>i−1</sub></code></td><td>解码器上一步的状态，概括「我已经写了什么、还缺什么」</td><td>图里没画，它是打分时的「提问者」（图 0 的虚线）</td></tr>
+    <tr><td><code>e<sub>ij</sub></code></td><td>写第 i 个词时，原文第 j 个词有多相关的分数</td><td>① 列的 1.91、0、0.54</td></tr>
+    <tr><td><code>α<sub>ij</sub></code></td><td>softmax 之后的权重，全为正，每个 i 下加起来等于 1</td><td>② 列的 0.71、0.11、0.18</td></tr>
+    <tr><td><code>c<sub>i</sub></code></td><td>这一步专用的原文摘要，大小和一个 h 一样</td><td>③ 列最下面的 [0.80, 0.20]</td></tr>
+    <tr><td><code>a</code></td><td>打分的小网络，输入 s 和 h，输出一个数</td><td>① 列的计算过程（图里只画了结果）</td></tr>
+    <tr><td><code>W<sub>a</sub></code>、<code>U<sub>a</sub></code>、<code>v<sub>a</sub></code></td><td>这个小网络的参数：W、U 把 s 和 h 变到同一个空间再相加，v 把结果压成一个分数。都是学出来的</td><td>同上，在 ① 的计算里</td></tr>
+    <tr><td><code>tanh</code></td><td>弯一下的非线性函数（001 讲过）。没有它，两项相加还是线性的，表达力不够</td><td>同上</td></tr>
+  </tbody>
+</table></div>
+<p><b>cᵢ 进入解码器：新旧对比与原文 Eq. 4</b></p>
+<div class="formula">002 / Cho：g( y<sub>t−1</sub>, s<sub>t</sub>, <b>c</b> )　　→　　003：g( y<sub>i−1</sub>, s<sub>i</sub>, <b>c<sub>i</sub></b> )</div>
+<p>完整写出来是原文的 Eq. 4：</p>
+<div class="formula">p( y<sub>i</sub> | y<sub>1</sub>, …, y<sub>i−1</sub>, x ) = g( y<sub>i−1</sub>, s<sub>i</sub>, c<sub>i</sub> )</div>
+<div class="formula">s<sub>i</sub> = f( s<sub>i−1</sub>, y<sub>i−1</sub>, c<sub>i</sub> )</div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th><th>对应图 0 里的</th></tr></thead>
+  <tbody>
+    <tr><td><code>y<sub>i</sub></code></td><td>要写出的第 i 个译文词</td><td>右下角的 yᵢ</td></tr>
+    <tr><td><code>x</code></td><td>整句原文（x₁…x<sub>T</sub>）</td><td>最下面一排</td></tr>
+    <tr><td><code>s<sub>i</sub></code></td><td>写完这个词之后，解码器的新笔记（隐藏状态）</td><td>右边的 sᵢ 方块</td></tr>
+    <tr><td><code>f</code></td><td>更新笔记的规则：旧笔记 + 上一个写出的词 + 这一步的摘要 → 新笔记。本文用 GRU</td><td>sᵢ₋₁ 到 sᵢ 的那根箭头</td></tr>
+    <tr><td><code>g</code></td><td>从这些材料算出「下一个词是谁」的概率分布（接 softmax），本文用 maxout 层</td><td>sᵢ 往上到 yᵢ 的那根线</td></tr>
+    <tr><td><code>c<sub>i</sub></code></td><td>这一步的原文摘要，<b>同时</b>参与更新笔记和选词</td><td>从加号流到解码器的那根粗线</td></tr>
+  </tbody>
+</table></div>
+<p><b>双向编码器：把两个方向拼起来</b></p>
+<p>精确写法是把两个方向的向量首尾拼起来：</p>
+<div class="formula">h<sub>j</sub> = [ 前向 h<sub>j</sub> ; 后向 h<sub>j</sub> ]</div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th><th>对应图 5 / 图 0 里的</th></tr></thead>
+  <tbody>
+    <tr><td><code>前向 h<sub>j</sub></code></td><td>从第 1 个词读到第 j 个词的笔记，只含前文</td><td>「前向」箭头那一排</td></tr>
+    <tr><td><code>后向 h<sub>j</sub></code></td><td>从最后一个词读回第 j 个词的笔记，只含后文</td><td>「后向」箭头那一排</td></tr>
+    <tr><td><code>[ ; ]</code></td><td>把两个向量首尾拼成一个更长的。各 1000 维，拼起来 hⱼ 是 2000 维</td><td>每个词上面的 h 方块</td></tr>
+  </tbody>
+</table></div>
+</details>
+
+<details class="ext"><summary>B · GRU 和 maxout 的完整公式（原文附录 A.1.1、A.2.2）</summary>
+<h4>GRU：f 里面是什么（原文附录 A.1.1，以解码器为例）</h4>
+<div class="formula">z<sub>i</sub> = σ( W<sub>z</sub> e(y<sub>i−1</sub>) + U<sub>z</sub> s<sub>i−1</sub> + C<sub>z</sub> c<sub>i</sub> )</div>
+<div class="formula">r<sub>i</sub> = σ( W<sub>r</sub> e(y<sub>i−1</sub>) + U<sub>r</sub> s<sub>i−1</sub> + C<sub>r</sub> c<sub>i</sub> )</div>
+<div class="formula">s̃<sub>i</sub> = tanh( W e(y<sub>i−1</sub>) + U [ r<sub>i</sub> ⊙ s<sub>i−1</sub> ] + C c<sub>i</sub> )</div>
+<div class="formula">s<sub>i</sub> = (1 − z<sub>i</sub>) ⊙ s<sub>i−1</sub> + z<sub>i</sub> ⊙ s̃<sub>i</sub></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th></tr></thead>
+  <tbody>
+    <tr><td><code>e(y<sub>i−1</sub>)</code></td><td>上一个写出的词的词向量（001 的「坐标卡」，620 维）</td></tr>
+    <tr><td><code>z<sub>i</sub></code>：更新门</td><td>0 到 1 的旋钮，决定每一维笔记「换成新的」的比例</td></tr>
+    <tr><td><code>r<sub>i</sub></code>：重置门</td><td>算新内容时，旧笔记参与多少</td></tr>
+    <tr><td><code>s̃<sub>i</sub></code></td><td>候选的新笔记</td></tr>
+    <tr><td><code>σ</code>、<code>⊙</code></td><td>σ 是输出 0 到 1 的 sigmoid；⊙ 是逐维相乘</td></tr>
+    <tr><td><code>C<sub>z</sub> c<sub>i</sub></code> 等</td><td>cᵢ 同时进入两个门和候选：「什么时候更新、更新什么」都能参考原文。编码器里没有 cᵢ，这几项去掉</td></tr>
+  </tbody>
+</table></div>
+<p>最后一行是关键：新笔记是旧笔记和候选的<b>加权平均</b>。示意：旧 [0.8, 0.8]，候选 [0.2, −0.5]，z = [0.1, 0.9]，新笔记 = [0.74, −0.37]。第一维几乎保留，第二维几乎换新。加法路径让梯度能传远，和 LSTM 的传送带同理。原文叫它 gated hidden unit，「GRU」是后来通行的名字。</p>
+<h4>maxout：g 里面是什么（原文附录 A.2.2）</h4>
+<div class="formula">t̃<sub>i</sub> = U<sub>o</sub> s<sub>i−1</sub> + V<sub>o</sub> E y<sub>i−1</sub> + C<sub>o</sub> c<sub>i</sub></div>
+<div class="formula">t<sub>i,j</sub> = max( t̃<sub>i,2j−1</sub> , t̃<sub>i,2j</sub> )</div>
+<div class="formula">p( y<sub>i</sub> | s<sub>i</sub>, y<sub>i−1</sub>, c<sub>i</sub> ) ∝ exp( y<sub>i</sub><sup>T</sup> W<sub>o</sub> t<sub>i</sub> )</div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th></tr></thead>
+  <tbody>
+    <tr><td><code>t̃<sub>i</sub></code></td><td>用「上一步笔记、上一个词、本步摘要」三样东西算出的 1000 维向量，说明选词时同时参考这三样</td></tr>
+    <tr><td><code>t<sub>i,j</sub></code></td><td>相邻两个数一组，取较大的，1000 维变成 500 维。示意：[0.3, −0.5, −1.0, −0.2] → [0.3, −0.2]</td></tr>
+    <tr><td><code>W<sub>o</sub></code> 与 <code>exp</code></td><td>再乘一个矩阵，对所有目标词做 softmax，得到每个词的概率</td></tr>
+  </tbody>
+</table></div>
+<p>这相当于从状态到词概率之间多放了一个隐藏层。原文没有单独做实验去检验 maxout 的贡献。</p>
+</details>
+
+<details class="ext"><summary>C · 概念注解：为什么硬选择没法用梯度训练（原文 3.1 节）</summary>
+<p>训练靠梯度：错了，就看「往哪个方向微调一点点，错误会变小」。硬选择是一个开关，只有「选这个」和「选那个」，没有中间状态。把选择从词 2 改到词 3，是一次跳变，不存在「往词 3 偏一点点」，梯度就没法告诉你该往哪边调。另外，硬对齐是隐藏的，没有标准答案，要对所有可能的对齐求和或采样，计算很复杂。</p>
+</details>
+
+<details class="ext"><summary>D · 和旧方法（002 / RNNencdec）的对比（原文 3.1 节、第 4 节）</summary>
+<div class="tbl"><table>
+  <thead><tr><th></th><th>002 / RNNencdec（旧）</th><th>003 / RNNsearch（本文）</th></tr></thead>
+  <tbody>
+    <tr><td>编码器输出</td><td>1 个固定向量</td><td>一排向量，原文有几个词就有几个</td></tr>
+    <tr><td>编码器方向</td><td>单向</td><td>双向</td></tr>
+    <tr><td>解码器看原文</td><td>全程同一个 c</td><td>每步一个新的 cᵢ，自己决定看哪里</td></tr>
+    <tr><td>长句信息放在哪</td><td>全挤在一个向量里</td><td>分散在各个 h 里，按需取</td></tr>
+    <tr><td>代价</td><td>无</td><td>每个译文词要和每个原文词打一次分，计算量约为 Tx × Ty，随句长变长平方增长</td></tr>
+    <tr><td>能不能看明白</td><td>向量内部看不出</td><td>权重 α 可以画成热图（正文证据一节的结论三）</td></tr>
+  </tbody>
+</table></div>
+<p>要提醒的是，003 里的 RNNencdec 不是 002 那个模型（一层，单向，没有倒序，没有集成）。它是 RNNsearch 去掉注意力后的特例，才能公平对比。
+
+</p>
+</details>
+
+<details class="ext"><summary>E · 完整结果表和读数字的注意事项（原文 Table 1、Table 2，Moses 对比见 5.1 节）</summary>
 <p><b>Table 1 完整版。</b>「No UNK」列只评估原文和参考译文里都没有生词的句子，并且禁止模型输出 [UNK]。</p>
 <div class="tbl"><table>
   <thead><tr><th>模型</th><th class="num">All</th><th class="num">No UNK</th></tr></thead>
@@ -655,36 +694,24 @@ html{scroll-behavior:smooth}
 </ul>
 </details>
 
-
-<!-- ================= 4 ================= -->
-<h2 id="s4"><span class="no">4</span>相关工作</h2>
+<details class="ext"><summary>F · 相关工作与当时的背景（原文第 6 节、第 1 节）</summary>
+<p><b>相关工作</b></p>
 <ul>
   <li><b>神经网络在翻译里长期当配角。</b>原文 6.2 节说，从 Bengio 等 2003（001）开始，神经网络在翻译里大多只是给传统系统提供一个特征，或者给候选译文重新排序。本文自称是对此前工作的彻底背离：不当零件，整个系统自己翻译。</li>
   <li><b>同一个团队的前几步。</b>Cho 等 2014a 提出 RNN 编码器-解码器和 GRU，2014b 观察到长句变差，Pouget-Abadie 等 2014 尝试自动切段。本文是这条线上的第三个回应：不切，让模型自己找。</li>
   <li><b>Graves 2013 的手写体合成</b>也用「预测权重」的方法，但位置只能单调向前。作者指出，这对翻译是严重限制，因为翻译常需要长距离重排（比如英译德）。软对齐没有这个限制。</li>
   <li><b>同期的 002（Sutskever 等）</b>走的是另一条路：靠更深的网络把固定向量推到极致，没有改结构。</li>
 </ul>
-
-
-<!-- ================= 5 ================= -->
-<h2 id="s5"><span class="no">5</span>结论</h2>
-<p class="punch">不必把所有信息塞进一个向量。<em>让解码器需要什么，就去取什么。</em></p>
-<p>整条因果链回头看一遍：固定向量装不下长句 → 所以不压成一个向量，每个词留一个 → 所以写每个词时要按需取 → 所以取的方式必须是「软」的、能用梯度训练 → 所以编码器的每个向量要左右都看过。</p>
-<p><b>作者承认的局限</b>：生词（UNK）仍是明显短板，留给未来的挑战；对每个译文词都要算所有原文词，计算量随句长平方增长。翻译的句子多半只有 15 到 40 词，影响不大，但可能限制它用在别的任务上（6.1 节）。</p>
-<p><b>我补充的局限</b>（原文没当局限讨论）：没有消融实验，分不清双向和注意力各自的功劳；只做了英法一个语言对；对齐热图是定性证据；对比的旧模型较弱，换成 002 那样的强基线，差距会小多少，本文给不出。</p>
-
-
-<!-- ================= after ================= -->
-<h2 id="after">读完之后（原文之外）</h2>
-
-<h3>当时的技术背景（2014）</h3>
+<p><b>当时的技术背景（2014）</b></p>
 <ul>
   <li>神经翻译是新东西：Kalchbrenner 和 Blunsom 2013、Sutskever 等 2014（002）、Cho 等 2014 刚刚提出。</li>
   <li>3 万词的词表是当时的普遍做法，生词问题还没有通行的解法，子词方法要到后来才出现。</li>
   <li>作者和 001 的 Bengio 同属蒙特利尔一个组。</li>
 </ul>
+</details>
 
-<h3>后来发展到什么程度</h3>
+<details class="ext"><summary>G · 后来的发展和前后篇衔接（原文之外）</summary>
+<p><b>后来发展到什么程度</b></p>
 <p>下面是后世评价，不是原文内容。</p>
 <ul>
   <li><b>成为神经翻译的标配。</b>带注意力的编码器-解码器很快取代了不带注意力的版本，也被用到图像描述、语音识别等任务，说明「按需取信息」不限于翻译。</li>
@@ -692,8 +719,7 @@ html{scroll-behavior:smooth}
   <li><b>留下的两个问题都有后续。</b>生词 → 子词切分（007）；每个译文词都要算所有原文词、RNN 又必须串行 → 004 Transformer 把这种「按需取信息」做成整个模型的基础，同时去掉了 RNN。</li>
   <li><b>相对准确的定位：</b>本文不是注意力的唯一起源，类似思想（如 Graves 2013）更早出现。本文的贡献是在机器翻译里，把可微的软对齐和端到端训练结合起来，动机清楚、实验扎实、热图直观，所以影响最大。</li>
 </ul>
-
-<h3>前后篇衔接</h3>
+<p><b>前后篇衔接</b></p>
 <p><b>继承自</b>：<a href="../002-seq2seq/index.html">002 Seq2Seq</a>（编码器-解码器、逐词概率、束搜索、「瓶颈在固定向量」的诊断）；<a href="../001-nplm/index.html">001 NPLM</a>（神经网络参数化条件概率、softmax、词向量）；Cho 等的 GRU 和长句观察。</p>
 <p><b>对 002 的推进</b>：c 变成 cᵢ，每个译文词一份；一个向量变一排向量；对齐可微、可训练；长句不再垮，还得到了能读的对齐热图。002 靠倒序缓解的长距离问题，在这里被结构性地绕开：注意力直接连接任意两个位置。</p>
 <p><b>留下的问题</b>：</p>
@@ -702,6 +728,7 @@ html{scroll-behavior:smooth}
   <li>词表有限、生词 → 子词切分（第 007 篇）</li>
   <li>优化器用 Adadelta → 后来的标配 Adam（第 005 篇）</li>
 </ul>
+</details>
 
 
 <footer>
