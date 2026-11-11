@@ -140,6 +140,7 @@ def read_map(papers):
     n = len(papers)
     if n > len(SLOTS):
         raise SystemExit(f"FAIL  地图只有 {len(SLOTS)} 个位置，papers.json 有 {n} 篇：去 build.py 的 SLOTS 续加位置")
+    check_map_overlap(papers)
     pts = [(x, y) for x, y, _ in SLOTS[:n]]
     lit_upto = max((i for i, p in enumerate(papers) if p["status"] == "published"), default=-1)
     out = []
@@ -186,6 +187,31 @@ def read_map(papers):
     label = f"阅读地图：{n} 篇论文是地图上的 {n} 个地点，已点亮 {n_pub} 个"
     return (f'<svg class="map" viewBox="0 0 {MAP_W} {MAP_H}" role="img" aria-label="{label}">'
             + "".join(out) + "</svg>")
+
+
+def check_map_overlap(papers):
+    """地图标签自检：按最大字号（窄屏 .lit .nm 23px）估算每个标签的框，和别的标签、别的点相交就 FAIL。
+    2026-11-11 踩坑：002 的标签压到了 006 的点上，她在首页看出来的。"""
+    def width(t, fs):
+        return sum(fs if ord(c) > 0x2E80 else 0.58 * fs for c in t)
+    boxes, dots = [], []
+    for i, p in enumerate(papers):
+        x, y, side = SLOTS[i]
+        lit = p["status"] == "published"
+        fs = 23 if lit else 19
+        w = len(p["id"] + " ") * 0.6 * 15 + width(p["short"], fs)
+        dx, dy, anc = {"b": (0, 34, "middle"), "t": (0, -22, "middle"),
+                       "l": (-18, 6, "end"), "r": (18, 6, "start")}[side]
+        bx = x + dx - (w / 2 if anc == "middle" else w if anc == "end" else 0)
+        by = y + dy - fs * 0.85
+        boxes.append((bx, by, bx + w, by + fs, p["id"]))
+        r = 16 if lit else 9
+        dots.append((x - r, y - r, x + r, y + r, p["id"]))
+    hit = lambda a, b: a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+    bad = [f"{a[4]} 标签 × {b[4]} 标签" for i, a in enumerate(boxes) for b in boxes[i + 1:] if hit(a, b)]
+    bad += [f"{a[4]} 标签 × {d[4]} 的点" for a in boxes for d in dots if a[4] != d[4] and hit(a, d)]
+    if bad:
+        raise SystemExit("FAIL  地图上有重叠，去 SLOTS 改位置或标签方位：" + "；".join(bad))
 
 
 def ver(rel):
