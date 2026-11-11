@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Supabase 国内访问测试</title>
+<style>
+:root{--bg:#fafaf7;--fg:#222;--mut:#777;--ok:#1a7f37;--bad:#c62828;--line:#ddd}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,sans-serif;max-width:640px;margin:0 auto;padding:20px 16px}
+h1{font-size:20px}input{width:100%;box-sizing:border-box;padding:8px;margin:4px 0 12px;border:1px solid var(--line);border-radius:6px;font:14px monospace}
+button{padding:10px 20px;font-size:16px;border-radius:6px;border:0;background:#2b5bd7;color:#fff;cursor:pointer}
+table{width:100%;border-collapse:collapse;margin-top:16px;font-size:14px}td,th{border-bottom:1px solid var(--line);padding:6px;text-align:left}
+.ok{color:var(--ok);font-weight:700}.bad{color:var(--bad);font-weight:700}.mut{color:var(--mut);font-size:13px}
+</style>
+</head>
+<body>
+<h1>Supabase 国内访问测试</h1>
+<p class="mut">请<b>关掉 VPN / 代理</b>再测。每一项连 5 次，看成功几次、平均多久。</p>
+<label>Project URL（形如 https://xxxx.supabase.co）</label>
+<input id="url" placeholder="https://xxxx.supabase.co">
+<label>anon public key（公开密钥，本来就会放在网页里）</label>
+<input id="key" placeholder="eyJ...">
+<button id="go">开始测试</button>
+<table><thead><tr><th>测试项</th><th>成功</th><th>平均耗时</th></tr></thead><tbody id="out"></tbody></table>
+<p id="sum"></p>
+<script>
+const $=id=>document.getElementById(id);
+try{$('url').value=localStorage.getItem('t_url')||'';$('key').value=localStorage.getItem('t_key')||''}catch(e){}
+async function once(fn){const t=performance.now();const c=new AbortController();const tm=setTimeout(()=>c.abort(),8000);
+  try{await fn(c.signal);return performance.now()-t}catch(e){return null}finally{clearTimeout(tm)}}
+async function test(name,fn){const tr=document.createElement('tr');tr.innerHTML=`<td>${name}</td><td>测试中…</td><td></td>`;$('out').appendChild(tr);
+  const ts=[];for(let i=0;i<5;i++){const r=await once(fn);if(r!==null)ts.push(r)}
+  const avg=ts.length?Math.round(ts.reduce((a,b)=>a+b)/ts.length)+' ms':'—';
+  tr.children[1].innerHTML=`<span class="${ts.length===5?'ok':'bad'}">${ts.length} / 5</span>`;tr.children[2].textContent=avg;return ts.length}
+$('go').onclick=async()=>{
+  const url=$('url').value.trim().replace(/\/$/,''),key=$('key').value.trim();
+  try{localStorage.setItem('t_url',url);localStorage.setItem('t_key',key)}catch(e){}
+  $('out').innerHTML='';$('sum').textContent='';
+  const r=[];
+  r.push(await test('对照：GitHub Pages',s=>fetch('https://yihan498.github.io/ai-papers-illustrated/?t='+Date.now(),{mode:'no-cors',signal:s,cache:'no-store'})));
+  r.push(await test('supabase.com 官网',s=>fetch('https://supabase.com/?t='+Date.now(),{mode:'no-cors',signal:s,cache:'no-store'})));
+  if(url&&key){
+    r.push(await test('项目：登录服务',s=>fetch(url+'/auth/v1/health',{headers:{apikey:key},signal:s,cache:'no-store'}).then(x=>{if(!x.ok)throw 0})));
+    r.push(await test('项目：数据库接口',s=>fetch(url+'/rest/v1/',{headers:{apikey:key,Authorization:'Bearer '+key},signal:s,cache:'no-store'}).then(x=>{if(x.status>=500)throw 0})));
+  }else{$('sum').textContent='没填项目信息，只测了前两项。'}
+  $('sum').innerHTML+=` <span class="mut">测完把这张表截图发给我就行。</span>`;
+};
+</script>
+</body>
+</html>
