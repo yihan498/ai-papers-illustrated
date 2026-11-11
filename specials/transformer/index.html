@@ -194,23 +194,22 @@ html{scroll-behavior:smooth}
   </figure>
 
   <nav class="toc" aria-label="目录">
-    <a href="#s1"><span>1</span>从哪来：四篇论文的一条问题链</a>
-    <a href="#s2"><span>2</span>一层 Transformer 在做什么</a>
-    <a href="#s3"><span>3</span>三种形态：区别只在掩码</a>
-    <a href="#s4"><span>4</span>零件怎么演化：从 004 到 GPT-3</a>
-    <a href="#s5"><span>5</span>为什么它能被放大</a>
-    <a href="#s6"><span>6</span>后面的篇怎么用它</a>
-    <a href="#s7"><span>7</span>它留下的问题</a>
-    <a href="#after"><span>→</span>读完之后：自检和衔接</a>
+    <a href="#s1"><span>1</span>要解决什么问题：RNN 一步步算</a>
+    <a href="#s2"><span>2</span>核心做法：只用注意力传信息</a>
+    <a href="#s3"><span>3</span>一层里的其他零件：各对着一个问题</a>
+    <a href="#s4"><span>4</span>三种形态：区别只在掩码</a>
+    <a href="#s5"><span>5</span>证据：为什么它能被放大</a>
+    <a href="#s6"><span>6</span>后来：架构不动，动别的</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
   </nav>
 
   <div class="howto">
     <span class="alab">怎么读这一页</span>
     <ul>
-      <li><b>主线</b>：它从哪来 → 一层长什么样 → 三种形态 → 零件怎么变 → 为什么能做大 → 后面的论文怎么用它 → 还剩什么问题。每个零件都对着「删掉 RNN 后出现的一个问题」。</li>
-      <li>每个概念只讲到够用为止。完整推导在 <a href="../../papers/004-transformer/index.html">004 Transformer</a> 那一页，这里不重复。</li>
-      <li>括号里的「第 007 篇」等是出处。已上线的篇加了链接，007–018 篇还没上线，暂时只写编号。</li>
-      <li><b>📎 注解</b>是就地解释的概念，<b>🧭 延伸</b>可以跳过。标「我补充的」是我整理时的归纳或推测，论文里没有这样说。</li>
+      <li><b>正文只走一条线</b>：要解决什么问题 → 核心做法 → 一层里其他零件各补一个毛病 → 三种形态 → 证据（为什么能做大）→ 后来的论文怎么用它。只读每节标题和每段第一句，也能串起来。</li>
+      <li>公式和符号表、完整的零件演化表、位置编码等零件细节、和前几篇的对比与衔接、自检问题，都在页尾的<b>附录</b>里，默认折叠，标明对应哪一节。每个零件讲完，末尾会指出它对着哪个毛病、精确写法在附录哪里。</li>
+      <li>零件的完整推导在 <a href="../../papers/004-transformer/index.html">004 Transformer</a> 那一页，这里不重复；001–003 讲过的词向量、注意力，正文只带一句。</li>
+      <li>括号里的「第 007 篇」等是出处。已上线的篇加了链接，007–018 篇还没上线，暂时只写编号。标「我补充的」是我整理时的归纳或推测，论文里没有这样说。</li>
     </ul>
   </div>
 
@@ -226,7 +225,9 @@ html{scroll-behavior:smooth}
 
 
 <!-- ================= 1 ================= -->
-<h2 id="s1"><span class="no">1</span>从哪来：四篇论文的一条问题链</h2>
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>要解决什么问题：RNN 一步步算</h2>
 <p>Transformer 不是凭空出现的。前三篇每一篇都在补上一篇留下的最大缺口，它是第四步。</p>
 
 <figure class="fig">
@@ -254,43 +255,26 @@ html{scroll-behavior:smooth}
     <text class="sm m" x="340" y="182" text-anchor="middle">赭色是每一篇留下的缺口，下一篇就从这里接手</text>
   </svg>
   </div>
-  <figcaption>详细过程分别见 <a href="../../papers/001-nplm/index.html">001</a>、<a href="../../papers/002-seq2seq/index.html">002</a>、<a href="../../papers/003-bahdanau-attention/index.html">003</a>、<a href="../../papers/004-transformer/index.html">004</a> 四页。004 留下的两个缺口，到第 7 节再说。</figcaption>
+  <figcaption>详细过程分别见 <a href="../../papers/001-nplm/index.html">001</a>、<a href="../../papers/002-seq2seq/index.html">002</a>、<a href="../../papers/003-bahdanau-attention/index.html">003</a>、<a href="../../papers/004-transformer/index.html">004</a> 四页。004 留下的两个缺口，到第 6 节再说。</figcaption>
 </figure>
 
-<p>004 的核心一步，可以这样对照：</p>
-<div class="tbl"><table>
-  <thead><tr><th>谁负责</th><th>003</th><th>004</th></tr></thead>
-  <tbody>
-    <tr><td>读懂源句</td><td class="to">RNN 一步步读</td><td class="tn">编码器自注意力</td></tr>
-    <tr><td>翻译时回头看源句</td><td>注意力</td><td class="tn">编码器-解码器注意力</td></tr>
-    <tr><td>读懂已经写出的译文</td><td class="to">RNN 一步步读</td><td class="tn">解码器带掩码的自注意力</td></tr>
-  </tbody>
-</table></div>
-<p>为什么「删掉 RNN」这么重要？RNN 的第 50 步必须等第 49 步算完，GPU 上几千个核心只能排队。注意力里所有词对的打分是<b>一次矩阵乘法</b>，几千个核心可以同时算。后来谁能被做大，就是这一点决定的（第 5 节）。</p>
+<p>到 003，注意力已经有了，缺口在句子内部：RNN 仍然一个词一个词地读和写，第 50 步必须等第 49 步算完，远处的两个词要隔着 O(n) 步才能互相影响。</p>
+<p>为什么「删掉 RNN」这么重要？RNN 的第 50 步必须等第 49 步算完，GPU 上几千个核心只能排队。注意力里所有词对的打分是<b>一次矩阵乘法</b>，几千个核心可以同时算。后来谁能被做大，就是这一点决定的（第 5 节）。004 与 003 的逐项对照见附录 G。</p>
 
 
 <!-- ================= 2 ================= -->
-<h2 id="s2"><span class="no">2</span>一层 Transformer 在做什么：跟着一个 token 走一遍</h2>
+<h2 id="s2"><span class="no">2</span>核心做法：只用注意力传信息</h2>
+<p>办法是把 RNN 整个拿掉，只留注意力：每个词直接去看别的词，一步到位。先看总体结构，再看注意力本身怎么算。</p>
 
 <h3><span class="no">2.1</span>总图</h3>
 <p>今天最常见的是「仅解码器」形态（GPT 一族），图 0 画的就是它。原始的 004 是编码器和解码器两摞，下面是 004 原文的结构图，左边一摞读原文，右边一摞写译文。</p>
 <figure class="fig">
   <span class="tag">004 原文 Figure 1 · 模型结构</span>
   <img class="orig narrow" src="../../papers/004-transformer/orig-fig1.png" alt="004 原文 Figure 1：左边是编码器，重复 N 次，每层是多头注意力和前馈网络，各自后面跟一个 Add and Norm；底部是 Input Embedding 加 Positional Encoding。右边是解码器，重复 N 次，每层是带掩码的多头注意力、多头注意力、前馈网络，各自后面跟 Add and Norm；顶部接 Linear 和 Softmax，输出概率。编码器顶部的输出连进解码器中间那块多头注意力。" loading="lazy" width="646" height="929">
-  <figcaption>从下往上读。把右边那摞去掉「回头看左边」的中间一块，再把左边整摞删掉，就是图 0 的仅解码器。把右边整摞删掉，就是 BERT 用的仅编码器。第 3 节专门讲这三种形态。图源：Vaswani 等 2017 原文。</figcaption>
+  <figcaption>从下往上读。把右边那摞去掉「回头看左边」的中间一块，再把左边整摞删掉，就是图 0 的仅解码器。把右边整摞删掉，就是 BERT 用的仅编码器。第 4 节专门讲这三种形态。图源：Vaswani 等 2017 原文。</figcaption>
 </figure>
 
-<h3><span class="no">2.2</span>输入：词向量 + 位置向量</h3>
-<ul>
-  <li><b>词向量</b>：每个 token 查表得到一个 d_model 维的向量，001 就是这么做的。token 是子词，不是整词：004 用 BPE，第 007 篇改成字节级 BPE，基础词表只要 256 个字节，什么字符都能表示。</li>
-  <li><b>为什么必须加位置</b>：注意力是对一组向量做加权求和，打乱顺序结果不变。「狗咬人」和「人咬狗」在它眼里一样。RNN 天然按顺序读，删掉 RNN，就得把顺序<b>显式加回去</b>。</li>
-  <li><b>怎么加</b>：给每个位置一个同样 d_model 维的位置向量，<b>直接加</b>到词向量上。004 用固定的 sin / cos 公式，像一组转速不同的钟表指针，快的区分相邻位置，慢的区分远处位置。第 <a href="../../papers/006-gpt-1/index.html">006</a>、008 篇起改成像词向量一样<b>学出来</b>的位置向量。004 的消融实验里两种做法几乎一样（BLEU 25.7 对 25.8），关键是「有位置信息」，不是用哪种公式。</li>
-</ul>
-<aside class="anno"><span class="alab">📎 注解 · 学出来的位置向量有一个硬上限</span>
-<p>学出来的位置向量是一张表，表有多少行，模型就认识多少个位置。第 <a href="../../papers/006-gpt-1/index.html">006</a>、008 篇学了 512 个，第 007 篇 1024 个，第 011 篇 GPT-3 2048 个。上下文窗口就被这张表定死了，再长的输入没有对应的位置向量。这也是后来出现 RoPE 等新位置编码的原因之一。</p>
-</aside>
-
-<h3><span class="no">2.3</span>注意力的核心：查询、键、值</h3>
+<h3><span class="no">2.2</span>注意力的核心：查询、键、值</h3>
 <p>直觉是图书馆检索。每个词同时扮演三个角色：</p>
 <div class="tbl"><table>
   <thead><tr><th>角色</th><th>比喻</th><th>含义</th></tr></thead>
@@ -300,9 +284,7 @@ html{scroll-behavior:smooth}
     <tr><td><b class="tn">值 v</b></td><td>书的内容</td><td>选中我时，我实际交出的信息</td></tr>
   </tbody>
 </table></div>
-<p>三者都由同一个词向量 x 乘三个训练出来的矩阵得到：</p>
-<div class="formula">q = x · W<sup>Q</sup>　　k = x · W<sup>K</sup>　　v = x · W<sup>V</sup></div>
-<p>为什么要分成三个角色？同一个词「要找什么」和「能提供什么」不一样。「its」要找的是它指代的那个名词，它能提供的是「我是所有格代词」。</p>
+<p>三者都由同一个词向量 x 乘三个训练出来的矩阵得到（精确写法见附录 A 式 1）。为什么要分成三个角色？同一个词「要找什么」和「能提供什么」不一样。「its」要找的是它指代的那个名词，它能提供的是「我是所有格代词」。</p>
 <p>拿自己的 q 和每个词的 k 比对打分，分数经 softmax 变成权重，再按权重把每个词的 v 加起来。用 004 页里的小数字走一遍：</p>
 
 <figure class="fig">
@@ -325,25 +307,18 @@ html{scroll-behavior:smooth}
   <figcaption>第 ④ 列的蓝条长度就是权重。把三个词的 v 按这个比例加起来，就是词 1 这一轮「开会」带回来的信息。真实模型里所有词同时这样算，一次矩阵乘法完成。</figcaption>
 </figure>
 
-<p>四步合起来，004 原文写成一个式子：</p>
-<div class="formula">Attention( Q, K, V ) = softmax( Q·K<sup>T</sup> / √d<sub>k</sub> ) · V<span class="fsrc">（004 原文 Eq. 1）</span></div>
-<div class="tbl"><table>
-  <thead><tr><th>符号</th><th>白话</th></tr></thead>
-  <tbody>
-    <tr><td><code>Q</code>、<code>K</code>、<code>V</code></td><td>n 个词的查询、键、值各自摞成的矩阵，每行是一个词</td></tr>
-    <tr><td><code>Q·K<sup>T</sup></code></td><td>n × n 的打分表，第 i 行第 j 列 = 词 i 对词 j 的匹配分（图 2 的 ①）</td></tr>
-    <tr><td><code>√d<sub>k</sub></code></td><td>缩放因子，d_k 是每个键的长度（图 2 的 ②）。d_k = 64 时等于 8</td></tr>
-    <tr><td><code>softmax</code></td><td>每一行单独做，变成和为 1 的权重（图 2 的 ③）</td></tr>
-    <tr><td><code>· V</code></td><td>每个词按自己那行的权重，把所有词的 v 加起来（图 2 的 ④）</td></tr>
-  </tbody>
-</table></div>
-<p>两处关键细节：</p>
-<ul>
-  <li><b>为什么用点积，不用 003 的加性打分</b>：003 每对词都要过一次 tanh 小网络。点积可以直接用高度优化的矩阵乘法，快得多，也省内存。</li>
-  <li><b>为什么除以 √d_k</b>：q·k 是 d_k 个数相加，d_k 越大，分数波动越大（d_k = 64 时标准差约 8）。分数太大，softmax 会几乎把全部权重给一个词，导数接近 0，打分的参数就学不动了。除以 √d_k 把波动拉回 1 左右。004 原文用的是「We suspect」，这是一个假说。</li>
-</ul>
+<p><b>这一步对着第 1 节的毛病</b>：所有词对的打分是一次矩阵乘法，一层之内全部并行；任意两个词一步直达，不用隔着 O(n) 步。四步合起来的精确写法（004 原文 Eq. 1）、符号表，以及为什么用点积、为什么除以 √d_k，见附录 A 式 2 和附录 C。</p>
 
-<h3><span class="no">2.4</span>多头：同样的维度切成几份，各看各的</h3>
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>一层里的其他零件：各对着一个问题</h2>
+<p>只有注意力还不够用。删掉 RNN 之后又冒出几个新问题，每个问题由一个零件补上。下面每个零件都按「问题 → 做法 → 对着哪个问题」讲，公式和细节在附录。</p>
+
+<h3><span class="no">3.1</span>位置：注意力不认顺序</h3>
+<p><b>问题</b>：注意力是对一组向量做加权求和，打乱顺序结果不变。「狗咬人」和「人咬狗」在它眼里一样。RNN 天然按顺序读，删掉 RNN，就得把顺序<b>显式加回去</b>。</p>
+<p><b>做法</b>：给每个位置一个同样 d_model 维的位置向量，<b>直接加</b>到词向量上。004 的消融实验里，固定公式和学出来的位置向量几乎一样（BLEU 25.7 对 25.8），关键是「有位置信息」。<b>对着哪个问题</b>：丢失词序。sin / cos 公式的样子、词向量与 token 的细节、学出来的位置向量的硬上限，见附录 C 和附录 F。</p>
+
+<h3><span class="no">3.2</span>多头：同样的维度切成几份，各看各的</h3>
 <p><b>问题</b>：一次加权平均只能得到一个混合结果。一个词同时需要「语法上的主语」和「代词指谁」两类信息，平均之后两者都模糊。004 原文说这「降低了有效分辨率」。</p>
 <p><b>做法</b>：把 d_model 维切成 h 份，每份各做一次注意力，再拼回来，乘一个矩阵 W<sup>O</sup> 混合。</p>
 <figure class="fig">
@@ -366,16 +341,15 @@ html{scroll-behavior:smooth}
   </div>
   <figcaption>每个头有自己的 W<sup>Q</sup>、W<sup>K</sup>、W<sup>V</sup>，所以能学会关注不同的东西。004 的可视化里，有的头追踪远距离依赖，有的头在做指代消解（原文措辞是「似乎」）。</figcaption>
 </figure>
-<p><b>证据</b>：004 的消融实验里，单头比最好的设置低 0.9 BLEU；头太多（32 头、每头 16 维）也会变差。</p>
-<p><b>一个跨篇的规律</b>：从 004 到 GPT-3 的大多数尺寸，<b>每个头都是 64 维左右</b>。004、006、008 都是 64；GPT-3 小尺寸 64，大尺寸 128（第 011 篇）。模型变宽时，主要是加头数，不是加宽每个头。</p>
+<p><b>证据</b>：004 的消融实验里，单头比最好的设置低 0.9 BLEU；头太多（32 头、每头 16 维）也会变差。<b>对着哪个问题</b>：一次加权平均把信息抹平。每个头一般 64 维左右的跨篇规律见附录 C。</p>
 
-<h3><span class="no">2.5</span>掩码：决定每个词能看见谁</h3>
+<h3><span class="no">3.3</span>掩码：决定每个词能看见谁</h3>
 <p><b>问题</b>：训练时整段文字一次喂进去，所有位置同时算。如果位置 3 能看到位置 4、5，预测下一个词时就等于偷看了答案。</p>
 <p><b>做法</b>：softmax 之前，把「位置 i 看比它靠后的位置 j」的分数设成 −∞，权重就变成 0。位置 1 只看自己，位置 2 看 1、2，以此类推。图 6 最左边那张就是它。</p>
 <p><b>这一招是训练快的另一半原因</b>：有了掩码，整句同时算，每个位置的结果却和「一个词一个词生成」时完全一样。RNN 的解码器训练时也必须串行，Transformer 不用。但<b>生成时仍是逐词的</b>：第 4 个词要等第 3 个词生成出来。</p>
-<p>掩码还是第 3 节「三种形态」的分界线。</p>
+<p><b>对着哪个问题</b>：训练时并行会偷看后文。掩码还是第 4 节「三种形态」的分界线。</p>
 
-<h3><span class="no">2.6</span>前馈网络 FFN：每个词单独加工，参数的大头</h3>
+<h3><span class="no">3.4</span>前馈网络 FFN：每个词单独加工，参数的大头</h3>
 <p><b>做法</b>：对每个位置单独、用同一套参数算一次「放大 → 非线性 → 压回」：d_model → 4·d_model → d_model。004 是 512 → 2048 → 512。</p>
 <p><b>为什么需要它</b>：注意力的输出是别人的 v 的加权平均，负责<b>收集</b>信息。加权平均本身是线性的，加工能力有限。FFN 给每个位置一次非线性加工的机会。</p>
 <p><b>一个常被忽略的事实：参数主要在 FFN 里，不在注意力里。</b></p>
@@ -391,14 +365,14 @@ html{scroll-behavior:smooth}
     <path class="mutS" d="M242 92 V100 H638 V92"/>
     <text class="sm tn b" x="140" y="122" text-anchor="middle">注意力 4d²，约 1/3</text>
     <text class="sm b" x="440" y="122" text-anchor="middle">前馈网络 8d²，约 2/3</text>
-    <text class="sm m" x="340" y="154" text-anchor="middle">每层合计约 12d²。第 5 节的参数量公式就从这里来</text>
+    <text class="sm m" x="340" y="154" text-anchor="middle">每层合计约 12d²。附录 A 的参数量公式就从这里来</text>
   </svg>
   </div>
-  <figcaption>004 和<a href="../../papers/006-gpt-1/index.html">第 006 篇</a>的参数统计都能对上这个比例。记住「12d²」，第 5.3 节会用它验算 GPT-3 的 1750 亿。</figcaption>
+  <figcaption>004 和<a href="../../papers/006-gpt-1/index.html">第 006 篇</a>的参数统计都能对上这个比例。记住「12d²」，附录 A 会用它验算 GPT-3 的 1750 亿。</figcaption>
 </figure>
-<p><b>激活函数</b>：004 用 ReLU，负数直接砍成 0。<a href="../../papers/006-gpt-1/index.html">第 006 篇</a>起改成 GELU，一条平滑的曲线，小的负数保留一点点。</p>
+<p><b>对着哪个问题</b>：只有加权平均，缺少非线性加工。ReLU 和 GELU 的区别见附录 C；12d² 的验算表见附录 A。</p>
 
-<h3><span class="no">2.7</span>残差连接 + 层归一化：让几十层叠得起来</h3>
+<h3><span class="no">3.5</span>残差连接 + 层归一化：让几十层叠得起来</h3>
 <ul>
   <li><b>残差</b>：输出 = x + 子层(x)。像在原稿上批注，而不是重写全文。加法的导数是 1，梯度可以沿「x」这条直通车道原样流回前面的层。要能相加，每个子层的输出都必须是 d_model 维，所以整个模型的宽度是统一的。</li>
   <li><b>层归一化</b>：把一个词的向量减去均值、除以标准差，再乘一个可学的缩放、加一个偏移。上一层输出不管多大，进下一层前都被拉回稳定范围。</li>
@@ -445,25 +419,27 @@ html{scroll-behavior:smooth}
   <figcaption>粗线是主干，也就是梯度回传的主路。左边每一层的主干都要穿过一次层归一化；右边主干上只剩加法，梯度一路畅通，48 层也训得稳。代价是最后要补一层层归一化。第 007 篇还把残差分支的初始权重乘上 1/√N，抵消层数多了信号越加越大的问题。</figcaption>
 </figure>
 <p><b>为什么这一节重要</b>：没有这两样，「层数」就不是一个能随便拧的旋钮。004 是 6 层，GPT-3 是 96 层，中间能一路加上去，靠的是它们。</p>
+<p><b>对着哪个问题</b>：叠深了难训练。</p>
 
-<h3><span class="no">2.8</span>小结：每个零件对着一个问题</h3>
+<h3><span class="no">3.6</span>小结：每个零件对着一个问题</h3>
 <div class="tbl"><table>
   <thead><tr><th>删掉 RNN 后出现的问题</th><th>补救的零件</th></tr></thead>
   <tbody>
     <tr><td class="to">句子内部只能串行，远处的词要走 O(n) 步</td><td class="tn">自注意力：一次矩阵乘法，任意两词一步直连</td></tr>
-    <tr><td class="to">丢失词序</td><td class="tn">位置编码 / 位置向量（2.2）</td></tr>
-    <tr><td class="to">一次加权平均把信息抹平</td><td class="tn">多头注意力（2.4）</td></tr>
-    <tr><td class="to">训练时并行，会偷看后文</td><td class="tn">掩码（2.5）</td></tr>
-    <tr><td class="to">只有加权平均，缺少非线性加工</td><td class="tn">前馈网络 FFN（2.6）</td></tr>
-    <tr><td class="to">叠深了难训练</td><td class="tn">残差 + 层归一化，后来改成 Pre-LN（2.7）</td></tr>
+    <tr><td class="to">丢失词序</td><td class="tn">位置编码 / 位置向量（3.1）</td></tr>
+    <tr><td class="to">一次加权平均把信息抹平</td><td class="tn">多头注意力（3.2）</td></tr>
+    <tr><td class="to">训练时并行，会偷看后文</td><td class="tn">掩码（3.3）</td></tr>
+    <tr><td class="to">只有加权平均，缺少非线性加工</td><td class="tn">前馈网络 FFN（3.4）</td></tr>
+    <tr><td class="to">叠深了难训练</td><td class="tn">残差 + 层归一化，后来改成 Pre-LN（3.5）</td></tr>
   </tbody>
 </table></div>
 
 
-<!-- ================= 3 ================= -->
-<h2 id="s3"><span class="no">3</span>三种形态：区别只在掩码</h2>
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>三种形态：区别只在掩码</h2>
+<p>零件齐了。把它们怎么拼、掩码怎么开，就得到三种形态。</p>
 
-<h3><span class="no">3.1</span>一张图、一张表看全</h3>
+<h3><span class="no">4.1</span>一张图、一张表看全</h3>
 <figure class="fig">
   <span class="tag">图 6 · 三种形态 = 三种「谁能看见谁」（蓝格 = 能看见）</span>
   <div class="sv">
@@ -527,40 +503,31 @@ html{scroll-behavior:smooth}
   </tbody>
 </table></div>
 
-<h3><span class="no">3.2</span>仅解码器：为什么只要一半就够</h3>
+<h3><span class="no">4.2</span>仅解码器：为什么只要一半就够</h3>
 <p>去掉编码器后，解码器每层剩下的就是「带掩码的自注意力 + FFN」，和 004 的编码器层只差一个掩码。训练信号从「成对的翻译数据」换成「文本本身」：下一个词就是现成的答案，不需要人标注，所以能用海量文本预训练（<a href="../../papers/006-gpt-1/index.html">第 006 篇</a>）。</p>
-<p>一个后果：因为有掩码，<b>最后一个位置是唯一看过整段输入的位置</b>。所以<a href="../../papers/006-gpt-1/index.html">第 006 篇</a>微调做分类时，从最后一个位置取表示；第 017、018 篇的奖励模型，也在最后一个 token 上打分（6.4）。</p>
+<p>一个后果：因为有掩码，<b>最后一个位置是唯一看过整段输入的位置</b>。所以<a href="../../papers/006-gpt-1/index.html">第 006 篇</a>微调做分类时，从最后一个位置取表示；第 017、018 篇的奖励模型，也在最后一个 token 上打分（附录 E）。</p>
 
-<h3><span class="no">3.3</span>仅编码器：为什么双向需要完形填空</h3>
+<h3><span class="no">4.3</span>仅编码器：为什么双向需要完形填空</h3>
 <p>想让每个词同时看左右，又用「预测下一个词」来训练，就会泄漏：允许看右边，答案就在输入里。更隐蔽的是，即使只在输入层挡住某个词，它的信息也会被别的位置在第 1 层吸收，第 2 层再传回来，层数越多越容易绕回去（第 008 篇）。</p>
 <p>BERT 的解法：<b>把要预测的词从输入里拿掉</b>，换成 <code>[MASK]</code>。被预测的词根本不在输入里，就可以放心用全双向注意力。代价是每条样本只能在约 15% 的位置上学习。</p>
 <p>第 008 篇特意把 BERT-BASE 定成和 GPT-1 一样大（12 层、768 维），关键区别只有注意力的方向。这是本系列里最干净的一组「掩码决定一切」的对照。</p>
-
-<h3><span class="no">3.4</span>后来为什么是仅解码器赢了</h3>
-<p>第 008 篇发表时，双向在理解类任务上全面领先。但本系列之后的主线（第 011、012、017、018 篇）全是仅解码器。</p>
-<p class="note"><span class="lab">我补充的</span>从这些解读里能找到三条理由。一，一个目标兼顾理解和生成：预测下一个词既能续写，也能把任务写成文字让它续写来做理解题（第 007、011 篇），BERT 要生成就得另接解码器。二，每个位置都在学：仅解码器每个位置都预测下一个词，BERT 只在约 15% 的位置上算损失。三，规模化路线被它走通了：第 009 篇的缩放定律、第 011 篇的上下文学习都在仅解码器上做出来，后面的人沿着这条已被验证的路继续走。这是我的归纳，哪条起决定作用，本系列的论文没有回答。第 013 篇的 BART 也说明，编码器-解码器在「输入一段、输出一段」的任务上仍然好用。</p>
+<p>后来为什么是仅解码器赢了，是我补充的一段推测，见附录 D。</p>
 
 
-<!-- ================= 4 ================= -->
-<h2 id="s4"><span class="no">4</span>零件怎么演化：从 004 到 GPT-3</h2>
-<p>骨架一直没变。下面是被换掉或被放大的部分。</p>
-<div class="tbl"><table>
-  <thead><tr><th></th><th>004 base</th><th>006 GPT-1</th><th>007 GPT-2 最大</th><th>008 BERT-BASE</th><th>011 GPT-3</th></tr></thead>
-  <tbody>
-    <tr><td>形态</td><td>编码器-解码器</td><td>仅解码器</td><td>仅解码器</td><td>仅编码器</td><td>仅解码器</td></tr>
-    <tr><td>层数</td><td class="num">6 + 6</td><td class="num">12</td><td class="num">48</td><td class="num">12</td><td class="num">96</td></tr>
-    <tr><td>d_model</td><td class="num">512</td><td class="num">768</td><td class="num">1600</td><td class="num">768</td><td class="num">12288</td></tr>
-    <tr><td>头数 × 每头维度</td><td class="num">8 × 64</td><td class="num">12 × 64</td><td>未列出</td><td class="num">12 × 64</td><td class="num">96 × 128</td></tr>
-    <tr><td>FFN 宽度</td><td class="num">2048（4×）</td><td class="num">3072（4×）</td><td>4×</td><td class="num">3072（4×）</td><td>4×</td></tr>
-    <tr><td>激活</td><td>ReLU</td><td>GELU</td><td>GELU</td><td>GELU</td><td>沿用</td></tr>
-    <tr><td>位置编码</td><td class="to">固定 sin/cos</td><td class="tn">学出来的</td><td>沿用 GPT-1（待核实）</td><td class="tn">学出来的</td><td class="tn">学出来的</td></tr>
-    <tr><td>层归一化</td><td class="to">Post-LN</td><td>Post-LN</td><td class="tn"><b>Pre-LN</b> + 末层 LN</td><td>Post-LN</td><td class="tn">Pre-LN</td></tr>
-    <tr><td>注意力</td><td>全连接</td><td>全连接</td><td>全连接</td><td>全连接</td><td class="tn"><b>全连接与局部交替</b></td></tr>
-    <tr><td>上下文</td><td>按句子</td><td class="num">512</td><td class="num">1024</td><td class="num">512</td><td class="num">2048</td></tr>
-    <tr><td>参数量</td><td class="num">6500 万</td><td class="num">约 1.17 亿</td><td class="num">15 亿</td><td class="num">1.1 亿</td><td class="num">1750 亿</td></tr>
-  </tbody>
-</table></div>
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>证据：为什么它能被放大</h2>
+<p>「模型越大越好」在 004 里只是消融实验里的一句观察。要把它变成 1750 亿参数的现实，需要三件事同时成立：算得快、训得稳、放大有回报。</p>
 
+<h3><span class="no">5.1</span>算得快、训得稳</h3>
+<ul>
+  <li><b>并行（004）</b>：每层的串行步数是 O(1)，RNN 是 O(n)。004 base 在 8 块 P100 上训 12 小时，就超过了此前所有模型，训练成本是对手的几分之一到几十分之一。这和 GPU「擅长同时做很多一样的矩阵运算」高度契合。</li>
+  <li><b>优化器（<a href="../../papers/005-adam/index.html">第 005 篇 Adam</a>）</b>：给每个参数一个自适应的步长。004 用的 β₂ = 0.98、ε = 10⁻⁹ 比默认值更保守，第 005 篇解释了这几个数的含义。</li>
+  <li><b>学习率预热（004）</b>：开头参数是随机的，梯度方向不可靠。先用小学习率走几千步，再升到峰值，然后慢慢降。这套「预热 + 衰减」一直沿用到 GPT-3（第 011 篇：预热 3.75 亿 token 后余弦衰减）。</li>
+  <li><b>Pre-LN 与残差缩放（第 007 篇）</b>：让 48 层、96 层也能稳定训练（3.5）。</li>
+</ul>
+
+<h3><span class="no">5.2</span>放大之后，骨架几乎没变</h3>
+<p>从 004 到 GPT-3 三年，参数量涨了约 2700 倍，每一层里还是那几样零件。真正改了机制的只有三处：位置编码从公式换成学出来的，效果相当；层归一化从 Post 挪到 Pre，为了叠深（第 007 篇）；GPT-3 一半的层改用局部注意力，为了省算力（第 011 篇，原文没有消融，影响多大不清楚）。其余全是放大。逐模型的完整对照表见附录 B。</p>
 <figure class="fig">
   <span class="tag">图 7 · 参数量从 6500 万到 1750 亿（横轴是对数刻度，每格 10 倍）</span>
   <div class="sv">
@@ -576,27 +543,8 @@ html{scroll-behavior:smooth}
   </div>
   <figcaption>条的长度按参数量的对数画。从 004 到 GPT-3 三年，参数量涨了约 2700 倍，但每一层里还是那几样零件。</figcaption>
 </figure>
-<p>怎么读这张表：</p>
-<ol>
-  <li><b>真正改了机制的只有三处</b>：位置编码从公式换成学出来的，效果相当；层归一化从 Post 挪到 Pre，为了叠深（第 007 篇）；GPT-3 一半的层改用局部注意力，为了省算力（第 011 篇，原文没有消融，影响多大不清楚）。</li>
-  <li><b>其余全是放大</b>：层数 6 → 96，宽度 512 → 12288，上下文从「按句子」到 2048。FFN 宽度 = 4 × d_model、每头 64–128 维这两个比例，从 004 一直沿用到 GPT-3。</li>
-  <li><b>后来的模型干脆把形状比例也固定了</b>：第 017 篇的模型族规定 d_model = 128 × 层数、FFN 宽度 = 4 × d_model，依据就是第 009 篇的「形状几乎无关」（5.2）。第 010 篇的 Chinchilla 和 Gopher 用同一套架构，只改参数量和数据量。</li>
-</ol>
 
-
-<!-- ================= 5 ================= -->
-<h2 id="s5"><span class="no">5</span>为什么它能被放大</h2>
-<p>「模型越大越好」在 004 里只是消融实验里的一句观察。要把它变成 1750 亿参数的现实，需要三件事同时成立：算得快、训得稳、放大有回报。</p>
-
-<h3><span class="no">5.1</span>算得快、训得稳</h3>
-<ul>
-  <li><b>并行（004）</b>：每层的串行步数是 O(1)，RNN 是 O(n)。004 base 在 8 块 P100 上训 12 小时，就超过了此前所有模型，训练成本是对手的几分之一到几十分之一。这和 GPU「擅长同时做很多一样的矩阵运算」高度契合。</li>
-  <li><b>优化器（<a href="../../papers/005-adam/index.html">第 005 篇 Adam</a>）</b>：给每个参数一个自适应的步长。004 用的 β₂ = 0.98、ε = 10⁻⁹ 比默认值更保守，第 005 篇解释了这几个数的含义。</li>
-  <li><b>学习率预热（004）</b>：开头参数是随机的，梯度方向不可靠。先用小学习率走几千步，再升到峰值，然后慢慢降。这套「预热 + 衰减」一直沿用到 GPT-3（第 011 篇：预热 3.75 亿 token 后余弦衰减）。</li>
-  <li><b>Pre-LN 与残差缩放（第 007 篇）</b>：让 48 层、96 层也能稳定训练（2.7）。</li>
-</ul>
-
-<h3><span class="no">5.2</span>放大有回报，而且可预测：第 009 篇</h3>
+<h3><span class="no">5.3</span>放大有回报，而且可预测：第 009 篇</h3>
 <p>第 009 篇不是新架构，而是对 Transformer 做系统测量。和架构直接相关的结论有三条。</p>
 <p><b>一，形状几乎无关。</b>参数量相近时，6 层 × 4288 维和 48 层 × 1600 维的损失相差在 3% 以内。宽高比变化 40 倍，损失只变几个百分点。</p>
 <figure class="fig">
@@ -618,39 +566,14 @@ html{scroll-behavior:smooth}
 </figure>
 <p><b>二，Transformer 比 LSTM 更会用长上下文。</b>LSTM 在约 100 个 token 之后基本不再改善，Transformer 一直到上下文末尾都在改善；同参数量下，Transformer 渐近胜出。这是第 1 节「一步直连 vs 一步步传」在数量上的证据。<a href="../../papers/006-gpt-1/index.html">第 006 篇</a>也有一个较粗的对照：同样的框架换成单层 LSTM，平均分掉 5.6。</p>
 <p><b>三，损失随参数、数据、算力按幂律下降</b>，可以先用小模型预测大模型。第 010 篇在此基础上修正了「参数和数据该怎么配」。</p>
-
-<h3><span class="no">5.3</span>参数都在哪：一个公式贯穿全系列</h3>
-<p>第 2.6 节的结论是每层约 12d²。所以仅解码器 Transformer 的参数量近似为：</p>
-<div class="formula">N ≈ 12 · L · d<sub>model</sub><sup>2</sup><span class="fsrc">（第 009 篇，不含词表嵌入）</span></div>
-<div class="tbl"><table>
-  <thead><tr><th>符号</th><th>白话</th></tr></thead>
-  <tbody>
-    <tr><td><code>N</code></td><td>模型的参数量</td></tr>
-    <tr><td><code>12</code></td><td>每层 12 个 d × d 矩阵的量：注意力 4 个，FFN 相当于 8 个（图 4）</td></tr>
-    <tr><td><code>L</code></td><td>层数</td></tr>
-    <tr><td><code>d<sub>model</sub></code></td><td>每个词向量的维度，也是整个模型的宽度</td></tr>
-  </tbody>
-</table></div>
-<p>拿它验算本系列出现过的模型（数字来自各篇解读的验算）：</p>
-<div class="tbl"><table>
-  <thead><tr><th>模型</th><th class="num">层数</th><th class="num">d_model</th><th class="num">12·L·d²</th><th class="num">加嵌入后</th><th class="num">原文标称</th></tr></thead>
-  <tbody>
-    <tr><td>GPT-1</td><td class="num">12</td><td class="num">768</td><td class="num">8490 万</td><td class="num">约 1.16 亿</td><td class="num">约 1.17 亿</td></tr>
-    <tr><td>BERT-BASE</td><td class="num">12</td><td class="num">768</td><td class="num">8500 万</td><td class="num">约 1.09 亿</td><td class="num">1.1 亿</td></tr>
-    <tr><td>GPT-3 Small</td><td class="num">12</td><td class="num">768</td><td class="num">8490 万</td><td class="num">约 1.25 亿</td><td class="num">1.25 亿</td></tr>
-    <tr><td>GPT-2 最大</td><td class="num">48</td><td class="num">1600</td><td class="num">14.7 亿</td><td class="num">约 15.6 亿</td><td class="num">15.4 亿</td></tr>
-    <tr><td><b>GPT-3</b></td><td class="num">96</td><td class="num">12288</td><td class="num">1739 亿</td><td class="num">约 1745 亿</td><td class="num"><b>1750 亿</b></td></tr>
-  </tbody>
-</table></div>
-<p><b>怎么读</b>：模型越大，嵌入层占比越小。GPT-3 里词表嵌入约 6 亿，不到总数的 0.4%。<b>参数几乎全在每层那几个 d × d 的大矩阵里</b>。这就是第 014 篇 LoRA 只盯着这些矩阵下手的原因（6.3）。</p>
-<aside class="ext"><span class="alab">🧭 延伸 · 训练算力 C ≈ 6ND（跳过不影响理解）</span>
-<p>第 009 篇配套的算力估算：训练一个参数量为 N 的模型、喂 D 个 token，总运算量约 6·N·D。每个参数、每个 token，前向约 2 次运算，反向约 4 次。有了它，可以在开训之前估出要多少 GPU 时间。</p>
-</aside>
+<p>每层约 12d²，所以参数几乎全在每层那几个 d × d 的大矩阵里；GPT-3 里词表嵌入约 6 亿，不到总数的 0.4%。精确公式和对五个模型的验算见附录 A 式 3。</p>
 
 
 <!-- ================= 6 ================= -->
-<h2 id="s6"><span class="no">6</span>后面的篇怎么用它：架构不动，动别的</h2>
-<p>从<a href="../../papers/006-gpt-1/index.html">第 006 篇</a>开始，几乎每篇都<b>刻意不改架构</b>。第 012 篇说「Codex 的架构就是 GPT-3 的架构」，第 018 篇说「所有模型都用 GPT-3 架构」。创新发生在架构外面。</p>
+<h2 id="s6"><span class="no">6</span>后来：架构不动，动别的</h2>
+
+<h3><span class="no">6.1</span>后面的篇怎么用它</h3>
+<p>既然放大有回报、架构又够用，后面的论文就不再动架构。从<a href="../../papers/006-gpt-1/index.html">第 006 篇</a>开始，几乎每篇都<b>刻意不改架构</b>。第 012 篇说「Codex 的架构就是 GPT-3 的架构」，第 018 篇说「所有模型都用 GPT-3 架构」。创新发生在架构外面。</p>
 <figure class="fig">
   <span class="tag">图 9 · 后面的论文动的是这四个地方，中间那摞基本不碰</span>
   <div class="sv">
@@ -685,10 +608,128 @@ html{scroll-behavior:smooth}
     <text class="sm m" x="340" y="40" text-anchor="middle">009 · 010：不改任何地方，只测量放大的规律</text>
   </svg>
   </div>
-  <figcaption>按「动了哪里」分四类，下面 6.1–6.4 逐个讲。第 007、011 篇是例外，它们改了 Pre-LN 和局部注意力，但也只是零件的位置和范围。</figcaption>
+  <figcaption>按「动了哪里」分四类，四种改法的细节见附录 E。第 007、011 篇是例外，它们改了 Pre-LN 和局部注意力，但也只是零件的位置和范围。</figcaption>
 </figure>
+<div class="tbl"><table>
+  <thead><tr><th>动了哪里</th><th>篇</th><th>架构改了吗</th></tr></thead>
+  <tbody>
+    <tr><td>砍掉一半 + 换训练目标</td><td>006、008</td><td>只改掩码</td></tr>
+    <tr><td>稳定性细节 + 放大</td><td>007、011</td><td>Pre-LN、局部注意力</td></tr>
+    <tr><td>测量规模规律</td><td>009、010</td><td>不改</td></tr>
+    <tr><td>换数据 / 分词器</td><td>012</td><td>不改</td></tr>
+    <tr><td>外挂检索、拼接输入</td><td>013</td><td>不改</td></tr>
+    <tr><td>冻结大矩阵、加低秩旁路</td><td>014</td><td>不改主体</td></tr>
+    <tr><td>换输出头 + 新训练流程</td><td>017、018</td><td>只换最后一层</td></tr>
+  </tbody>
+</table></div>
+<p class="note"><span class="lab">我补充的</span>一句话：004 之后，Transformer 成了一个通用的计算底座。后面的论文争的是<b>喂什么数据、用什么目标、放多大、怎么用</b>，而不是网络长什么样。</p>
 
-<h3><span class="no">6.1</span>改输入：把任务写进序列里</h3>
+<h3><span class="no">6.2</span>它留下的问题</h3>
+<div class="tbl"><table>
+  <thead><tr><th>问题</th><th>来源</th><th>本系列里的处理</th></tr></thead>
+  <tbody>
+    <tr><td class="to">注意力的代价随长度<b>平方</b>增长</td><td>004 的复杂度对比</td><td>004 提出「只看附近 r 个位置」但没做实验；GPT-3 交替用全连接和局部注意力，没有消融（第 011 篇）</td></tr>
+    <tr><td class="to">生成时仍逐词串行</td><td>004 的掩码一节</td><td>本系列没有处理。第 011 篇的「一次前向」指读完输入只要一次，生成每个新 token 仍要再算一次</td></tr>
+    <tr><td class="to">位置编码外推到更长序列</td><td>004 只是期望，没验证</td><td>学出来的位置向量有硬上限（附录 F）；新位置编码不在本系列范围内</td></tr>
+    <tr><td class="to">点积打分可能不够强</td><td>004 的消融实验</td><td>没有处理；第 009 篇的结论暗示，这类细节在规模面前影响较小</td></tr>
+  </tbody>
+</table></div>
+
+
+<!-- ================= after ================= -->
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块默认折叠，点开看。</p>
+
+<details class="ext"><summary>A · 公式与符号表</summary>
+<p><b>式 1：三个角色怎么来</b></p>
+<div class="formula">q = x · W<sup>Q</sup>　　k = x · W<sup>K</sup>　　v = x · W<sup>V</sup></div>
+<p><b>式 2：注意力，四步合成一个式子</b></p>
+<div class="formula">Attention( Q, K, V ) = softmax( Q·K<sup>T</sup> / √d<sub>k</sub> ) · V<span class="fsrc">（004 原文 Eq. 1）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th></tr></thead>
+  <tbody>
+    <tr><td><code>Q</code>、<code>K</code>、<code>V</code></td><td>n 个词的查询、键、值各自摞成的矩阵，每行是一个词</td></tr>
+    <tr><td><code>Q·K<sup>T</sup></code></td><td>n × n 的打分表，第 i 行第 j 列 = 词 i 对词 j 的匹配分（图 2 的 ①）</td></tr>
+    <tr><td><code>√d<sub>k</sub></code></td><td>缩放因子，d_k 是每个键的长度（图 2 的 ②）。d_k = 64 时等于 8</td></tr>
+    <tr><td><code>softmax</code></td><td>每一行单独做，变成和为 1 的权重（图 2 的 ③）</td></tr>
+    <tr><td><code>· V</code></td><td>每个词按自己那行的权重，把所有词的 v 加起来（图 2 的 ④）</td></tr>
+  </tbody>
+</table></div>
+<p><b>式 3：参数量近似</b>。每层 12d² 的来源是图 4：注意力 4 个 d × d 矩阵，FFN 相当于 8 个。所以仅解码器 Transformer 的参数量近似为：</p>
+<div class="formula">N ≈ 12 · L · d<sub>model</sub><sup>2</sup><span class="fsrc">（第 009 篇，不含词表嵌入）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th></tr></thead>
+  <tbody>
+    <tr><td><code>N</code></td><td>模型的参数量</td></tr>
+    <tr><td><code>12</code></td><td>每层 12 个 d × d 矩阵的量：注意力 4 个，FFN 相当于 8 个（图 4）</td></tr>
+    <tr><td><code>L</code></td><td>层数</td></tr>
+    <tr><td><code>d<sub>model</sub></code></td><td>每个词向量的维度，也是整个模型的宽度</td></tr>
+  </tbody>
+</table></div>
+<p>拿它验算本系列出现过的模型（数字来自各篇解读的验算）：</p>
+<div class="tbl"><table>
+  <thead><tr><th>模型</th><th class="num">层数</th><th class="num">d_model</th><th class="num">12·L·d²</th><th class="num">加嵌入后</th><th class="num">原文标称</th></tr></thead>
+  <tbody>
+    <tr><td>GPT-1</td><td class="num">12</td><td class="num">768</td><td class="num">8490 万</td><td class="num">约 1.16 亿</td><td class="num">约 1.17 亿</td></tr>
+    <tr><td>BERT-BASE</td><td class="num">12</td><td class="num">768</td><td class="num">8500 万</td><td class="num">约 1.09 亿</td><td class="num">1.1 亿</td></tr>
+    <tr><td>GPT-3 Small</td><td class="num">12</td><td class="num">768</td><td class="num">8490 万</td><td class="num">约 1.25 亿</td><td class="num">1.25 亿</td></tr>
+    <tr><td>GPT-2 最大</td><td class="num">48</td><td class="num">1600</td><td class="num">14.7 亿</td><td class="num">约 15.6 亿</td><td class="num">15.4 亿</td></tr>
+    <tr><td><b>GPT-3</b></td><td class="num">96</td><td class="num">12288</td><td class="num">1739 亿</td><td class="num">约 1745 亿</td><td class="num"><b>1750 亿</b></td></tr>
+  </tbody>
+</table></div>
+</details>
+
+<details class="ext"><summary>B · 零件演化完整表：从 004 到 GPT-3</summary>
+<p>骨架一直没变。下面是被换掉或被放大的部分。</p>
+<div class="tbl"><table>
+  <thead><tr><th></th><th>004 base</th><th>006 GPT-1</th><th>007 GPT-2 最大</th><th>008 BERT-BASE</th><th>011 GPT-3</th></tr></thead>
+  <tbody>
+    <tr><td>形态</td><td>编码器-解码器</td><td>仅解码器</td><td>仅解码器</td><td>仅编码器</td><td>仅解码器</td></tr>
+    <tr><td>层数</td><td class="num">6 + 6</td><td class="num">12</td><td class="num">48</td><td class="num">12</td><td class="num">96</td></tr>
+    <tr><td>d_model</td><td class="num">512</td><td class="num">768</td><td class="num">1600</td><td class="num">768</td><td class="num">12288</td></tr>
+    <tr><td>头数 × 每头维度</td><td class="num">8 × 64</td><td class="num">12 × 64</td><td>未列出</td><td class="num">12 × 64</td><td class="num">96 × 128</td></tr>
+    <tr><td>FFN 宽度</td><td class="num">2048（4×）</td><td class="num">3072（4×）</td><td>4×</td><td class="num">3072（4×）</td><td>4×</td></tr>
+    <tr><td>激活</td><td>ReLU</td><td>GELU</td><td>GELU</td><td>GELU</td><td>沿用</td></tr>
+    <tr><td>位置编码</td><td class="to">固定 sin/cos</td><td class="tn">学出来的</td><td>沿用 GPT-1（待核实）</td><td class="tn">学出来的</td><td class="tn">学出来的</td></tr>
+    <tr><td>层归一化</td><td class="to">Post-LN</td><td>Post-LN</td><td class="tn"><b>Pre-LN</b> + 末层 LN</td><td>Post-LN</td><td class="tn">Pre-LN</td></tr>
+    <tr><td>注意力</td><td>全连接</td><td>全连接</td><td>全连接</td><td>全连接</td><td class="tn"><b>全连接与局部交替</b></td></tr>
+    <tr><td>上下文</td><td>按句子</td><td class="num">512</td><td class="num">1024</td><td class="num">512</td><td class="num">2048</td></tr>
+    <tr><td>参数量</td><td class="num">6500 万</td><td class="num">约 1.17 亿</td><td class="num">15 亿</td><td class="num">1.1 亿</td><td class="num">1750 亿</td></tr>
+  </tbody>
+</table></div>
+<p>怎么读这张表：</p>
+<ol>
+  <li><b>真正改了机制的只有三处</b>：位置编码从公式换成学出来的，效果相当；层归一化从 Post 挪到 Pre，为了叠深（第 007 篇）；GPT-3 一半的层改用局部注意力，为了省算力（第 011 篇，原文没有消融，影响多大不清楚）。</li>
+  <li><b>其余全是放大</b>：层数 6 → 96，宽度 512 → 12288，上下文从「按句子」到 2048。FFN 宽度 = 4 × d_model、每头 64–128 维这两个比例，从 004 一直沿用到 GPT-3。</li>
+  <li><b>后来的模型干脆把形状比例也固定了</b>：第 017 篇的模型族规定 d_model = 128 × 层数、FFN 宽度 = 4 × d_model，依据就是第 009 篇的「形状几乎无关」（5.3）。第 010 篇的 Chinchilla 和 Gopher 用同一套架构，只改参数量和数据量。</li>
+</ol>
+</details>
+
+<details class="ext"><summary>C · 零件细节：输入、位置、点积与缩放、头的维度、激活函数</summary>
+<p><b>输入：词向量与 token</b></p>
+<ul>
+  <li><b>词向量</b>：每个 token 查表得到一个 d_model 维的向量，001 就是这么做的。token 是子词，不是整词：004 用 BPE，第 007 篇改成字节级 BPE，基础词表只要 256 个字节，什么字符都能表示。</li>
+  <li><b>为什么必须加位置</b>：注意力是对一组向量做加权求和，打乱顺序结果不变，所以顺序要显式加回去（正文 3.1）。</li>
+  <li><b>位置怎么加</b>：004 用固定的 sin / cos 公式，像一组转速不同的钟表指针，快的区分相邻位置，慢的区分远处位置。第 <a href="../../papers/006-gpt-1/index.html">006</a>、008 篇起改成像词向量一样<b>学出来</b>的位置向量。004 的消融实验里两种做法几乎一样（BLEU 25.7 对 25.8），关键是「有位置信息」，不是用哪种公式。</li>
+</ul>
+<p><b>注意力的两处关键细节</b></p>
+<ul>
+  <li><b>为什么用点积，不用 003 的加性打分</b>：003 每对词都要过一次 tanh 小网络。点积可以直接用高度优化的矩阵乘法，快得多，也省内存。</li>
+  <li><b>为什么除以 √d_k</b>：q·k 是 d_k 个数相加，d_k 越大，分数波动越大（d_k = 64 时标准差约 8）。分数太大，softmax 会几乎把全部权重给一个词，导数接近 0，打分的参数就学不动了。除以 √d_k 把波动拉回 1 左右。004 原文用的是「We suspect」，这是一个假说。</li>
+</ul>
+<p><b>一个跨篇的规律：每个头 64 维左右</b></p>
+<p>从 004 到 GPT-3 的大多数尺寸，<b>每个头都是 64 维左右</b>。004、006、008 都是 64；GPT-3 小尺寸 64，大尺寸 128（第 011 篇）。模型变宽时，主要是加头数，不是加宽每个头。</p>
+<p><b>激活函数</b></p>
+<p>004 用 ReLU，负数直接砍成 0。<a href="../../papers/006-gpt-1/index.html">第 006 篇</a>起改成 GELU，一条平滑的曲线，小的负数保留一点点。</p>
+</details>
+
+<details class="ext"><summary>D · 后来为什么是仅解码器赢了（我补充的）</summary>
+<p>第 008 篇发表时，双向在理解类任务上全面领先。但本系列之后的主线（第 011、012、017、018 篇）全是仅解码器。</p>
+<p class="note"><span class="lab">我补充的</span>从这些解读里能找到三条理由。一，一个目标兼顾理解和生成：预测下一个词既能续写，也能把任务写成文字让它续写来做理解题（第 007、011 篇），BERT 要生成就得另接解码器。二，每个位置都在学：仅解码器每个位置都预测下一个词，BERT 只在约 15% 的位置上算损失。三，规模化路线被它走通了：第 009 篇的缩放定律、第 011 篇的上下文学习都在仅解码器上做出来，后面的人沿着这条已被验证的路继续走。这是我的归纳，哪条起决定作用，本系列的论文没有回答。第 013 篇的 BART 也说明，编码器-解码器在「输入一段、输出一段」的任务上仍然好用。</p>
+</details>
+
+<details class="ext"><summary>E · 后面的篇怎么用它：四种改法的细节</summary>
+<p><b>改输入：把任务写进序列里</b></p>
 <p>Transformer 只认「一串 token」。任何任务只要能拼成一串，就能用同一个模型。</p>
 <div class="tbl"><table>
   <thead><tr><th>篇</th><th>怎么拼</th></tr></thead>
@@ -700,16 +741,13 @@ html{scroll-behavior:smooth}
   </tbody>
 </table></div>
 <p>所以上下文窗口的长度（512 → 1024 → 2048 → 第 017 篇的 8192）直接决定了一次能塞多少示范、多少文档。</p>
-
-<h3><span class="no">6.2</span>改分词器：第 012 篇 Codex</h3>
+<p><b>改分词器：第 012 篇 Codex</b></p>
 <p>架构不动，给代码里的连续空格（Python 的缩进）加专门的 token，平均少用约 30% 的 token，同样的上下文窗口能装下更多代码。输入层面的小改动，也会通过「上下文窗口有限」影响模型能力。</p>
-
-<h3><span class="no">6.3</span>只训一小部分矩阵：第 014 篇 LoRA</h3>
-<p>前提来自 5.3：参数几乎全在注意力和 FFN 的大矩阵里。LoRA 冻结这些矩阵，给其中几个并上一条低秩旁路，只训旁路。它选的是注意力的 W<sup>Q</sup> 和 W<sup>V</sup>。GPT-3 上秩 r = 4 时只训约 1890 万参数，检查点从 350GB 变成约 35MB。</p>
+<p><b>只训一小部分矩阵：第 014 篇 LoRA</b></p>
+<p>前提来自附录 A 的验算：参数几乎全在注意力和 FFN 的大矩阵里。LoRA 冻结这些矩阵，给其中几个并上一条低秩旁路，只训旁路。它选的是注意力的 W<sup>Q</sup> 和 W<sup>V</sup>。GPT-3 上秩 r = 4 时只训约 1890 万参数，检查点从 350GB 变成约 35MB。</p>
 <p>一个和结构有关的发现：同样的预算下，只调 W<sup>Q</sup> 或 W<sup>K</sup> 明显偏低，调 W<sup>V</sup>、W<sup>O</sup> 较好。</p>
 <p class="note"><span class="lab">我补充的</span>我的猜想：W<sup>Q</sup>、W<sup>K</sup> 只决定「注意力权重怎么分配」，也就是 Q·Kᵀ 那一步；W<sup>V</sup>、W<sup>O</sup> 决定「取回什么内容」，后者对改变输出更关键。原文没有解释，这个猜想也没有验证。</p>
-
-<h3><span class="no">6.4</span>换输出头：第 017、018 篇的奖励模型</h3>
+<p><b>换输出头：第 017、018 篇的奖励模型</b></p>
 <p>语言模型的最后一层，把隐藏向量映射成词表大小的一串分数。奖励模型只是<b>把这一层换成输出一个数的线性层</b>，接在<b>最后一个 token</b> 上。第 017 篇叫它「值头」，第 018 篇的说法是「SFT 模型去掉最后的反嵌入层」。</p>
 <figure class="fig">
   <span class="tag">图 10 · 奖励模型为什么在最后一个 token 上打分</span>
@@ -730,41 +768,19 @@ html{scroll-behavior:smooth}
     <text class="sm m" x="340" y="214" text-anchor="middle">只有最后一个 token 读过「提示 + 回答」的全部，所以在它上面打分</text>
   </svg>
   </div>
-  <figcaption>和 3.2 讲的是同一件事：仅解码器里，只有最后一个位置看过整段输入。语言模型在这里输出约 5 万个词的概率，奖励模型只输出一个数。</figcaption>
+  <figcaption>和 4.2 讲的是同一件事：仅解码器里，只有最后一个位置看过整段输入。语言模型在这里输出约 5 万个词的概率，奖励模型只输出一个数。</figcaption>
 </figure>
 <p>第 018 篇的 PPO 里还有一个价值函数，也是同一架构，从 6B 的奖励模型初始化。所以 RLHF 流水线里的四个模型（策略、参考策略、奖励模型、价值函数）全是 GPT-3 架构的 Transformer，区别只在输出头和训练目标。</p>
-<aside class="anno"><span class="alab">📎 注解 · 第 015、016 篇是例外</span>
+</details>
+
+<details class="ext"><summary>F · 几条旁支：位置上限、6ND 估算、两篇例外、后来的进展</summary>
+<p><b>学出来的位置向量有一个硬上限</b></p>
+<p>学出来的位置向量是一张表，表有多少行，模型就认识多少个位置。第 <a href="../../papers/006-gpt-1/index.html">006</a>、008 篇学了 512 个，第 007 篇 1024 个，第 011 篇 GPT-3 2048 个。上下文窗口就被这张表定死了，再长的输入没有对应的位置向量。这也是后来出现 RoPE 等新位置编码的原因之一。</p>
+<p><b>训练算力 C ≈ 6ND（跳过不影响理解）</b></p>
+<p>第 009 篇配套的算力估算：训练一个参数量为 N 的模型、喂 D 个 token，总运算量约 6·N·D。每个参数、每个 token，前向约 2 次运算，反向约 4 次。有了它，可以在开训之前估出要多少 GPU 时间。</p>
+<p><b>第 015、016 篇是例外</b></p>
 <p>第 015 篇的奖励预测器是小 MLP 和小卷积网络，第 016 篇 PPO 的策略是两层 MLP，都没用 Transformer。RLHF 和 Transformer 这两条线，到第 017、018 篇才汇合。</p>
-</aside>
-
-<h3><span class="no">6.5</span>小结</h3>
-<div class="tbl"><table>
-  <thead><tr><th>动了哪里</th><th>篇</th><th>架构改了吗</th></tr></thead>
-  <tbody>
-    <tr><td>砍掉一半 + 换训练目标</td><td>006、008</td><td>只改掩码</td></tr>
-    <tr><td>稳定性细节 + 放大</td><td>007、011</td><td>Pre-LN、局部注意力</td></tr>
-    <tr><td>测量规模规律</td><td>009、010</td><td>不改</td></tr>
-    <tr><td>换数据 / 分词器</td><td>012</td><td>不改</td></tr>
-    <tr><td>外挂检索、拼接输入</td><td>013</td><td>不改</td></tr>
-    <tr><td>冻结大矩阵、加低秩旁路</td><td>014</td><td>不改主体</td></tr>
-    <tr><td>换输出头 + 新训练流程</td><td>017、018</td><td>只换最后一层</td></tr>
-  </tbody>
-</table></div>
-<p class="note"><span class="lab">我补充的</span>一句话：004 之后，Transformer 成了一个通用的计算底座。后面的论文争的是<b>喂什么数据、用什么目标、放多大、怎么用</b>，而不是网络长什么样。</p>
-
-
-<!-- ================= 7 ================= -->
-<h2 id="s7"><span class="no">7</span>它留下的问题</h2>
-<div class="tbl"><table>
-  <thead><tr><th>问题</th><th>来源</th><th>本系列里的处理</th></tr></thead>
-  <tbody>
-    <tr><td class="to">注意力的代价随长度<b>平方</b>增长</td><td>004 的复杂度对比</td><td>004 提出「只看附近 r 个位置」但没做实验；GPT-3 交替用全连接和局部注意力，没有消融（第 011 篇）</td></tr>
-    <tr><td class="to">生成时仍逐词串行</td><td>004 的掩码一节</td><td>本系列没有处理。第 011 篇的「一次前向」指读完输入只要一次，生成每个新 token 仍要再算一次</td></tr>
-    <tr><td class="to">位置编码外推到更长序列</td><td>004 只是期望，没验证</td><td>学出来的位置向量有硬上限（2.2）；新位置编码不在本系列范围内</td></tr>
-    <tr><td class="to">点积打分可能不够强</td><td>004 的消融实验</td><td>没有处理；第 009 篇的结论暗示，这类细节在规模面前影响较小</td></tr>
-  </tbody>
-</table></div>
-<details class="ext"><summary>🧭 延伸 · 后世的进展（不在本系列论文里，细节待核实）</summary>
+<p><b>后世的进展（不在本系列论文里，细节待核实）</b></p>
 <ul>
   <li>Pre-LN 成为主流。</li>
   <li>位置编码换成 RoPE、ALiBi 等。RoPE 的「旋转」思想，和 004「挪动 k 个位置等于转一个固定角度」一脉相承。</li>
@@ -773,25 +789,32 @@ html{scroll-behavior:smooth}
 </ul>
 </details>
 
-
-<!-- ================= after ================= -->
-<h2 id="after">读完之后：自检和衔接</h2>
-
-<h3>读完应该能回答</h3>
-<ol>
-  <li>003 已经有注意力了，004 多做了什么？为什么删掉 RNN 让训练快了一个量级？（第 1 节）</li>
-  <li>删掉 RNN 后出现了哪几个问题，分别由哪个零件补上？（2.8 的表）</li>
-  <li>为什么要除以 √d_k？为什么多头不会多花 8 倍算力？（2.3、2.4）</li>
-  <li>三种形态的本质区别是什么？BERT 为什么不能直接用「预测下一个词」做双向？（第 3 节）</li>
-  <li>一层的参数主要在哪？GPT-3 的 1750 亿是怎么算出来的？（2.6、5.3）</li>
-  <li>从 004 到 GPT-3，架构真正改了哪几处？其余靠什么变强？（第 4 节）</li>
-  <li>第 006 篇之后的论文大多不改架构，它们的创新分别在哪？（6.5 的表）</li>
-  <li>奖励模型为什么在最后一个 token 上打分？（3.2、6.4）</li>
-</ol>
-
-<h3>和各篇的关系</h3>
+<details class="ext"><summary>G · 和前几篇的对比、衔接</summary>
+<p><b>004 对 003：逐项对照</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>谁负责</th><th>003</th><th>004</th></tr></thead>
+  <tbody>
+    <tr><td>读懂源句</td><td class="to">RNN 一步步读</td><td class="tn">编码器自注意力</td></tr>
+    <tr><td>翻译时回头看源句</td><td>注意力</td><td class="tn">编码器-解码器注意力</td></tr>
+    <tr><td>读懂已经写出的译文</td><td class="to">RNN 一步步读</td><td class="tn">解码器带掩码的自注意力</td></tr>
+  </tbody>
+</table></div>
 <p><b>它的来路</b>：<a href="../../papers/001-nplm/index.html">001 NPLM</a>（词向量、softmax 输出层）→ <a href="../../papers/002-seq2seq/index.html">002 Seq2Seq</a>（编码器-解码器、逐词生成）→ <a href="../../papers/003-bahdanau-attention/index.html">003 Bahdanau 注意力</a>（打分、softmax、加权求和）→ <a href="../../papers/004-transformer/index.html">004 Transformer</a>（只用注意力）。</p>
 <p><b>它的去向</b>：<a href="../../papers/005-adam/index.html">第 005 篇 Adam</a> 讲清优化器；第 <a href="../../papers/006-gpt-1/index.html">006</a>、007、011 篇沿仅解码器一路放大；第 008 篇走仅编码器；第 009、010 篇测量放大的规律；第 012–014、017、018 篇在架构外面做文章。这些篇上线后，会从这里链过去。</p>
+</details>
+
+<details class="ext"><summary>H · 读完应该能回答（自检问题）</summary>
+<ol>
+  <li>003 已经有注意力了，004 多做了什么？为什么删掉 RNN 让训练快了一个量级？（第 1 节、附录 G）</li>
+  <li>删掉 RNN 后出现了哪几个问题，分别由哪个零件补上？（3.6 的表）</li>
+  <li>为什么要除以 √d_k？为什么多头不会多花 8 倍算力？（附录 C、3.2）</li>
+  <li>三种形态的本质区别是什么？BERT 为什么不能直接用「预测下一个词」做双向？（第 4 节）</li>
+  <li>一层的参数主要在哪？GPT-3 的 1750 亿是怎么算出来的？（3.4、附录 A）</li>
+  <li>从 004 到 GPT-3，架构真正改了哪几处？其余靠什么变强？（5.2、附录 B）</li>
+  <li>第 006 篇之后的论文大多不改架构，它们的创新分别在哪？（6.1 的表）</li>
+  <li>奖励模型为什么在最后一个 token 上打分？（4.2、附录 E）</li>
+</ol>
+</details>
 
 
 <footer>
