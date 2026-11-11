@@ -31,6 +31,7 @@
     {"id": "018", "slug": "018-instructgpt", "short": "InstructGPT", "title": "Training Language Models to Follow Instructions with Human Feedback", "year": 2022, "authors": "Ouyang 等", "oneliner": "", "status": "planned"}
   ],
   "specials": [
-    {"slug": "transformer", "short": "Transformer 特辑", "covers": "跨篇 · 001–018", "title": "一个架构，撑起了后面所有的模型", "oneliner": "一层 = 开会交流 + 回工位消化。三种形态只差掩码，后面的论文几乎不再改它。", "status": "published", "date": "2026-11-10"}
+    {"slug": "transformer", "short": "Transformer 特辑", "covers": "跨篇 · 001–018", "title": "一个架构，撑起了后面所有的模型", "oneliner": "一层 = 开会交流 + 回工位消化。三种形态只差掩码，后面的论文几乎不再改它。", "status": "published", "date": "2026-11-10"},
+    {"slug": "benchmarks", "short": "评测特辑", "covers": "主题特辑 · 论文 + 公开资料", "title": "每张考卷都会被考穿，新卷越来越像真实工作", "oneliner": "每张考卷都会被刷满、漏题、被专门冲分；新卷越来越难，判分越来越看结果对不对。", "status": "published", "date": "2026-11-11"}
   ]
 }
