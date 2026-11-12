@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LoRA 图解</title>
+<meta name="description" content="Hu 等 2021《LoRA: Low-Rank Adaptation of Large Language Models》图解：冻结原模型，只训练一条低秩旁路，效果追平全量微调，可训练参数少到万分之一，推理不变慢。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文（冻结原模型、只训练一条低秩旁路），赭 = 要被替代的旧做法（全量微调、adapter 串联层）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;min-width:520px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th:first-child,td:first-child{white-space:nowrap}
+th:first-child,td:first-child{padding-right:20px}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+<main class="wrap">
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　014</nav>
+  <h1 style="margin-top:14px">原模型一个数都不动，只训练一小块改动</h1>
+  <p class="lede">Hu 等人 2021 年在微软写的《LoRA: Low-Rank Adaptation of Large Language Models》。到 GPT-3 这个量级，让模型适应一个新任务，要把 1750 亿个参数全部更新，每个任务存一份 350GB 的新模型。LoRA 的做法是：<b>把原来的权重 W₀ 冻住，只训练一个「低秩」的改动量 ΔW = BA，也就是两个又瘦又长的小矩阵。</b>可训练参数能少到全量微调的万分之一，效果追平全量微调；训完把 BA 加回 W₀，推理时和原模型一样快。</p>
+  <div class="meta">
+    <span>Edward Hu、Yelong Shen 等（微软）· 2021 年 · arXiv 2106.09685（本页依据 2021 年 10 月 v2 版）</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的做法（冻住原模型，只训练一条低秩旁路）</span>
+    <span class="key"><i class="sw o"></i>赭色：要被替代的旧做法（每个任务全量更新，或串进新模块拖慢推理）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · 并联一条低秩旁路：W₀ 不动，只训练 A 和 B</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 230" role="img" aria-label="输入 x 分成两路。上路经过冻结的预训练权重 W0。下路先经过 A，把 k 维压成 r 维，再经过 B，把 r 维展开回 d 维，并乘 alpha 除以 r。两路在加号处相加，得到输出 h。A 和 B 是蓝色，表示要训练的部分；W0 是灰色，表示冻结。底部对比：d 等于 k 等于 12288 时，W0 有约 1.5 亿个数，r 等于 4 时 A 和 B 一共 98304 个数。">
+      <rect class="softS" x="20" y="78" width="60" height="34" rx="6"/><text class="mo" x="50" y="100" text-anchor="middle">x</text>
+      <path class="mutS" d="M82 90 H112 V52 H148" marker-end="url(#ah)"/>
+      <path class="newS" d="M82 100 H112 V138 H148" marker-end="url(#ahN)"/>
+      <rect class="softS" x="150" y="28" width="190" height="48" rx="8"/>
+      <text class="b" x="245" y="49" text-anchor="middle">W<tspan dy="4" style="font-size:10px">0</tspan><tspan dy="-4">　预训练权重</tspan></text>
+      <text class="sm m" x="245" y="66" text-anchor="middle">冻结，不接收梯度</text>
+      <rect class="newT" x="150" y="114" width="110" height="48" rx="8"/>
+      <text class="b tn" x="205" y="135" text-anchor="middle">A（r × k）</text>
+      <text class="sm" x="205" y="152" text-anchor="middle">压成 r 个数</text>
+      <line class="newS" x1="262" y1="138" x2="298" y2="138" marker-end="url(#ahN)"/>
+      <rect class="newT" x="300" y="114" width="110" height="48" rx="8"/>
+      <text class="b tn" x="355" y="135" text-anchor="middle">B（d × r）</text>
+      <text class="sm" x="355" y="152" text-anchor="middle">展开回 d 维</text>
+      <text class="sm mo m" x="420" y="134">× α / r</text>
+      <path class="mutS" d="M342 52 H500 V80" marker-end="url(#ah)"/>
+      <path class="newS" d="M412 138 H500 V112" marker-end="url(#ahN)"/>
+      <circle class="card" cx="500" cy="96" r="15"/>
+      <path class="ink" d="M492 96 H508 M500 88 V104"/>
+      <line class="mutS" x1="516" y1="96" x2="568" y2="96" marker-end="url(#ah)"/>
+      <rect class="softS" x="570" y="78" width="90" height="34" rx="6"/><text class="mo" x="615" y="100" text-anchor="middle">h</text>
+      <text class="sm tn" x="150" y="184">蓝色是训练的部分</text>
+      <text class="sm m" x="20" y="212">d = k = 12288 时：W<tspan dy="3" style="font-size:9px">0</tspan><tspan dy="-3"> 有约 1.5 亿个数（12288² = 150,994,944）；r = 4 时 A 和 B 一共 98,304 个数，约 1/1536。</tspan></text>
+    </svg>
+    </div>
+    <figcaption>输入 x 同时走两条路，输出按位置相加：h = W₀x + BAx。原文 Figure 1 的原图在第 2 节。上面 d、k 取 GPT-3 的 12288，是我拿原文的维度算的。</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>要解决的问题</a>
+    <a href="#s2"><span>2</span>第一步：把改动量压成两个小矩阵</a>
+    <a href="#s3"><span>3</span>第二步：让训练从原模型出发</a>
+    <a href="#s4"><span>4</span>第三步：训完加回去，推理不变慢</a>
+    <a href="#s5"><span>5</span>加在哪些矩阵上，要多少参数</a>
+    <a href="#s6"><span>6</span>证据一：效果追平全量微调</a>
+    <a href="#s7"><span>7</span>证据二：为什么低秩就够</a>
+    <a href="#s8"><span>8</span>局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>正文只走一条线</b>：全量微调存不下 → 现有省参数办法各有毛病 → 把改动量限制成低秩 → 怎么初始化、怎么合并 → 每个结论对应哪个实验。只读每节标题和每段第一句，也能串起来。</li>
+      <li>第 2 节讲「秩」是什么，不用线性代数基础，用一个 3×3 的小例子讲清。公式、符号表、显存账、概念注解、完整结果表、当时的背景，都在页尾的<b>附录</b>里，默认折叠，标明对应原文第几节。</li>
+      <li>小数字例子都验算过：为讲解设定的标「示意」，按原文规格估算的标「推算」。</li>
+      <li>零件在前面讲过：注意力的 Wq、Wv 在 004 <a href="../004-transformer/index.html">Transformer</a>，Adam 要为每个参数多存两份状态在 005 <a href="../005-adam/index.html">Adam</a>，「预训练再微调」在 006 <a href="../006-gpt-1/index.html">GPT-1</a> 和 008 <a href="../008-bert/index.html">BERT</a>，实验对象 GPT-3 在 011 <a href="../011-gpt-3/index.html">GPT-3</a>。本篇不改架构，也不改预训练，只改「微调时更新什么」。</li>
+    </ul>
+  </div>
+</header>
+
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>要解决的问题</h2>
+<p>006、008 之后的标准做法是「预训练 + 全量微调」：每个下游任务，都把模型的<b>全部参数</b>更新一遍，得到一份和原模型一样大的新模型。BERT 才一亿多到三亿多参数，这只是不方便。到 GPT-3 的 1750 亿参数，原文的说法是它从「不方便」变成了「部署上的关键难题」。难在两处：存不下，练不起。</p>
+
+<figure class="fig">
+  <span class="tag">图 1 · 存：100 个任务，100 份整模型 vs 一份底座加 100 份小增量</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 210" role="img" aria-label="两行横条。第一行赭色长条：全量微调，100 个任务，100 乘 350GB 约等于 35TB，几乎占满整行。第二行：LoRA，一份 350GB 的底座加 100 份 35MB 的增量，约等于 354GB，条只有第一行的约百分之一，画成一小段蓝色。下面一组对比训练显存：GPT-3 175B 全量微调 1.2TB，LoRA 350GB。">
+    <text class="sm m" x="20" y="18">服务 100 个任务要存多少（GPT-3 175B，每个参数 2 字节）</text>
+    <text class="sm" x="20" y="44">全量微调：100 × 350GB ≈ 35TB</text>
+    <rect class="oldT" x="20" y="52" width="640" height="24" rx="4"/>
+    <text class="sm" x="20" y="102">LoRA：350GB + 100 × 35MB ≈ 354GB</text>
+    <rect class="new" x="20" y="110" width="6.5" height="24" rx="2"/>
+    <text class="sm tn" x="36" y="127">约为上面的 1%</text>
+    <line class="ln" x1="20" y1="148" x2="660" y2="148"/>
+    <text class="sm m" x="20" y="168">训练时的显存（GPT-3 175B，原文 4.2 节）</text>
+    <text class="sm" x="20" y="190">全量微调 1.2TB</text>
+    <rect class="oldT" x="150" y="176" width="320" height="20" rx="4"/>
+    <text class="sm tn" x="480" y="190">LoRA 350GB</text>
+    <rect class="new" x="570" y="176" width="93" height="20" rx="4"/>
+  </svg>
+  </div>
+  <figcaption>两组条各用各的比例尺：上一组 35TB 占满整行，下一组 1.2TB 占 320 格。350GB、35MB、1.2TB 都是原文的数字，35TB 与 354GB 是原文脚注 4 的算式。</figcaption>
+</figure>
+
+<p><b>存的毛病</b>：每个任务一份 350GB 的新权重，100 个任务就是 35TB。<b>练的毛病</b>：训练时每个被更新的参数，还要多带一份梯度和 Adam 的两份状态（005 讲过），占的内存是参数本身的好几倍，训练显存和预训练是同一个量级。<b>冻住的参数不需要梯度，也不需要优化器状态。</b>这正是 LoRA 省显存的来源。</p>
+<p>所以问题是：既要像微调那样改变模型的行为，又不能为每个任务背一整个大模型。「每个任务独有的参数」必须比模型本体小得多。</p>
+
+<h3>前人的省参数办法，各有一个硬伤</h3>
+<p>作者把已有办法归成两类。<b>Adapter</b> 在每一层里串插一个小模块；<b>prefix / prompt 调优</b>在输入端加一些可训练的向量。它们参数很少，但在大规模、在线服务的场景里各有毛病：</p>
+<ul>
+  <li><b>Adapter 拖慢推理。</b>大模型靠硬件并行保持低延迟，而 adapter 是串联的，必须按顺序多算几步。批大小为 1 的在线请求，GPU 本来就没吃满，多一步就多一份固定开销。</li>
+  <li><b>前缀类难优化，还挤占序列长度。</b>原文观察到它对参数量的变化不单调；给适配预留的位置，必然减少任务能用的序列长度。后一点原文只是推测它拖了效果。</li>
+  <li><b>两类的共同问题：效果常追不上全量微调。</b></li>
+</ul>
+
+<figure class="fig">
+  <span class="tag">图 2 · adapter 的推理延迟：批越小，序列越短，拖得越明显</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="三组横条，数据来自原文 Table 1，GPT-2 medium 单次前向。批 32、序列 512、adapter 0.5M：AdapterL 比无 adapter 慢 2.2%，AdapterH 慢 3.0%。批 16、序列 256、adapter 11M：慢 5.0% 和 8.4%。批 1、序列 128、adapter 11M：慢 20.7% 和 30.3%。竖线是基线：微调与 LoRA 都是 0。">
+    <text class="sm m" x="20" y="18">比不加 adapter 慢多少（GPT-2 medium，单次前向，100 次平均）</text>
+    <line class="ink" x1="230" y1="28" x2="230" y2="250"/>
+    <text class="sm tn" x="236" y="244">竖线：微调 / LoRA，慢 0%</text>
+
+    <text class="sm" x="20" y="54">批 32 · 序列 512</text><text class="sm m" x="20" y="72">adapter 0.5M</text>
+    <rect class="oldT" x="230" y="40" width="17.6" height="20"/><text class="sm mo" x="253" y="55">AdapterL +2.2%</text>
+    <rect class="old" x="230" y="64" width="24" height="20"/><text class="sm mo" x="260" y="79">AdapterH +3.0%</text>
+
+    <text class="sm" x="20" y="130">批 16 · 序列 256</text><text class="sm m" x="20" y="148">adapter 11M</text>
+    <rect class="oldT" x="230" y="116" width="40" height="20"/><text class="sm mo" x="276" y="131">AdapterL +5.0%</text>
+    <rect class="old" x="230" y="140" width="67.2" height="20"/><text class="sm mo" x="303" y="155">AdapterH +8.4%</text>
+
+    <text class="sm" x="20" y="198">批 1 · 序列 128</text><text class="sm m" x="20" y="216">adapter 11M</text>
+    <rect class="oldT" x="230" y="184" width="165.6" height="20"/><text class="sm mo" x="401" y="199">AdapterL +20.7%</text>
+    <rect class="old" x="230" y="208" width="242.4" height="20"/><text class="sm mo" x="478" y="223">AdapterH +30.3%</text>
+  </svg>
+  </div>
+  <figcaption>每 1% 画 8 格。读表时留意：第一行的 adapter 只有 0.5M，后两行同为 11M，所以最干净的比较是后两行：从批 16 到批 1，慢 5.0% 变成 20.7%。毫秒数在附录 E。</figcaption>
+</figure>
+<p>LoRA 要同时做到四件事：可训练参数少；推理零额外延迟；不占序列长度；效果不输全量微调。下面三步，就是它怎么做到的。</p>
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>第一步：把改动量压成两个小矩阵</h2>
+<p>微调后的权重是 W₀ + ΔW，ΔW 是「微调带来的改变量」，和 W₀ 一样大。LoRA 的想法是：<b>不学完整的 ΔW，把它限制成两个小矩阵的乘积 BA，只学 B 和 A。</b>这里要用到「秩」。</p>
+
+<h3>秩：一个矩阵里真正独立的信息有几份</h3>
+<p>先看一个 3×3 矩阵。第 2 行是第 1 行的 2 倍，第 3 行是第 1 行的 3 倍，9 个数其实只有一份信息：[1, 2, 3] 这一行，加上「每行放大几倍」。它可以写成一个列向量乘一个行向量，<b>秩是 1</b>。</p>
+
+<figure class="fig">
+  <span class="tag">图 3 · 秩 1 的矩阵：9 个数，只需存 6 个</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 210" role="img" aria-label="左边一个 3 乘 3 矩阵，三行分别是 1 2 3、2 4 6、3 6 9，等于一个列向量 1 2 3 乘一个行向量 1 2 3。右边写：直接存要 9 个数，存列向量和行向量只要 3 加 3 等于 6 个数。再下面一行：如果是秩 2 的 3 乘 3 矩阵，要存 3 乘 2 加 2 乘 3 等于 12 个数，反而比 9 个多，所以只有秩远小于矩阵的边长时，分解才省。">
+    <text class="sm m" x="20" y="22">示意：一个 3×3 的矩阵 M</text>
+    <g class="mo" text-anchor="middle">
+      <rect class="softS" x="30" y="40" width="102" height="102" rx="4"/>
+      <text x="47" y="63">1</text><text x="81" y="63">2</text><text x="115" y="63">3</text>
+      <text x="47" y="97">2</text><text x="81" y="97">4</text><text x="115" y="97">6</text>
+      <text x="47" y="131">3</text><text x="81" y="131">6</text><text x="115" y="131">9</text>
+      <text class="lg" x="156" y="97" style="font-family:var(--sans)">=</text>
+      <rect class="newT" x="180" y="40" width="34" height="102" rx="4"/>
+      <text class="tn" x="197" y="63">1</text><text class="tn" x="197" y="97">2</text><text class="tn" x="197" y="131">3</text>
+      <text class="lg" x="238" y="97" style="font-family:var(--sans)">×</text>
+      <rect class="newT" x="262" y="80" width="102" height="34" rx="4"/>
+      <text class="tn" x="279" y="102">1</text><text class="tn" x="313" y="102">2</text><text class="tn" x="347" y="102">3</text>
+    </g>
+    <text class="b" x="410" y="62">直接存 M：9 个数</text>
+    <text class="b tn" x="410" y="90">存列和行：3 + 3 = 6 个数</text>
+    <text class="sm m" x="410" y="116">要存秩为 r 的 d×k 矩阵，只需 r × (d + k) 个数</text>
+    <text class="sm m" x="410" y="134">（B 是 d×r，A 是 r×k）</text>
+    <line class="ln" x1="20" y1="162" x2="660" y2="162"/>
+    <text class="sm" x="20" y="186">反例：一个秩 2 的 3×3 矩阵，要存 3×2 + 2×3 = 12 个数，比直接存的 9 个还多。</text>
+    <text class="sm to" x="20" y="204">只有秩 r 远小于边长时，分解才省。</text>
+  </svg>
+  </div>
+  <figcaption>秩的定义（够用的版本）：矩阵的行里「互相独立」的个数，也就是写成 B·A 时中间维度最小要多大。神经网络的权重矩阵通常是满秩的（原文 4.1 节）。</figcaption>
+</figure>
+
+<p>换个角度看 BA 在做什么：A 把 k 维的输入压成 r 个数，B 再把这 r 个数展开成 d 维的输出。不管输入是什么，输出都只能是 B 的 r 个列的组合，被关在一个 r 维的子空间里。<b>低秩，就是一个信息瓶颈。</b></p>
+
+<figure class="fig">
+  <span class="tag">图 4 · 小数字算例：d = 4，k = 3，r = 1</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 240" role="img" aria-label="B 是 4 乘 1 的列向量，数值为 1、2、0、负 1。A 是 1 乘 3 的行向量，数值为 2、0、1。相乘得到 4 乘 3 的矩阵 ΔW，四行分别是 2 0 1、4 0 2、0 0 0、负 2 0 负 1。可训练参数 4 加 3 等于 7 个，完整 ΔW 有 12 个。输入 x 等于 1 1 1：先算 Ax 等于 3，再算 B 乘 3 得到 3、6、0、负 3，和直接算 ΔW 乘 x 一致。">
+    <text class="sm m" x="20" y="20">示意</text>
+    <g class="mo" text-anchor="middle">
+      <rect class="newT" x="30" y="40" width="34" height="136" rx="4"/>
+      <text class="tn" x="47" y="63">1</text><text class="tn" x="47" y="97">2</text><text class="tn" x="47" y="131">0</text><text class="tn" x="47" y="165">-1</text>
+      <text class="lg" x="90" y="112" style="font-family:var(--sans)">×</text>
+      <rect class="newT" x="116" y="92" width="102" height="34" rx="4"/>
+      <text class="tn" x="133" y="114">2</text><text class="tn" x="167" y="114">0</text><text class="tn" x="201" y="114">1</text>
+      <text class="lg" x="246" y="112" style="font-family:var(--sans)">=</text>
+      <rect class="softS" x="274" y="40" width="102" height="136" rx="4"/>
+      <text x="291" y="63">2</text><text x="325" y="63">0</text><text x="359" y="63">1</text>
+      <text x="291" y="97">4</text><text x="325" y="97">0</text><text x="359" y="97">2</text>
+      <text x="291" y="131">0</text><text x="325" y="131">0</text><text x="359" y="131">0</text>
+      <text x="291" y="165">-2</text><text x="325" y="165">0</text><text x="359" y="165">-1</text>
+    </g>
+    <text class="sm tn" x="47" y="196" text-anchor="middle">B（4×1）</text>
+    <text class="sm tn" x="167" y="196" text-anchor="middle">A（1×3）</text>
+    <text class="sm m" x="325" y="196" text-anchor="middle">ΔW = BA（4×3）</text>
+    <text class="b" x="410" y="62">可训练：4 + 3 = 7 个数</text>
+    <text class="b to" x="410" y="86">完整的 ΔW：4 × 3 = 12 个数</text>
+    <text class="sm m" x="410" y="116">拿 x = [1, 1, 1] 试：</text>
+    <text class="mo sm" x="410" y="140">Ax = 2 + 0 + 1 = 3</text>
+    <text class="mo sm" x="410" y="162">B × 3 = [3, 6, 0, -3]</text>
+    <text class="mo sm" x="410" y="184">ΔW x 逐行求和 = [3, 6, 0, -3]</text>
+    <text class="sm m" x="20" y="226">真实情形里 d、k 上万，差距是上千倍：r = 4 时，98,304 对 150,994,944，约 1/1536（推算）。</text>
+  </svg>
+  </div>
+  <figcaption>全量微调要学 ΔW 的全部 12 个数，LoRA 假设 ΔW 能写成 BA，只学 7 个。两种算法的结果一致，但只训练 B 和 A。</figcaption>
+</figure>
+
+<h3>凭什么假设改动量是低秩的</h3>
+<p>依据是前人（Aghajanyan 等 2020）的发现：预训练语言模型有很低的「内在维度」，把参数随机投影到一个小得多的子空间里，也能学得好。作者受此启发，提出<b>假说</b>：适配过程中的权重变化，也有很低的「内在秩」。这是一次类比，不是推出来的。我补充的：内在维度是在随机选的小子空间里训练，LoRA 的 B、A 却是学出来的，所以「内在维度低」并不能逻辑上推出「ΔW 低秩」。论文后面给的是间接证据，见第 7 节。</p>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 1 · 重新参数化：只训练 A 和 B</span>
+  <img class="orig narrow" src="orig-fig1.png" alt="原文 Figure 1：输入 x（宽度 d）同时进入左边的预训练权重 W（d 乘 d 的矩阵）和右边的两个橙色梯形，A 初始化为高斯分布 N(0, σ²)，B 初始化为 0，中间标出 r；两路输出在加号处相加，得到 h。" loading="lazy">
+  <figcaption>这张图就是图 0 的原版：<b>左边蓝色方块冻住，右边两个橙色梯形是要训练的 A 和 B</b>。怎么看：梯形的窄边就是秩 r，x 的宽度是 d；A 标着高斯初始化，B 标着 0，下一节讲为什么。图源：Hu 等 2021 原文。</figcaption>
+</figure>
+
+<p>这一步对着的是第 1 节的前两个毛病：每个任务新增的参数从「和模型一样大」变成 r × (d + k)；训练时只有 A、B 需要梯度和优化器状态。精确写法见附录 A 式 2、式 3。</p>
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>第二步：让训练从原模型出发</h2>
+<p>怎么给 A 和 B 赋初值，原文只用一句话交代：<b>A 用高斯随机数，B 全设成 0</b>，所以训练开始时 ΔW = BA = 0，模型的输出和预训练模型一模一样，不会因为随机初始化一上来就被弄坏。</p>
+<p>那为什么不把 A 也设成 0？原文没写，这是我的推导：A、B 都为 0 时，B 的梯度含 Ax，A 的梯度含 Bᵀ，两个都是 0，永远学不动。A 随机、B 为 0 时，第一步只有 B 会动，B 一旦不再是 0，A 的梯度就非零了，下一步 A 也开始动。小数字验算见附录 A。</p>
+<figure class="fig">
+  <span class="tag">图 · 为什么 B 取 0、A 取随机（我的小推导，d = k = 2，r = 1）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 230" role="img" aria-label="三种初始化。A、B 都为 0：两个梯度都是 0，永远不动，标赭色。A 随机、B 为 0：第一步 B 的梯度不为 0，B 动起来后 A 也有梯度，起点等于原模型，标蓝色。A、B 都随机：能训练，但起点 BA 不为 0，模型一开始就被随机扰动，标灰色。">
+    <rect class="oldT" x="20" y="24" width="640" height="52" rx="8"/>
+    <text class="sm to b" x="34" y="46">A = 0，B = 0</text>
+    <text class="sm" x="34" y="66">Ax = 0，B = 0，两个梯度都是 0，Adam 的 m、v 也是 0</text>
+    <text class="sm to" x="470" y="46">永远停在原地</text>
+    <rect class="newT" x="20" y="88" width="640" height="52" rx="8"/>
+    <text class="sm tn b" x="34" y="110">A 随机，B = 0（LoRA 的选法）</text>
+    <text class="sm" x="34" y="130">第一步 B 的梯度非零；B 一动，A 的梯度也非零</text>
+    <text class="sm tn b" x="470" y="110">起点 = 原模型，都能学动</text>
+    <rect class="soft" x="20" y="152" width="640" height="52" rx="8"/>
+    <text class="sm b" x="34" y="174">A、B 都随机</text>
+    <text class="sm" x="34" y="194">能训练，但起点 BA ≠ 0</text>
+    <text class="sm m" x="470" y="174">一开始就被随机扰动</text>
+    <text class="sm m" x="20" y="222">x = [1, 2]，损失对 h 的梯度 g = [1, −1]；∂L/∂B = g·(Ax)ᵀ，∂L/∂A = (Bᵀg)·xᵀ</text>
+  </svg>
+  </div>
+  <figcaption>全部算式和数字见附录 A。为什么偏偏是 B 取 0、A 取随机，原文没讨论，我认为是习惯选择，待核实。</figcaption>
+</figure>
+<p>另外，实际前向是 h = W₀x + (α/r)·BAx。α 是个常数，作者不调它，直接设成第一次试的那个 r。除以 r 的作用，原文说是换 r 的时候不用重新调超参，只是一个让训练更稳的工程技巧，不改变模型能表达什么。</p>
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>第三步：训完加回去，推理不变慢</h2>
+<p>部署的时候，可以直接算出 W = W₀ + BA，存下来，照常推理。道理只有一句：<b>矩阵乘法对加法是分配的</b>，(W₀ + BA)x = W₀x + BAx。LoRA 的旁路是线性的，没有非线性，并且和 W₀ 吃同一个输入，所以两条路加起来等价于一个矩阵。合并后模型的形状和原模型一模一样，一个多余的乘法都没有。</p>
+
+<figure class="fig">
+  <span class="tag">图 5 · 合并验算：用图 4 的 ΔW，W₀ 取示意值</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 250" role="img" aria-label="上排，不合并：W0 乘 x 得到 1、1、1、3，加 BA 乘 x 得到 3、6、0、负 3，相加等于 4、7、1、0。中排，合并：W 等于 W0 加 BA，W 乘 x 直接得到 4、7、1、0，和上排一致。下排，adapter：中间夹着非线性，不能写成一个矩阵，无法折叠。">
+    <text class="sm m" x="20" y="20">示意：W₀ 是 4×3 的矩阵，前三行取单位阵，第四行全是 1；x = [1, 1, 1]</text>
+    <text class="b" x="20" y="52">不合并</text>
+    <rect class="softS" x="110" y="34" width="170" height="28" rx="6"/><text class="mo sm" x="195" y="53" text-anchor="middle">W₀x = [1, 1, 1, 3]</text>
+    <text class="lg" x="294" y="54">+</text>
+    <rect class="newT" x="312" y="34" width="190" height="28" rx="6"/><text class="mo sm tn" x="407" y="53" text-anchor="middle">BAx = [3, 6, 0, -3]</text>
+    <text class="lg" x="516" y="54">=</text>
+    <text class="mo b" x="540" y="53">[4, 7, 1, 0]</text>
+    <text class="b tn" x="20" y="116">合并后</text>
+    <rect class="newT" x="110" y="98" width="170" height="28" rx="6"/><text class="mo sm tn" x="195" y="117" text-anchor="middle">W = W₀ + BA</text>
+    <text class="lg" x="294" y="118">→</text>
+    <rect class="softS" x="322" y="98" width="180" height="28" rx="6"/><text class="mo sm" x="412" y="117" text-anchor="middle">Wx = [4, 7, 1, 0]</text>
+    <text class="lg" x="516" y="118">=</text>
+    <text class="mo b" x="540" y="117">[4, 7, 1, 0]</text>
+    <text class="sm m" x="110" y="150">W 的第 1 行 = [1+2, 0+0, 0+1] = [3, 0, 1]，其余各行同理</text>
+    <line class="ln" x1="20" y1="168" x2="660" y2="168"/>
+    <text class="b to" x="20" y="196">Adapter</text>
+    <rect class="oldT" x="110" y="178" width="110" height="28" rx="6"/><text class="sm" x="165" y="197" text-anchor="middle">子层</text>
+    <line class="oldS" x1="222" y1="192" x2="246" y2="192" marker-end="url(#ahO)"/>
+    <rect class="oldT" x="248" y="178" width="200" height="28" rx="6"/><text class="sm" x="348" y="197" text-anchor="middle">下投影 → 非线性 → 上投影</text>
+    <text class="sm to" x="458" y="197">夹着非线性，没法合并</text>
+    <text class="sm m" x="20" y="238">所以 adapter 部署后永远要多算几步，LoRA 的增量可以并进 W。</text>
+  </svg>
+  </div>
+  <figcaption>上两排的结果完全一致。任务切换也很便宜：W ← W − BA + B′A′，一份 350GB 的底座，每个任务多存 35MB。W₀ 的取值是我为验算设的，不是原文的数字。</figcaption>
+</figure>
+
+<p>这一步对着的是 adapter 的延迟毛病：LoRA 从构造上不比微调后的模型多任何推理延迟。作者承认的代价是：合并之后，同一个批里混放不同任务的输入就不方便了，因为一次前向只能用一份合并后的 W。不合并的话可以按样本动态选择 LoRA 模块，适合对延迟不敏感的场景。</p>
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>加在哪些矩阵上，要多少参数</h2>
+<p>一层 Transformer 里有 4 个注意力矩阵（Wq、Wk、Wv、Wᴼ）和 2 个前馈矩阵。原理上 LoRA 能加在任何稠密层。本文为了简单和省参数，<b>只调注意力里的权重，冻住前馈层</b>，主实验又只选 Wq 和 Wv。前馈层、LayerNorm、偏置怎么样，原文留给未来。</p>
+<p>我用 GPT-3 175B 的尺寸（d_model = 12288，96 层）验算了这个选择。每层的 4 个注意力矩阵占 4d²，两个前馈矩阵占 8d²，注意力只占权重的 1/3，只调 Wq 和 Wv 触及的更是只有 1/6。可训练参数的公式是 2 × 加了 LoRA 的矩阵个数 × d_model × r：</p>
+<div class="tbl"><table>
+  <thead><tr><th>配置（推算）</th><th>算式</th><th class="num">可训练参数</th></tr></thead>
+  <tbody>
+    <tr><td>Wq + Wv，96 层，r = 1</td><td>2 × 192 × 12288 × 1</td><td class="num">4,718,592 ≈ 4.7M</td></tr>
+    <tr><td>同上，r = 4</td><td>2 × 192 × 12288 × 4</td><td class="num">18,874,368 ≈ 18.9M</td></tr>
+    <tr><td>同上，r = 8</td><td>2 × 192 × 12288 × 8</td><td class="num">37,748,736 ≈ 37.7M</td></tr>
+  </tbody>
+</table></div>
+<p>GPT-3 的 1750 亿里，4.7M 约占 0.003%。原文 4.2 节说，r = 4、只调 q 和 v，检查点从 350GB 缩到 35MB，约 1 万倍。我按 18.9M × 2 字节算出的是 37.7MB，原文写 35MB，略有出入，可能是口径不同，见附录 I。</p>
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>证据一：效果追平全量微调</h2>
+<p>实验的思路是：先在小模型（RoBERTa、DeBERTa、GPT-2）上，和前人逐字对齐设置，直接引用已发表的基线数字（表里带 * 的行）；再放到 GPT-3 175B 上做压力测试。任务覆盖自然语言理解（GLUE）和生成（E2E、WikiSQL、SAMSum）。先看最大的一组，GPT-3 175B：</p>
+
+<figure class="fig">
+  <span class="tag">图 6 · GPT-3 175B 上各种适配方法（原文 Table 4）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 300" role="img" aria-label="两组横条，左边 WikiSQL 准确率，右边 MNLI-m 准确率。全量微调 WikiSQL 73.8，MNLI 89.5，画成赭色。BitFit 14.2M：71.3 和 91.0。PreEmbed 3.2M：63.1 和 88.6。PreLayer 20.2M：70.1 和 89.5。AdapterH 7.1M：71.9 和 89.8。AdapterH 40.1M：73.2 和 91.5。LoRA 4.7M：73.4 和 91.7，蓝色。LoRA 37.7M：74.0 和 91.6，蓝色。竖虚线是全量微调的成绩。横轴不是从零开始。">
+    <text class="b" x="200" y="20">WikiSQL（%）</text><text class="sm m" x="200" y="36">轴从 60 起，±0.5</text>
+    <text class="b" x="460" y="20">MNLI-m（%）</text><text class="sm m" x="460" y="36">轴从 86 起，±0.1</text>
+    <line class="ln dash" x1="200" y1="44" x2="200" y2="270"/>
+    <line class="ln" x1="460" y1="44" x2="460" y2="270"/>
+    <!-- WikiSQL scale: (v-60)/15*200 ; FT 73.8 -> 184 ; baseline at x=200+184 -->
+    <line class="oldS dash" x1="384" y1="44" x2="384" y2="270"/>
+    <!-- MNLI scale: (v-86)/6*180 ; FT 89.5 -> 105 ; baseline at 460+105=565 -->
+    <line class="oldS dash" x1="565" y1="44" x2="565" y2="270"/>
+
+    <text class="sm" x="20" y="62">全量微调 175B</text>
+    <rect class="old" x="200" y="50" width="184" height="16"/><text class="sm mo" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="390" y="63">73.8</text>
+    <rect class="old" x="460" y="50" width="105" height="16"/><text class="sm mo" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="571" y="63">89.5</text>
+
+    <text class="sm" x="20" y="92">BitFit 14.2M</text>
+    <rect class="soft" x="200" y="80" width="150.7" height="16"/><text class="sm mo" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="357" y="93">71.3</text>
+    <rect class="soft" x="460" y="80" width="150" height="16"/><text class="sm mo" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="616" y="93">91.0</text>
+
+    <text class="sm" x="20" y="122">PreEmbed 3.2M</text>
+    <rect class="soft" x="200" y="110" width="42" height="16"/><text class="sm mo" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="249" y="123">63.1</text>
+    <rect class="soft" x="460" y="110" width="78" height="16"/><text class="sm mo" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="544" y="123">88.6</text>
+
+    <text class="sm" x="20" y="152">PreLayer 20.2M</text>
+    <rect class="soft" x="200" y="140" width="134.7" height="16"/><text class="sm mo" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="341" y="153">70.1</text>
+    <rect class="soft" x="460" y="140" width="105" height="16"/><text class="sm mo" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="571" y="153">89.5</text>
+
+    <text class="sm" x="20" y="182">Adapter 7.1M</text>
+    <rect class="soft" x="200" y="170" width="158.7" height="16"/><text class="sm mo" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="365" y="183">71.9</text>
+    <rect class="soft" x="460" y="170" width="114" height="16"/><text class="sm mo" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="580" y="183">89.8</text>
+
+    <text class="sm" x="20" y="212">Adapter 40.1M</text>
+    <rect class="soft" x="200" y="200" width="176" height="16"/><text class="sm mo" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="383" y="213">73.2</text>
+    <rect class="soft" x="460" y="200" width="164.5" height="16"/><text class="sm mo" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="630" y="213">91.5</text>
+
+    <text class="sm tn b" x="20" y="242">LoRA 4.7M</text>
+    <rect class="new" x="200" y="230" width="178.7" height="16"/><text class="sm mo tn" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="385" y="243">73.4</text>
+    <rect class="new" x="460" y="230" width="171" height="16"/><text class="sm mo tn" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="637" y="243">91.7</text>
+
+    <text class="sm tn b" x="20" y="272">LoRA 37.7M</text>
+    <rect class="new" x="200" y="260" width="186.7" height="16"/><text class="sm mo tn" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="393" y="273">74.0</text>
+    <rect class="new" x="460" y="260" width="168" height="16"/><text class="sm mo tn" style="paint-order:stroke;stroke:var(--card);stroke-width:5px" x="634" y="273">91.6</text>
+    <text class="sm m" x="20" y="296">赭色虚线 = 全量微调。两个子图的横轴都不从 0 起，比较只看长短差，不看比例。</text>
+  </svg>
+  </div>
+  <figcaption>SAMSum 摘要这一栏也是 LoRA 最高：4.7M 的 53.8/29.8/45.9（Rouge-1/2/L）对全量微调的 52.0/28.0/44.5，完整表在附录 E。</figcaption>
+</figure>
+
+<p>怎么读这张图：</p>
+<ul>
+  <li><b>最小的 LoRA（4.7M）追平全量微调。</b>WikiSQL 73.4 对 73.8，差 0.4，在 ±0.5% 的波动内，等于持平；MNLI-m 91.7 对 89.5，高 2.2，远大于 ±0.1%，是真实的优势。</li>
+  <li><b>同一个参数量级，LoRA 好过 adapter。</b>LoRA 4.7M 对 Adapter 7.1M，WikiSQL 73.4 对 71.9，MNLI 91.7 对 89.8；Adapter 要加到 40.1M 才接近，而且推理还要变慢。</li>
+  <li><b>前缀类最差。</b>PreEmbed 在 WikiSQL 只有 63.1，比全量微调低 10 个点。</li>
+  <li><b>全量微调不是上限。</b>MNLI 上它（89.5）输给了不少省参数的方法。原文没有解释，我的推测是：几十万样本对 1750 亿参数，全量微调可能更容易过拟合或冲掉预训练的知识，冻结起到了正则化的作用。这只是推测，原文没有验证。</li>
+</ul>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 2 · 参数量 vs 验证准确率</span>
+  <img class="orig" src="orig-fig2.png" alt="原文 Figure 2：两幅散点折线图，左边 WikiSQL，右边 MultiNLI-matched，横轴是可训练参数个数的以 10 为底的对数，纵轴是验证准确率。LoRA（粉色倒三角）在整个参数范围内几乎是一条平的高线，Adapter(H) 随参数增加逐渐接近，PrefixLayer 和 PrefixEmbed 先升后降，Fine-Tune 是最右边一个孤点。" loading="lazy">
+  <figcaption>这张图在说什么：<b>LoRA 随参数增加很稳，前缀类先升后降。</b>怎么看：横轴每格是 10 倍；最右边的蓝点是全量微调（约 1750 亿，对数 11.2）。原文 5.5 节写到，PreEmbed 超过 256 个特殊 token、PreLayer 超过 32 个以后，性能明显下降；作者猜测是输入离预训练的分布越来越远，并说深入研究超出本文范围。图源：Hu 等 2021 原文。</figcaption>
+</figure>
+
+<p>这条趋势和 LoRA 的构造是对得上的：把 LoRA 加到所有矩阵、再把 r 加到满秩，就大致回到训练原模型；而 adapter 增大会收敛到一个 MLP，前缀类会收敛到一个吃不下长输入的模型（原文 4.1 节）。</p>
+
+<h3>小模型上也一样，数据少时更明显</h3>
+<ul>
+  <li><b>RoBERTa、DeBERTa（GLUE 平均分）</b>：RoBERTa-base 的 LoRA（0.3M）87.2，全量微调（125M）86.4；RoBERTa-large 的 LoRA（0.8M）89.0，全量微调（355M）88.9；DeBERTa-XXL 的 LoRA（4.7M）91.3，全量微调（1500M）91.1。差距只有零点几，小数据集单项的标准差能到 ±1 至 ±2.5，所以稳妥的读法是「追平」。</li>
+  <li><b>GPT-2 medium，E2E 的 BLEU</b>：LoRA（0.35M）70.4，全量微调 68.2，AdapterL（0.37M）66.3，adapter 要加到 11.09M 才有 68.9。</li>
+  <li><b>MNLI 数据少的时候</b>（GPT-3，验证准确率）：只有 100 条标注，LoRA 63.8，全量微调 60.2，PrefixEmbed 37.6（接近三分类的随机水平 33%）；1k 条是 85.6 对 85.8，10k 条是 89.2 对 88.9，持平；全量 39.2 万条是 91.7 对 89.5。作者称之为样本效率：新引入的自由度越少，少量数据下越不容易过拟合。</li>
+</ul>
+<p>前面 RoBERTa 表里不同行用的设置不同，带 † 的行是严格对齐前人设置重跑的，LoRA† 的 88.6 低于无标记行的 89.0，比较时要看同类标记的行。这几张表的完整数字在附录 E。</p>
+<p>另外 GPT-3 在 Few-shot 提示下并不够：MNLI-m 只有 40.6%，微调后是 89.5%（原文附录 A 的 Table 8），所以不能指望只靠提示，参数更新仍然有价值。</p>
+
+<p>训练的代价上，原文的数字是：显存约降到三分之一（1.2TB 到 350GB），训练吞吐从每张 V100 每秒 32.5 个 token 变成 43.1 个，原文把它说成「25% 的加速」。我按 43.1 ÷ 32.5 算出吞吐高了约三分之一，同样的数据用时少约四分之一，两种说法对得上。速度只快一点，是因为梯度仍要穿过整个冻住的网络传回前面各层，只省掉了「算权重梯度」那一步。</p>
+
+<!-- ================= 7 ================= -->
+<h2 id="s7"><span class="no">7</span>证据二：为什么低秩就够</h2>
+<p>追平全量微调，只能说明「低秩够用」。作者还追问了三件事，全部在 GPT-3 175B 上做：加在哪些矩阵上？秩到底取多少？ΔW 和原来的 W 是什么关系？</p>
+
+<h3>加在哪些矩阵上：分散到更多矩阵，比集中在一个上好</h3>
+<p>固定参数预算 18M（约 35MB），调一类矩阵取 r = 8，两类取 r = 4，四类取 r = 2。结果是只调 Wq 或 Wk 明显偏低（WikiSQL 70.4、70.0），Wv、Wᴼ 较好（73.0、73.2），Wq 加 Wv（各 r = 4）是 73.7，四类各 r = 2 也是 73.7（MultiNLI 91.7，最高）。原文的结论是：<b>即使秩只有 4，也已经捕获了 ΔW 里足够的信息，所以调更多种矩阵，比把秩加大到单种矩阵上更好。</b>如果 ΔW 本来需要高秩，把秩从 8 压到 2 应该明显伤效果，但没有。为什么 Wq、Wk 单独调效果差，原文没解释。我的猜想是：Wq、Wk 只决定注意力怎么分配，Wv、Wᴼ 决定取回什么内容、怎么汇总，对生成 SQL 这种格式，后者更关键；这没有验证。</p>
+
+<h3>秩取多少：1 就够用</h3>
+<figure class="fig">
+  <span class="tag">图 7 · 秩从 1 加到 64，WikiSQL 准确率几乎不变（原文 Table 6）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="折线图，横轴是秩 r，取 1、2、4、8、64，纵轴是 WikiSQL 验证准确率，范围 68 到 75。蓝色线 Wq 加 Wv：73.4、73.3、73.7、73.8、73.5，几乎是平的。深色线四类矩阵：74.1、73.7、74.0、74.0、73.9，也几乎平。灰色线只调 Wq：68.8、69.6、70.5、70.4、70.0，r 等于 1 时偏低。">
+    <text class="sm m" x="20" y="18">WikiSQL 验证准确率（%），波动范围 ±0.5；横轴的 r 等间距摆放，不是比例尺</text>
+    <g class="ln"><line x1="70" y1="210" x2="640" y2="210"/><line x1="70" y1="158.6" x2="640" y2="158.6"/><line x1="70" y1="107.2" x2="640" y2="107.2"/><line x1="70" y1="55.7" x2="640" y2="55.7"/></g>
+    <g class="sm m mo" text-anchor="end"><text x="62" y="214">68</text><text x="62" y="163">70</text><text x="62" y="111">72</text><text x="62" y="60">74</text></g>
+    <g class="sm mo" text-anchor="middle"><text x="110" y="232">r = 1</text><text x="235" y="232">r = 2</text><text x="360" y="232">r = 4</text><text x="485" y="232">r = 8</text><text x="610" y="232">r = 64</text></g>
+    <polyline class="newS" points="110,71.2 235,73.8 360,63.4 485,60.9 610,68.6"/>
+    <g class="new"><circle cx="110" cy="71.2" r="4.5"/><circle cx="235" cy="73.8" r="4.5"/><circle cx="360" cy="63.4" r="4.5"/><circle cx="485" cy="60.9" r="4.5"/><circle cx="610" cy="68.6" r="4.5"/></g>
+    <polyline class="ink" points="110,53.2 235,63.4 360,55.7 485,55.7 610,58.3"/>
+    <g class="inkF"><circle cx="110" cy="53.2" r="3.5"/><circle cx="235" cy="63.4" r="3.5"/><circle cx="360" cy="55.7" r="3.5"/><circle cx="485" cy="55.7" r="3.5"/><circle cx="610" cy="58.3" r="3.5"/></g>
+    <polyline class="mutS" points="110,189.4 235,168.9 360,145.7 485,148.3 610,158.6"/>
+    <g class="mutF"><circle cx="110" cy="189.4" r="3.5"/><circle cx="235" cy="168.9" r="3.5"/><circle cx="360" cy="145.7" r="3.5"/><circle cx="485" cy="148.3" r="3.5"/><circle cx="610" cy="158.6" r="3.5"/></g>
+    <text class="sm" x="130" y="40">四类矩阵 Wq、Wk、Wv、Wᴼ</text>
+    <text class="sm tn b" x="130" y="94">Wq + Wv（主实验用的）</text>
+    <text class="sm m" x="400" y="178">只调 Wq</text>
+  </svg>
+  </div>
+  <figcaption>两类和四类矩阵的线，从 r = 1 到 r = 64（参数多 64 倍），差距都在 ±0.5 以内。只调 Wq 时 r = 1 偏低（68.8），到 r = 4 才升到 70.5，说明 Wq 需要的秩更高。数值取自原文 Table 6，MultiNLI 那张表在附录 E。</figcaption>
+</figure>
+<p>原文的话是「出乎意料，秩小到 1 也够用」。r = 64 并不比 r = 4、r = 8 更好，多出来的秩没带来有用的信息。这一点要带条件：它是 GPT-3 上的结果。GPT-2 medium 上 r = 1 明显差（附录 H.2：BLEU 68.72 对 r = 4 的 70.38），所以「r = 1 就够」不是普遍结论，原文脚注也预警过：小 r 不一定对每个任务都有效。</p>
+
+<h3>多出来的方向是信号还是噪声</h3>
+<p>光靠 Table 6 不够：r = 1 够用，也可能只是任务简单。作者再检查 LoRA 学到的方向本身稳不稳。办法是：同一个预训练模型，分别训练 r = 8 和 r = 64 的 LoRA，对两个 A 矩阵做奇异值分解，比较「r = 8 的前 i 个方向，有多少落在 r = 64 的前 j 个方向张成的空间里」，相似度 φ 取 0 到 1，1 是完全包含，0 是完全垂直（精确定义见附录 A 式 4）。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 3 · 不同 r 的 A 矩阵之间的子空间相似度</span>
+  <img class="orig" src="orig-fig3.png" alt="原文 Figure 3：四个热力图。左两个横向是 r 等于 64 的前 j 个方向（1 到 58），纵向是 r 等于 8 的前 i 个方向（1 到 8），分别对应 ΔWq 和 ΔWv；右两个是左边的左下角放大，j 只到 8。颜色越亮相似度越高，第一行（i 等于 1）颜色最亮，往下逐渐变暗。" loading="lazy">
+  <figcaption>这张图在说什么：<b>最强的那一个方向，在 r = 8 和 r = 64 之间高度重合（相似度大于 0.5），其余方向基本不重合。</b>怎么看：纵轴 i 是 r = 8 的前 i 个方向，横轴 j 是 r = 64 的前 j 个方向；第 1 行最亮，第 8 行最暗；右两张是左边的放大，取第 48 层（共 96 层）。图源：Hu 等 2021 原文。</figcaption>
+</figure>
+<p>原文的推论是：最上面的奇异向量方向最有用，其余的方向，可能主要是训练中累积的随机噪声，所以 ΔW 确实可以很低秩。道理是：多出来的方向如果也是有用信号，r = 8 训练时也应该学到，两次就会重合；它们不重合，说明是随机的。用两个不同随机种子训练的 r = 64 做同样的比较，也是如此；ΔWq 比 ΔWv 有更多共同方向，与 Table 6 里 Wq 需要更大 r 相符。对照是两个随机高斯矩阵，完全没有共同方向。</p>
+
+<h3>ΔW 在放大什么：W 里本来有、但不突出的方向</h3>
+<p>最后，作者把 W 投影到 ΔW 的前 r 个主方向上，看 W 在这些方向上有多少成分，并用 W 自己最强的 r 个方向和随机方向做对照（GPT-3 第 48 层的 Wq，r = 4）：</p>
+<figure class="fig">
+  <span class="tag">图 8 · W 在不同方向上的成分有多大（原文 Table 7，r = 4）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 250" role="img" aria-label="四条横条，数值为 Frobenius 范数。W 在自己最强的 4 个方向上：21.67，最长。ΔWq 本身的大小：6.91。W 在 ΔWq 的 4 个方向上：0.32，很短。W 在随机 4 个方向上：0.02，几乎看不见。底部算式：6.91 除以 0.32 约等于 21.6，即 ΔW 把 W 里不突出的方向放大了约 20 倍。">
+    <text class="sm m" x="20" y="18">‖Wq‖_F = 61.95；GPT-3 第 48 层，单个矩阵，一次运行</text>
+    <text class="sm" x="20" y="52">W 在它自己最强的</text><text class="sm" x="20" y="70">4 个方向上的大小</text>
+    <rect class="soft" x="250" y="38" width="411.7" height="26"/><text class="sm mo" x="258" y="56">21.67</text>
+    <text class="sm tn b" x="20" y="112">ΔWq 本身的大小</text>
+    <rect class="new" x="250" y="96" width="131.3" height="26"/><text class="sm mo tn" x="390" y="114">6.91</text>
+    <text class="sm tn" x="20" y="152">W 在 ΔWq 的</text><text class="sm tn" x="20" y="170">4 个方向上的大小</text>
+    <rect class="new" x="250" y="146" width="6.1" height="26"/><text class="sm mo tn" x="266" y="164">0.32</text>
+    <text class="sm" x="20" y="212">W 在随机</text><text class="sm" x="20" y="230">4 个方向上的大小</text>
+    <rect class="mutF" x="250" y="204" width="1" height="26"/><text class="sm mo" x="262" y="222">0.02</text>
+    <text class="sm tn" x="330" y="164">6.91 ÷ 0.32 ≈ 21.6，约 20 倍</text>
+  </svg>
+  </div>
+  <figcaption>条的长度按数值画，每 1 画 19 格。Frobenius 范数是把矩阵所有元素平方、相加、再开根号，衡量矩阵整体有多大。</figcaption>
+</figure>
+<p>三条读法（原文）：第一，0.32 远大于随机的 0.02，说明 ΔW 的方向不是随机落在 W 之外，它放大的是 W 里已有的一些特征。第二，0.32 远小于 21.67，说明 ΔW 放大的不是 W 最强的方向，而是 W 里<b>不被强调</b>的方向。第三，放大倍数约 20（6.91 ÷ 0.32 ≈ 21.6，原文写 21.5，附录说「as large as 20」）；r = 64 时放大只有约 2 倍，说明大 r 下真正做事的只是少数几个方向。原文的解释是「可能」：低秩适配在放大那些预训练学到了、但没被强调的、对下游任务重要的特征。这给出一个好记的图像：预训练把各种能力都存了，微调只是把任务相关的几个方向的音量调大。</p>
+<p>我补充的：这三组分析都是在 LoRA 自己学出来的 A、B 上做的，而且 Figure 3、Table 7 只展示了单层、单个矩阵；作者没有对全量微调得到的 ΔW 做同样的分解。所以它们证明的是「低秩足够」，不是「全量微调的 ΔW 本来就低秩」。作者开篇用的是 hypothesize，后文的措辞渐渐变强，这一点附录里有对照。</p>
+<p>原文的结论，两句话：<b>用冻结的大模型加一条低秩旁路，效果追平全量微调，可训练参数少到万分之一，推理零额外延迟；低秩够用的原因，作者给的是间接的、有限的证据。</b></p>
+
+<!-- ================= 8 ================= -->
+<h2 id="s8"><span class="no">8</span>局限和后来</h2>
+<p><b>作者承认的局限。</b>合并 BA 后，一个批里混放不同任务的输入不方便；小 r 不一定对所有任务都有效，比如下游任务是一种预训练时没见过的新语言；选哪些矩阵「主要靠启发式」，前馈层、LayerNorm、偏置都没研究；总体机制「远未清楚」（第 8 节，问的是预训练学到的特征如何被改造去做下游任务，不是专指低秩）。</p>
+<p><b>我补充的。</b>实验都是短任务、有标注数据的语言任务（GLUE、E2E、WikiSQL、SAMSum），没有覆盖需要大幅改变模型知识的场景；基线数字大量引自前人，调参力度未必对等；Table 4 是验证集结果，选矩阵、选秩也看验证集，可能有少量选择偏差。</p>
+<p><b>后来。</b>下面这些是我凭印象写的，细节待核实：LoRA 成了参数高效微调最主流的做法之一，被各类开源微调工具直接支持，也常用于图像扩散模型的风格微调；后来有 QLoRA（先把冻结的底座量化到 4 比特）、AdaLoRA 等变体，对着的正是本文留下的「秩怎么选、加在哪些矩阵」。本文自己说了，它不回答「往哪个方向改」，那是后面几篇的事：<a href="../015-human-preferences/index.html">015 人类偏好</a>、<a href="../016-ppo/index.html">016 PPO</a>、<a href="../017-alignment-lab/index.html">017 对齐研究</a>、<a href="../018-instructgpt/index.html">018 InstructGPT</a>。</p>
+
+
+<!-- ================= 附录 ================= -->
+<h2 id="after">附录 · 想深入再看</h2>
+
+<details class="ext"><summary>A · 公式、符号表和小推导（原文 4.1、5.1 节，7.2 节）</summary>
+<div class="formula">式 1　max<sub>Φ</sub> Σ<sub>(x,y)∈Z</sub> Σ<sub>t=1..|y|</sub> log P<sub>Φ</sub>(y<sub>t</sub> | x, y<sub>&lt;t</sub>)<span class="fsrc">全量微调，变量是全部参数 Φ（原文式 1，就是 001 的语言模型目标）</span></div>
+<div class="formula">式 2　max<sub>Θ</sub> Σ Σ log P<sub>Φ0+ΔΦ(Θ)</sub>(y<sub>t</sub> | x, y<sub>&lt;t</sub>)<span class="fsrc">LoRA，变量换成小得多的 Θ（|Θ| ≪ |Φ0|）</span></div>
+<div class="formula">式 3　h = W0·x + ΔW·x = W0·x + B·A·x<span class="fsrc">实际前向再乘 α/r：h = W0·x + (α/r)·B·A·x</span></div>
+<div class="formula">参数量　LoRA：|Θ| = 2 × L<sub>LoRA</sub> × d<sub>model</sub> × r　　Adapter：|Θ| = L<sub>Adpt</sub> × (2·d<sub>model</sub>·r + r + d<sub>model</sub>) + 2 × L<sub>LN</sub> × d<sub>model</sub>　　PreEmbed：d<sub>model</sub> × (l<sub>p</sub> + l<sub>i</sub>)　　PreLayer：L × d<sub>model</sub> × (l<sub>p</sub> + l<sub>i</sub>)</div>
+<div class="formula">式 4　φ(A<sub>r=8</sub>, A<sub>r=64</sub>, i, j) = ‖U<sub>i</sub><sup>⊤</sup> U<sub>j</sub>‖<sub>F</sub><sup>2</sup> / min(i, j) ∈ [0, 1]<span class="fsrc">子空间相似度（Grassmann 距离），U 是 A 的右奇异向量</span></div>
+<h4>符号表</h4>
+<ul>
+  <li><b>W0 ∈ ℝ<sup>d×k</sup></b>：预训练权重，冻结。<b>B ∈ ℝ<sup>d×r</sup>、A ∈ ℝ<sup>r×k</sup></b>：可训练的两个小矩阵，r ≪ min(d, k)。<b>α</b>：常数，不随 r 变；作者直接设成第一次试的 r，不调。</li>
+  <li><b>Φ0、ΔΦ、Θ</b>：预训练参数、全量微调的改变量、LoRA 的小参数集。<b>L<sub>LoRA</sub></b>：加了 LoRA 的矩阵个数。<b>l<sub>p</sub>、l<sub>i</sub></b>：前缀、中缀的特殊 token 数。</li>
+</ul>
+<h4>A 为什么随机、B 为什么是 0：小例子（我的推导，原文没写）</h4>
+<p>d = k = 2，r = 1。h = W0x + B(Ax)，设损失对 h 的梯度是 g。链式法则：∂L/∂B = g·(Ax)<sup>⊤</sup>，∂L/∂A = (B<sup>⊤</sup>g)·x<sup>⊤</sup>。取 x = [1, 2]，g = [1, −1]。</p>
+<div class="tbl"><table>
+  <thead><tr><th>情形</th><th>第一步的梯度</th><th>结论</th></tr></thead>
+  <tbody>
+    <tr><td>A = [0.5, −0.3]，B = 0（LoRA）</td><td>Ax = −0.1，∂L/∂B = [−0.1, 0.1]（非零），∂L/∂A = 0。设学习率 η，B 变成 [0.1η, −0.1η]<sup>⊤</sup>；第二步 B<sup>⊤</sup>g = 0.2η ≠ 0，A 的梯度非零</td><td>起点等于原模型，且都能学动</td></tr>
+    <tr><td>A、B 都为 0</td><td>Ax = 0，B = 0，两个梯度都是 0（Adam 的 m、v 也是 0）</td><td>永远停在原地</td></tr>
+    <tr><td>A、B 都随机</td><td>能训练</td><td>起点 BA ≠ 0，模型一开始就被随机扰动</td></tr>
+  </tbody>
+</table></div>
+<p>「为什么偏偏 B 为 0、A 随机，而不是反过来」，原文没有讨论，我认为是习惯选择，待核实。</p>
+<h4>α/r：为什么除以 r（我的直觉，原文只引用了 Yang &amp; Hu 2021）</h4>
+<p>BA 的每个元素是 r 项之和。Adam 让每个参数每步的变化大小差不多，r 越大，求和的项越多，ΔW 的幅度越容易跟着变大；除以 r 把幅度拉回同一量级，同一个学习率就能在不同 r 下大致通用。示意：每项贡献 0.01，r = 4 的和是 0.04，r = 64 的和是 0.64，差 16 倍；乘上 α/r（α = 8）以后都是 0.08。真实训练里各项并非同号同大小，实际增长多快原文没给。实际设置里 α 并不总等于所用的 r：DeBERTa 用 r = 8、α = 8，GPT-2 用 r = 4、α = 32（附录 Table 10、11）。</p>
+<h4>子空间相似度 φ 的小例子（我验算的）</h4>
+<p>三维空间里，U_B 张成 {e₁, e₂}。U_A = e₁：φ = 1（完全包含）；U_A = e₃：φ = 0（垂直）；U_A = [1, 0, 1]/√2：φ = 0.5（一半重合）。随机方向在上万维空间里几乎互相垂直，φ 接近 0，这是 Figure 4 右图随机矩阵没有共同方向的含义。</p>
+</details>
+
+<details class="ext"><summary>B · 全量微调到底贵在哪：一笔显存账（原文第 1、4.2 节，脚注 4、5）</summary>
+<ul>
+  <li><b>存。</b>GPT-3 175B，每个参数 2 字节（FP16）：175 × 10⁹ × 2B = 350GB，与原文一致（我验算）。100 个任务：100 × 350GB ≈ 35TB。原文脚注 4：存 100 个适配模型只需 350GB + 35MB × 100 ≈ 354GB。</li>
+  <li><b>练。</b>每个被训练的参数，除了权重本身，还要带梯度（一份）和 Adam 的 m、v（两份，005 讲过）。冻住的参数都不需要。原文：GPT-3 175B 训练显存从 1.2TB 降到 350GB，最多降 2/3。</li>
+  <li><b>我的简化算法，原文没给逐项明细：</b>只算「权重 + m + v」三份，冻住后只剩权重一份，省 2/3，和原文说法对得上。但 1.2TB ÷ 175B ≈ 6.9 字节/参数，具体怎么拆（梯度、主权重副本等），原文没写，我不替它编。</li>
+  <li><b>速度只快一点。</b>冻结权重不等于不用反向传播：梯度仍要穿过整个网络传到前面各层的 LoRA 模块，只是省掉「算权重梯度」这一步。脚注 5：全量微调每张 V100 每秒 32.5 个 token，LoRA 是 43.1 个，相同分片数；43.1 ÷ 32.5 ≈ 1.33，原文说成 25% 的加速。</li>
+  <li><b>训练设置：</b>GPT-3 实验用 AdamW，2 个 epoch，批大小 128，权重衰减 0.1，学习率 LoRA 2e-4、全量微调 5e-6（相差 40 倍，附录 D.4、Table 12）。原文没有解释，我推测：全量微调动的是已训练好的权重，步子大了容易破坏预训练好的能力，LoRA 的 A、B 起点在零附近，学习率可以大得多。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>C · 几个概念：内在维度、adapter 与前缀调优、奇异值分解与范数（原文 1、4.1、5.1、7 节）</summary>
+<ul>
+  <li><b>内在维度（Li 等 2018；Aghajanyan 等 2020）</b>：不更新全部 D 个参数，而是固定一个随机投影 P，只在一个很小的 d 维子空间里更新：θ = θ₀ + Pθ_d，只训练 θ_d。d 取很小也能达到全量微调的大部分效果，说明任务的内在维度低。原文引用转述为：预训练语言模型的内在维度很低，原文没给具体数字，我印象里是几百维，且模型越大越低，待核实。</li>
+  <li><b>Adapter（Houlsby 等 2019）</b>：在每层子层之后、残差相加之前，串联一个小瓶颈网络（下投影 d → m，非线性，上投影 m → d）。变体：AdapterH（Houlsby 原设计，每块两个）、AdapterL（Lin 等 2020，每块一个，带 LayerNorm）、AdapterP（Pfeiffer 等 2021）、AdapterD（AdapterDrop，丢掉一部分层）。</li>
+  <li><b>前缀 / 提示调优</b>：PreEmbed 在输入前（prefix）或后（infix）加若干可训练的特殊 token，词向量可训练，不对应真词；PreLayer（Li &amp; Liang 2021 的 prefix-tuning）每一层之后都把这些位置的激活值换成可训练向量。PreEmbed 与 Lester 等 2021 的 prompt tuning 思路相近，这一对应是我补充的，待核实。</li>
+  <li><b>BitFit（Zaken 等 2021）</b>：只训练偏置向量，其他全冻结，另一个极省参数的基线。</li>
+  <li><b>奇异值分解 SVD</b>：任何矩阵 M 都能写成若干「方向 × 强度」的叠加：M = σ₁u₁v₁<sup>⊤</sup> + σ₂u₂v₂<sup>⊤</sup> + …，σ 从大到小排，非零 σ 的个数就是秩。正文第 2 节里秩 1 的矩阵只有一项。</li>
+  <li><b>Frobenius 范数 ‖M‖_F</b>：所有元素平方、相加、再开根号，衡量矩阵整体大小。例：[[3,0],[0,4]] 的范数是 √(9+16) = 5。</li>
+  <li><b>GLUE、BLEU 等评价</b>：GLUE 见 008，BLEU 见 002。E2E、WebNLG、DART 是数据到文本的生成任务，WikiSQL 是自然语言转 SQL，SAMSum 是对话摘要。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>D · 相关工作与当时的背景（原文第 6 节，2021 年）</summary>
+<ul>
+  <li><b>模型规模。</b>GPT-3（2020）1750 亿参数，是当时单个 Transformer 语言模型的最大规模；009 的规模定律给出「越大越好」的方向，大家都往大走，间接造成了「微调副本存不下」的痛点。</li>
+  <li><b>同期的高效适配方法。</b>Adapter（2019）、Prefix-tuning（Li &amp; Liang，2021 年 1 月）、Prompt tuning（Lester 等，2021 年 4 月）、BitFit（2021）、Compacter（原文称同期）、P-tuning（Liu 等 2021）。LoRA 在 2021 年 6 月上传 arXiv，抓住了「adapter 慢、prefix 难调」这一对缺口。</li>
+  <li><b>硬件。</b>本文实验用 NVIDIA Tesla V100，GPT-3 175B 的训练需要模型并行。</li>
+  <li><b>理论背景。</b>原文第 6 节列了深度学习里低秩结构的相关工作（过参数化网络训练后的低秩性质、显式低秩约束的网络压缩、矩阵分解等），并强调据作者所知，没有工作考虑过对<b>冻结的模型</b>做低秩更新来适配下游任务，这是它自认的新颖之处。</li>
+  <li><b>作者开源了什么。</b>PyTorch 集成包，以及 RoBERTa、DeBERTa、GPT-2 的实现和检查点（GitHub: microsoft/LoRA）。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>E · 完整结果表（原文 Table 1、2、3、4、5、6、8、16）</summary>
+<h4>Table 1　推理延迟（GPT-2 medium，毫秒，100 次平均，NVIDIA Quadro RTX8000）</h4>
+<div class="tbl"><table>
+  <thead><tr><th>批 / 序列长 / adapter 的 |Θ|</th><th class="num">Fine-tune / LoRA</th><th class="num">AdapterL</th><th class="num">AdapterH</th></tr></thead>
+  <tbody>
+    <tr><td>32 / 512 / 0.5M</td><td class="num">1449.4±0.8</td><td class="num">1482.0±1.0 (+2.2%)</td><td class="num">1492.2±1.0 (+3.0%)</td></tr>
+    <tr><td>16 / 256 / 11M</td><td class="num">338.0±0.6</td><td class="num">354.8±0.5 (+5.0%)</td><td class="num">366.3±0.5 (+8.4%)</td></tr>
+    <tr><td>1 / 128 / 11M</td><td class="num">19.8±2.7</td><td class="num">23.9±2.1 (+20.7%)</td><td class="num">25.8±2.2 (+30.3%)</td></tr>
+  </tbody>
+</table></div>
+<p>我复核了百分比：23.9 ÷ 19.8 = 1.207，25.8 ÷ 19.8 = 1.303。原文附录 B 的 Figure 5 把批和序列长度扫了一遍：批和序列长到一定程度，延迟会被摊平（Rücklé 等也观察到），在线短序列场景下可以慢到 30% 以上。多卡场景更糟：模型切到多张 GPU，更深的网络需要更多同步操作。</p>
+
+<h4>Table 2　GLUE（* 引用前人，† 严格按 Houlsby 等的设置重跑：序列长 128，固定批大小，MRPC / RTE / STS-B 从预训练模型而非 MNLI 检查点初始化）</h4>
+<div class="tbl"><table>
+  <thead><tr><th>模型与方法</th><th class="num">参数</th><th class="num">MNLI</th><th class="num">SST-2</th><th class="num">MRPC</th><th class="num">CoLA</th><th class="num">QNLI</th><th class="num">QQP</th><th class="num">RTE</th><th class="num">STS-B</th><th class="num">平均</th></tr></thead>
+  <tbody>
+    <tr><td>RoBbase FT*</td><td class="num">125.0M</td><td class="num">87.6</td><td class="num">94.8</td><td class="num">90.2</td><td class="num">63.6</td><td class="num">92.8</td><td class="num">91.9</td><td class="num">78.7</td><td class="num">91.2</td><td class="num">86.4</td></tr>
+    <tr><td>RoBbase BitFit*</td><td class="num">0.1M</td><td class="num">84.7</td><td class="num">93.7</td><td class="num">92.7</td><td class="num">62.0</td><td class="num">91.8</td><td class="num">84.0</td><td class="num">81.5</td><td class="num">90.8</td><td class="num">85.2</td></tr>
+    <tr><td>RoBbase AdptD*</td><td class="num">0.3M</td><td class="num">87.1±.0</td><td class="num">94.2±.1</td><td class="num">88.5±1.1</td><td class="num">60.8±.4</td><td class="num">93.1±.1</td><td class="num">90.2±.0</td><td class="num">71.5±2.7</td><td class="num">89.7±.3</td><td class="num">84.4</td></tr>
+    <tr><td>RoBbase AdptD*</td><td class="num">0.9M</td><td class="num">87.3±.1</td><td class="num">94.7±.3</td><td class="num">88.4±.1</td><td class="num">62.6±.9</td><td class="num">93.0±.2</td><td class="num">90.6±.0</td><td class="num">75.9±2.2</td><td class="num">90.3±.1</td><td class="num">85.4</td></tr>
+    <tr><td><b>RoBbase LoRA</b></td><td class="num">0.3M</td><td class="num">87.5±.3</td><td class="num">95.1±.2</td><td class="num">89.7±.7</td><td class="num">63.4±1.2</td><td class="num">93.3±.3</td><td class="num">90.8±.1</td><td class="num">86.6±.7</td><td class="num">91.5±.2</td><td class="num"><b>87.2</b></td></tr>
+    <tr><td>RoBlarge FT*</td><td class="num">355.0M</td><td class="num">90.2</td><td class="num">96.4</td><td class="num">90.9</td><td class="num">68.0</td><td class="num">94.7</td><td class="num">92.2</td><td class="num">86.6</td><td class="num">92.4</td><td class="num">88.9</td></tr>
+    <tr><td><b>RoBlarge LoRA</b></td><td class="num">0.8M</td><td class="num">90.6±.2</td><td class="num">96.2±.5</td><td class="num">90.9±1.2</td><td class="num">68.2±1.9</td><td class="num">94.9±.3</td><td class="num">91.6±.1</td><td class="num">87.4±2.5</td><td class="num">92.6±.2</td><td class="num"><b>89.0</b></td></tr>
+    <tr><td>RoBlarge AdptP†</td><td class="num">3.0M</td><td class="num">90.2±.3</td><td class="num">96.1±.3</td><td class="num">90.2±.7</td><td class="num">68.3±1.0</td><td class="num">94.8±.2</td><td class="num">91.9±.1</td><td class="num">83.8±2.9</td><td class="num">92.1±.7</td><td class="num">88.4</td></tr>
+    <tr><td>RoBlarge AdptP†</td><td class="num">0.8M</td><td class="num">90.5±.3</td><td class="num">96.6±.2</td><td class="num">89.7±1.2</td><td class="num">67.8±2.5</td><td class="num">94.8±.3</td><td class="num">91.7±.2</td><td class="num">80.1±2.9</td><td class="num">91.9±.4</td><td class="num">87.9</td></tr>
+    <tr><td>RoBlarge AdptH†</td><td class="num">6.0M</td><td class="num">89.9±.5</td><td class="num">96.2±.3</td><td class="num">88.7±2.9</td><td class="num">66.5±4.4</td><td class="num">94.7±.2</td><td class="num">92.1±.1</td><td class="num">83.4±1.1</td><td class="num">91.0±1.7</td><td class="num">87.8</td></tr>
+    <tr><td>RoBlarge AdptH†</td><td class="num">0.8M</td><td class="num">90.3±.3</td><td class="num">96.3±.5</td><td class="num">87.7±1.7</td><td class="num">66.3±2.0</td><td class="num">94.7±.2</td><td class="num">91.5±.1</td><td class="num">72.9±2.9</td><td class="num">91.5±.5</td><td class="num">86.4</td></tr>
+    <tr><td><b>RoBlarge LoRA†</b></td><td class="num">0.8M</td><td class="num">90.6±.2</td><td class="num">96.2±.5</td><td class="num">90.2±1.0</td><td class="num">68.2±1.9</td><td class="num">94.8±.3</td><td class="num">91.6±.2</td><td class="num">85.2±1.1</td><td class="num">92.3±.5</td><td class="num"><b>88.6</b></td></tr>
+    <tr><td>DeBXXL FT*</td><td class="num">1500.0M</td><td class="num">91.8</td><td class="num">97.2</td><td class="num">92.0</td><td class="num">72.0</td><td class="num">96.0</td><td class="num">92.7</td><td class="num">93.9</td><td class="num">92.9</td><td class="num">91.1</td></tr>
+    <tr><td><b>DeBXXL LoRA</b></td><td class="num">4.7M</td><td class="num">91.9±.2</td><td class="num">96.9±.2</td><td class="num">92.6±.6</td><td class="num">72.4±1.1</td><td class="num">96.0±.1</td><td class="num">92.9±.1</td><td class="num">94.9±.4</td><td class="num">93.0±.2</td><td class="num"><b>91.3</b></td></tr>
+  </tbody>
+</table></div>
+<p>指标：MNLI 为整体（matched 与 mismatched）准确率，CoLA 为 Matthew 相关系数，STS-B 为 Pearson 相关系数，其余为准确率。同参数量 0.8M 的比较里，RTE 上差距最大：LoRA† 85.2 对 AdptH 72.9。</p>
+
+<h4>Table 3　GPT-2 在 E2E NLG Challenge 上（* 引用前人）</h4>
+<div class="tbl"><table>
+  <thead><tr><th>模型与方法</th><th class="num">参数</th><th class="num">BLEU</th><th class="num">NIST</th><th class="num">MET</th><th class="num">ROUGE-L</th><th class="num">CIDEr</th></tr></thead>
+  <tbody>
+    <tr><td>GPT-2 M FT*</td><td class="num">354.92M</td><td class="num">68.2</td><td class="num">8.62</td><td class="num">46.2</td><td class="num">71.0</td><td class="num">2.47</td></tr>
+    <tr><td>GPT-2 M AdapterL*</td><td class="num">0.37M</td><td class="num">66.3</td><td class="num">8.41</td><td class="num">45.0</td><td class="num">69.8</td><td class="num">2.40</td></tr>
+    <tr><td>GPT-2 M AdapterL*</td><td class="num">11.09M</td><td class="num">68.9</td><td class="num">8.71</td><td class="num">46.1</td><td class="num">71.3</td><td class="num">2.47</td></tr>
+    <tr><td>GPT-2 M AdapterH</td><td class="num">11.09M</td><td class="num">67.3±.6</td><td class="num">8.50±.07</td><td class="num">46.0±.2</td><td class="num">70.7±.2</td><td class="num">2.44±.01</td></tr>
+    <tr><td>GPT-2 M FTTop2*</td><td class="num">25.19M</td><td class="num">68.1</td><td class="num">8.59</td><td class="num">46.0</td><td class="num">70.8</td><td class="num">2.41</td></tr>
+    <tr><td>GPT-2 M PreLayer*</td><td class="num">0.35M</td><td class="num">69.7</td><td class="num">8.81</td><td class="num">46.1</td><td class="num">71.4</td><td class="num">2.49</td></tr>
+    <tr><td><b>GPT-2 M LoRA</b></td><td class="num">0.35M</td><td class="num"><b>70.4±.1</b></td><td class="num">8.85±.02</td><td class="num">46.8±.2</td><td class="num">71.8±.1</td><td class="num">2.53±.02</td></tr>
+    <tr><td>GPT-2 L FT*</td><td class="num">774.03M</td><td class="num">68.5</td><td class="num">8.78</td><td class="num">46.0</td><td class="num">69.9</td><td class="num">2.45</td></tr>
+    <tr><td>GPT-2 L AdapterL</td><td class="num">0.88M</td><td class="num">69.1±.1</td><td class="num">8.68±.03</td><td class="num">46.3±.0</td><td class="num">71.4±.2</td><td class="num">2.49±.0</td></tr>
+    <tr><td>GPT-2 L AdapterL</td><td class="num">23.00M</td><td class="num">68.9±.3</td><td class="num">8.70±.04</td><td class="num">46.1±.1</td><td class="num">71.3±.2</td><td class="num">2.45±.02</td></tr>
+    <tr><td>GPT-2 L PreLayer*</td><td class="num">0.77M</td><td class="num">70.3</td><td class="num">8.85</td><td class="num">46.2</td><td class="num">71.7</td><td class="num">2.47</td></tr>
+    <tr><td><b>GPT-2 L LoRA</b></td><td class="num">0.77M</td><td class="num"><b>70.4±.1</b></td><td class="num">8.89±.02</td><td class="num">46.8±.2</td><td class="num">72.0±.2</td><td class="num">2.47±.02</td></tr>
+  </tbody>
+</table></div>
+<p>读法：同样 0.35M 量级，AdapterL 0.37M 只有 66.3，LoRA 达到 70.4，比全量微调的 68.2 高 2.2；adapter 要加到 11.09M（68.9）才接近，是 LoRA 的 30 多倍。LoRA 对 PreLayer 略高，但 PreLayer 的数字来自 Li &amp; Liang 原论文，LoRA 是作者自己跑的，调参力度未必对等。只调最后两层（FTTop2）的 BLEU 是 68.1，参数 25.19M，是 LoRA 的 70 多倍。GPT-2 L 上优势变小（70.4 对 70.3）。</p>
+
+<h4>Table 4　GPT-3 175B（WikiSQL 与 MNLI-m 为验证准确率 %，SAMSum 为 Rouge-1/2/L）</h4>
+<div class="tbl"><table>
+  <thead><tr><th>方法</th><th class="num">参数</th><th class="num">WikiSQL</th><th class="num">MNLI-m</th><th class="num">SAMSum</th></tr></thead>
+  <tbody>
+    <tr><td>GPT-3 FT</td><td class="num">175,255.8M</td><td class="num">73.8</td><td class="num">89.5</td><td class="num">52.0/28.0/44.5</td></tr>
+    <tr><td>BitFit</td><td class="num">14.2M</td><td class="num">71.3</td><td class="num">91.0</td><td class="num">51.3/27.4/43.5</td></tr>
+    <tr><td>PreEmbed</td><td class="num">3.2M</td><td class="num">63.1</td><td class="num">88.6</td><td class="num">48.3/24.2/40.5</td></tr>
+    <tr><td>PreLayer</td><td class="num">20.2M</td><td class="num">70.1</td><td class="num">89.5</td><td class="num">50.8/27.3/43.5</td></tr>
+    <tr><td>AdapterH</td><td class="num">7.1M</td><td class="num">71.9</td><td class="num">89.8</td><td class="num">53.0/28.9/44.8</td></tr>
+    <tr><td>AdapterH</td><td class="num">40.1M</td><td class="num">73.2</td><td class="num">91.5</td><td class="num">53.2/29.0/45.1</td></tr>
+    <tr><td><b>LoRA</b></td><td class="num">4.7M</td><td class="num">73.4</td><td class="num"><b>91.7</b></td><td class="num"><b>53.8/29.8/45.9</b></td></tr>
+    <tr><td><b>LoRA</b></td><td class="num">37.7M</td><td class="num"><b>74.0</b></td><td class="num">91.6</td><td class="num">53.4/29.2/45.1</td></tr>
+  </tbody>
+</table></div>
+<p>波动范围：WikiSQL ±0.5%，MNLI-m ±0.1%，SAMSum ±0.2/±0.2/±0.1。LoRA 的两行是两档参数预算，每格取自该预算下的某个配置，不都来自 Wq + Wv 同一个 r：附录 Table 15 里，4.7M 的 MNLI 91.7 来自 rv = 2（rq = rv = 1 是 91.3），37.7M 的 WikiSQL 74.0 来自四类矩阵各 r = 4（rq = rv = 8 是 73.8）。同一个参数预算里分数取的是各次运行里最好的验证成绩。Table 4 是验证集，不是留出的测试集。</p>
+
+<h4>Table 5　固定 18M 预算，LoRA 加在哪些矩阵上（GPT-3，验证准确率）</h4>
+<div class="tbl"><table>
+  <thead><tr><th>调的矩阵</th><th class="num">Wq</th><th class="num">Wk</th><th class="num">Wv</th><th class="num">Wᴼ</th><th class="num">Wq,Wk</th><th class="num">Wq,Wv</th><th class="num">四类</th></tr></thead>
+  <tbody>
+    <tr><td>秩 r</td><td class="num">8</td><td class="num">8</td><td class="num">8</td><td class="num">8</td><td class="num">4</td><td class="num">4</td><td class="num">2</td></tr>
+    <tr><td>WikiSQL（±0.5）</td><td class="num">70.4</td><td class="num">70.0</td><td class="num">73.0</td><td class="num">73.2</td><td class="num">71.4</td><td class="num">73.7</td><td class="num">73.7</td></tr>
+    <tr><td>MultiNLI（±0.1）</td><td class="num">91.0</td><td class="num">90.8</td><td class="num">91.0</td><td class="num">91.3</td><td class="num">91.3</td><td class="num">91.3</td><td class="num">91.7</td></tr>
+  </tbody>
+</table></div>
+<p>作者自己的表注是「调 Wq 和 Wv 总体最好」。四类各 r = 2 在 MNLI 上略高（91.7 对 91.3），差距接近噪声，所以主表用的只是一个简单配置，不一定是 LoRA 的最好配置，这是我的观察。</p>
+
+<h4>Table 6　不同的秩 r（验证准确率）</h4>
+<div class="tbl"><table>
+  <thead><tr><th>数据集 / 矩阵</th><th class="num">r = 1</th><th class="num">r = 2</th><th class="num">r = 4</th><th class="num">r = 8</th><th class="num">r = 64</th></tr></thead>
+  <tbody>
+    <tr><td>WikiSQL（±0.5）Wq</td><td class="num">68.8</td><td class="num">69.6</td><td class="num">70.5</td><td class="num">70.4</td><td class="num">70.0</td></tr>
+    <tr><td>WikiSQL　Wq, Wv</td><td class="num">73.4</td><td class="num">73.3</td><td class="num">73.7</td><td class="num">73.8</td><td class="num">73.5</td></tr>
+    <tr><td>WikiSQL　Wq, Wk, Wv, Wᴼ</td><td class="num">74.1</td><td class="num">73.7</td><td class="num">74.0</td><td class="num">74.0</td><td class="num">73.9</td></tr>
+    <tr><td>MultiNLI（±0.1）Wq</td><td class="num">90.7</td><td class="num">90.9</td><td class="num">91.1</td><td class="num">90.7</td><td class="num">90.7</td></tr>
+    <tr><td>MultiNLI　Wq, Wv</td><td class="num">91.3</td><td class="num">91.4</td><td class="num">91.3</td><td class="num">91.6</td><td class="num">91.4</td></tr>
+    <tr><td>MultiNLI　Wq, Wk, Wv, Wᴼ</td><td class="num">91.2</td><td class="num">91.7</td><td class="num">91.7</td><td class="num">91.5</td><td class="num">91.4</td></tr>
+  </tbody>
+</table></div>
+
+<h4>Table 7　W 在不同方向上的 Frobenius 范数（GPT-3 第 48 层，Wq，‖Wq‖_F = 61.95）</h4>
+<div class="tbl"><table>
+  <thead><tr><th></th><th class="num">r = 4：ΔWq</th><th class="num">Wq 自己</th><th class="num">随机</th><th class="num">r = 64：ΔWq</th><th class="num">Wq 自己</th><th class="num">随机</th></tr></thead>
+  <tbody><tr><td>‖UᵀWqVᵀ‖_F</td><td class="num">0.32</td><td class="num">21.67</td><td class="num">0.02</td><td class="num">1.90</td><td class="num">37.71</td><td class="num">0.33</td></tr></tbody>
+</table></div>
+<p>附：‖ΔWq‖_F 在 r = 4 时是 6.91，r = 64 时是 3.57。我复核了随机一栏：用 ‖Wq‖_F ÷ 12288 ≈ 0.00504 当 W 单个元素的典型大小，乘 r = 4 得 0.0202，r = 64 时 64 × 0.00504 = 0.323，与表里的 0.02 和 0.33 吻合，说明随机一栏就是纯统计基线。r = 64 时放大倍数 3.57 ÷ 1.90 ≈ 1.9。</p>
+
+<h4>Table 8　Few-shot 与微调（GPT-3，验证准确率 %，原文附录 A）</h4>
+<div class="tbl"><table>
+  <thead><tr><th>方法</th><th class="num">MNLI-m</th><th class="num">RTE</th></tr></thead>
+  <tbody><tr><td>GPT-3 Few-Shot</td><td class="num">40.6</td><td class="num">69.0</td></tr><tr><td>GPT-3 Fine-Tuned</td><td class="num">89.5</td><td class="num">85.4</td></tr></tbody>
+</table></div>
+<p>MNLI 是三分类，随机猜约 33%。MNLI 的 few-shot 设置是每类 2 个示例，共 6 个；RTE 的 few-shot 数字取自 GPT-3 论文。</p>
+
+<h4>Table 16　低数据量下的 MNLI（GPT-3，验证准确率 %）</h4>
+<div class="tbl"><table>
+  <thead><tr><th>方法</th><th class="num">100 条</th><th class="num">1k 条</th><th class="num">10k 条</th><th class="num">全量 392K</th></tr></thead>
+  <tbody>
+    <tr><td>Fine-Tune</td><td class="num">60.2</td><td class="num">85.8</td><td class="num">88.9</td><td class="num">89.5</td></tr>
+    <tr><td>PrefixEmbed</td><td class="num">37.6</td><td class="num">75.2</td><td class="num">79.5</td><td class="num">88.6</td></tr>
+    <tr><td>PrefixLayer</td><td class="num">48.3</td><td class="num">82.5</td><td class="num">85.9</td><td class="num">89.6</td></tr>
+    <tr><td><b>LoRA</b></td><td class="num"><b>63.8</b></td><td class="num">85.6</td><td class="num"><b>89.2</b></td><td class="num"><b>91.7</b></td></tr>
+  </tbody>
+</table></div>
+<p>附录 F.3 的原话：LoRA 在 MNLI-100 和 MNLI-Full 上都比微调好，在 1k 和 10k 上「comparable」（随机种子带来 ±0.3 的波动）。即两端更好、中间持平。附录 E 还做了 LoRA 与前缀的组合：LoRA + PrefixEmbed 在 WikiSQL 上好于两者单独使用，说明二者有「somewhat orthogonal」的一面；LoRA + PrefixLayer 比单独 LoRA 略差，作者归因于 prefix-layer 对学习率敏感，未验证。</p>
+</details>
+
+<details class="ext"><summary>F · 实验设置和训练细节（原文第 5 节、附录 D）</summary>
+<ul>
+  <li><b>基线的写法。</b>FT 是全量微调；FT^Top2 只调最后两层；BitFit 只调偏置；PreEmbed、PreLayer 是前缀类；AdapterH / L / P / D 是 adapter 的几种设计。表里带 * 的行引自前人，不带的是作者自己跑的，带 † 的是严格对齐 Houlsby 等的设置。</li>
+  <li><b>模型与任务。</b>RoBERTa base（125M）、large（355M）来自 HuggingFace；DeBERTa XXL（1.5B）；GPT-2 medium / large，设置尽量贴近 Li &amp; Liang 2021；GPT-3 175B。任务：GLUE、E2E、WebNLG、DART、WikiSQL、MNLI-matched、SAMSum。</li>
+  <li><b>LoRA 的配置。</b>主实验只对 Wq、Wv 加 LoRA。RoBERTa 用 rq = rv = 8（Table 9）；RoBERTa、DeBERTa 在 MRPC、RTE、STS-B 上从最好的 MNLI 检查点初始化 LoRA 模块，除非是 † 行。</li>
+  <li><b>参数量验算（RoBERTa）。</b>base（12 层，d = 768）对 Wq、Wv 取 r = 8：2 × 24 × 768 × 8 = 294,912 ≈ 0.3M；large（24 层，d = 1024）：2 × 48 × 1024 × 8 = 786,432 ≈ 0.8M，与 Table 2 一致。</li>
+  <li><b>GPT-3 矩阵尺寸验算。</b>每层 12d²，96 层共 12 × 96 × 12288² = 173,946,175,488 ≈ 1739 亿，加上词嵌入约 6 亿（50257 × 12288，词表大小是我凭印象写的，待核实）接近 1750 亿，说明权重几乎全在这些 d×d 矩阵里。</li>
+  <li><b>为什么把多头注意力的 Wq 当一个矩阵。</b>004 里多头注意力把 Wq 实现成每头一个 512×64 的小矩阵，数学上等价于一个 512×512 的大矩阵按输出维度切开。本文把它们合并起来当一个矩阵（4.2 节）。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>G · 作者的措辞怎么逐渐变强（对照 3 处，我的观察）</summary>
+<ul>
+  <li><b>开篇（第 1、4.1 节）：</b>「we hypothesize the updates to the weights also have a low intrinsic rank」，是假说。</li>
+  <li><b>第 7.2 节：</b>「Hence, the adaptation matrix can indeed have a very low rank」；附录 H.4：「gives evidence (once again) that the intrinsic rank needed ... is low」；摘要把它称为「an empirical investigation into rank-deficiency in language model adaptation」；第 8 节更把「ΔW 的秩亏」当作前提，去推测 W 也可能秩亏。</li>
+  <li><b>我的看法：</b>作者后文是把它当作有实验支持的结论在用。但这些证据只能说明「用 LoRA 把 ΔW 限制成低秩后，效果几乎没掉」，以及「LoRA 自己学出的主方向比较稳定」，也就是低秩足够，不是全量微调的 ΔW 本来就低秩，所以我仍按假说看待。这是我的评价，与作者的立场分开。</li>
+  <li><b>作者自己留的边界（脚注 6）：</b>不预期小 r 对每个任务都有效；思想实验是下游任务如果是预训练时没见过的语言，重新训练整个模型（相当于 r = d_model）肯定比小 r 的 LoRA 好。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>H · 前后篇衔接，和后来发展（我凭印象写，待核实）</summary>
+<ul>
+  <li><b>继承自：</b>004 的注意力矩阵和 d_ffn = 4 d_model（LoRA 把增量加在这些矩阵上）；005 的 Adam 状态（冻结的参数不需要）；006、008 的预训练 + 全量微调；007 的 GPT-2（实验对象）；009 的规模定律（推动模型变大，间接造成存不下副本的痛点）；011 的 GPT-3（压力测试对象）。</li>
+  <li><b>对上一篇的推进：</b>前面这些篇把「怎么训出一个强大的通用模型」讲完了，本篇补上「拿到这个模型之后，怎么便宜地让它做具体任务」：不改架构、不改预训练，只改微调这一步，把「每任务一份整模型」变成「每任务一份几十 MB 的增量」。</li>
+  <li><b>留下的问题：</b>LoRA 只解决「怎么便宜地改」，不解决「往哪个方向改」。015 到 018 从另一条线回答「该用什么信号去微调模型」；后世常拿 LoRA 作这类微调的低成本实现，但这几篇本身并不依赖它。</li>
+  <li><b>后来（凭印象，均待核实）：</b>Hugging Face PEFT 库、图像扩散模型的风格微调；QLoRA（2023，4 比特量化的底座加 LoRA）、AdaLoRA、DoRA；针对「一个批里混多任务」的多 LoRA 同时服务（如 S-LoRA）；有研究报告在需要学习大量新知识的任务（继续预训练、代码、数学）上 LoRA 不如全量微调但遗忘更少，也有研究认为中小数据量的后训练里设置得当的 LoRA 可以追平全量微调。仍然活着的思想：冻结底座加小而可换的增量，是开源大模型生态的基本形态。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>I · 疑点和没有核实的地方</summary>
+<ul>
+  <li><b>35MB 和我算的 37.7MB：</b>18.9M 参数 × 2 字节 = 37.7MB，原文 4.2 节和 7.1 节都写 35MB（18M 参数）。37.7MB 约 36.0 MiB，可能是按 MiB 计并取整，这是我的推测，原文没给口径。</li>
+  <li><b>显存的逐项拆账：</b>原文只给了 1.2TB 和 350GB，没写拆法。</li>
+  <li><b>附录 D.4 的笔误：</b>它把 37.7M 的第二种配置写成「rq = rk = rv = ro = 2」，按 2 × 384 × 12288 × 2 只有 18.9M，要 r = 4 才是 37.7M，附录 Table 15 也写 r = 4，应是原文笔误。</li>
+  <li><b>GPT-2 medium 上的最优秩：</b>附录 H.2 写 r = 1 时验证损失 1.23、BLEU 68.72，明显差于 r = 4 的 1.18 / 70.38，验证损失在 r = 16 附近最低（1.16）。但作者的表题仍说 GPT-2 Medium「有与 GPT-3 175B 相近的内在秩」，并说模型大小与最优秩的关系是开放问题。我认为两者不矛盾：内在秩都很小可以成立，但「r = 1 就够」不是普遍结论。</li>
+  <li><b>Table 5 里 Wq、Wk 为什么差：</b>原文没解释，正文里的猜想是我的。</li>
+  <li><b>全量微调为什么在 MNLI 上输给省参数方法：</b>原文没解释，正文里的说法是我的推测。</li>
+  <li><b>投稿状态：</b>原文的发表处以 arXiv 版为准（会议信息待核实）。</li>
+  <li><b>后世情况：</b>第 8 节和附录 H 里的后来发展都是凭印象写的，细节待核实。</li>
+</ul>
+</details>
+
+
+<footer>
+  AI 论文解读 · 014 · 原文：Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen. <i>LoRA: Low-Rank Adaptation of Large Language Models.</i> arXiv:2106.09685, 2021（v2）.<br>
+  图中标「示意」的数字是为了讲清机制设定的例子，都验算过；标「推算」的是我按原文规格估算的，原文没给。实验数字出自原文 Table 1–8、16；原文 Figure 1、2、3 的图源为原文。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>

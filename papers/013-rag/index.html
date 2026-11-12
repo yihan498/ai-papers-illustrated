@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RAG 图解</title>
+<meta name="description" content="Lewis 等 2020《Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks》图解：给生成模型外挂一本可查的书，先检索几段相关文字再写答案，检索器和生成器只靠问题和答案一起训练；换一本书，模型的知识就跟着换。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文（外挂一本可查的书，检索器和生成器一起训练），赭 = 要被替代的旧做法（知识全背进参数的闭卷模型、只会抠原文的抽取式）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;min-width:520px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th:first-child,td:first-child{white-space:nowrap}
+th:first-child,td:first-child{padding-right:20px}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+<main class="wrap">
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　013</nav>
+  <h1 style="margin-top:14px">先查资料，再写答案</h1>
+  <p class="lede">Lewis 等人 2020 年在 Facebook AI Research 写的《Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks》，简称 RAG。大模型把知识背进参数，世界变了就改不了，也说不出依据。这篇给一个预训练好的生成模型 BART 外挂一本「可查的书」：<b>回答前，先从维基百科的向量索引里查出几段相关文字，再让生成器参考它们写答案；检索器和生成器只靠「问题-答案」一起训练，换一本书，模型的知识就跟着换。</b>「检索增强生成」后来成了一个通用名词。</p>
+  <div class="meta">
+    <span>Patrick Lewis、Ethan Perez、Douwe Kiela 等（Facebook AI Research / UCL / NYU）· 2020 年（arXiv 2005.11401）</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的做法（外挂可查的书，检索器和生成器一起训练）</span>
+    <span class="key"><i class="sw o"></i>赭色：要被替代的旧做法（知识全背进参数，或只会抠原文）</span>
+  </div>
+
+<figure class="fig" style="margin-top:36px">
+  <span class="tag">图 0 · 一条线：先查，再写，答案的对错回头训练检索器</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="五个方框依次连接：问题；检索器，由查询编码器和维基百科 2100 万段的向量索引组成；前 K 段相关文字；生成器 BART，照着段落写；答案。一条虚线从答案出发，回到检索器和生成器，表示答案的对错会传回这两个部件。下方三行说明：两个部件都是现成的预训练模型；只靠问题和答案一起微调；换索引就能换知识。">
+    <rect class="softS" x="20" y="24" width="92" height="78" rx="8"/>
+    <text class="b" x="66" y="58" text-anchor="middle">问题</text>
+    <text class="sm m" x="66" y="78" text-anchor="middle">x</text>
+    <line class="mutS" x1="114" y1="63" x2="138" y2="63" marker-end="url(#ah)"/>
+    <rect class="newT" x="140" y="24" width="170" height="78" rx="8"/>
+    <text class="b tn" x="225" y="50" text-anchor="middle">检索器</text>
+    <text class="sm" x="225" y="70" text-anchor="middle">查询编码器 + 向量索引</text>
+    <text class="sm m" x="225" y="87" text-anchor="middle">维基百科 2100 万段</text>
+    <line class="mutS" x1="312" y1="63" x2="334" y2="63" marker-end="url(#ah)"/>
+    <rect class="softS" x="336" y="24" width="100" height="78" rx="8"/>
+    <text class="b" x="386" y="54" text-anchor="middle">前 K 段</text>
+    <text class="sm" x="386" y="74" text-anchor="middle">相关文字</text>
+    <text class="sm mo" x="386" y="90" text-anchor="middle">z₁ … z_K</text>
+    <line class="mutS" x1="438" y1="63" x2="462" y2="63" marker-end="url(#ah)"/>
+    <rect class="new" x="464" y="24" width="112" height="78" rx="8"/>
+    <text class="b on" x="520" y="54" text-anchor="middle">生成器</text>
+    <text class="sm on" x="520" y="74" text-anchor="middle">BART</text>
+    <text class="sm on" x="520" y="90" text-anchor="middle">照着段落写</text>
+    <line class="mutS" x1="578" y1="63" x2="598" y2="63" marker-end="url(#ah)"/>
+    <rect class="newT" x="600" y="24" width="62" height="78" rx="8"/>
+    <text class="b tn" x="631" y="54" text-anchor="middle">答案</text>
+    <text class="sm m" x="631" y="74" text-anchor="middle">y</text>
+    <path class="newS dash" d="M631 104 V146 H225 V106" marker-end="url(#ahN)"/>
+    <path class="newS dash" d="M520 146 V106" marker-end="url(#ahN)"/>
+    <text class="sm tn" x="20" y="138">答案对不对：误差顺着这条线传回去</text>
+    <text class="sm m" x="20" y="178">两个部件都是现成的预训练模型：检索器是 DPR（两个 BERT），生成器是 BART。</text>
+    <text class="sm m" x="20" y="198">检索器和生成器只靠「问题-答案」一起微调，没有任何「该查哪篇」的标注。</text>
+    <text class="sm m" x="20" y="218">知识放在索引里，换一本书，模型的知识就换了，不用重训。</text>
+  </svg>
+  </div>
+  <figcaption>上面一行是推理时走的路，虚线是训练时误差传回的路。每个部件的作用见第 2、3 节，「误差怎么传回检索器」见第 5 节。</figcaption>
+</figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>要解决的问题</a>
+    <a href="#s2"><span>2</span>第一步：外挂一本能查的书</a>
+    <a href="#s3"><span>3</span>第二步：照着查到的段落写</a>
+    <a href="#s4"><span>4</span>第三步：不知道哪篇对，就都参考</a>
+    <a href="#s5"><span>5</span>第四步：检索器怎么学会查</a>
+    <a href="#s6"><span>6</span>证据：它到底做到了多少</a>
+    <a href="#s7"><span>7</span>局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>正文只走一条线</b>：闭卷模型的毛病 → 外挂一本书（检索器）→ 照着写（生成器）→ 不知道哪篇对，加权平均 → 误差怎么传回检索器 → 每个结论对应哪个实验。只读每节标题和每段第一句，也能串起来。</li>
+      <li>公式、符号表、解码细节、概念解释、完整结果表、当时的背景，都在页尾的<b>附录</b>里，默认折叠，标明对应原文第几节。正文每一步末尾会指到附录里对应的式子。</li>
+      <li>小数字例子都验算过，为讲解设定的标「示意」。</li>
+      <li>零件在前面几篇讲过：检索器的两个编码器是 008 <a href="../008-bert/index.html">BERT</a>，生成器 BART 是 004 <a href="../004-transformer/index.html">Transformer</a> 的编码器-解码器；「大模型把知识压进参数」见 007 <a href="../007-gpt-2/index.html">GPT-2</a>。</li>
+    </ul>
+  </div>
+</header>
+
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>要解决的问题：知识背在参数里，改不了、说不清、会编</h2>
+<p>到 2020 年，大模型靠预训练把知识压进了几亿到几百亿个参数里，闭卷问答很强。原文把这叫<b>参数记忆</b>：知识是隐式的，分散在权重里。它有三个先天毛病。</p>
+<figure class="fig">
+  <span class="tag">图 1 · 知识背进参数以后的三个毛病</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 240" role="img" aria-label="左边一个赭色方框：闭卷大模型，知识全背在参数里，不查任何资料。右边三行：改不了，世界变了参数还是训练时的快照；说不清，不知道答案依据哪篇资料；会编，记不清时仍写出像样的答案。">
+    <rect class="oldT" x="20" y="26" width="190" height="190" rx="8"/>
+    <text class="b to" x="115" y="58" text-anchor="middle">闭卷大模型</text>
+    <text class="sm" x="115" y="84" text-anchor="middle">知识全背在参数里</text>
+    <text class="sm m" x="115" y="106" text-anchor="middle">GPT-2、T5、BART</text>
+    <text class="sm mo" x="115" y="150" text-anchor="middle">问题 → 参数 → 答案</text>
+    <text class="sm m" x="115" y="172" text-anchor="middle">不查任何资料</text>
+    <line class="oldS" x1="214" y1="54" x2="246" y2="54" marker-end="url(#ahO)"/>
+    <rect class="softS" x="250" y="26" width="410" height="58" rx="8"/>
+    <text class="b to" x="266" y="50">改不了</text>
+    <text class="sm" x="266" y="70">世界变了（换了总统），参数还是训练那一刻的快照，只能重训。</text>
+    <line class="oldS" x1="214" y1="120" x2="246" y2="120" marker-end="url(#ahO)"/>
+    <rect class="softS" x="250" y="92" width="410" height="58" rx="8"/>
+    <text class="b to" x="266" y="116">说不清</text>
+    <text class="sm" x="266" y="136">给出答案，但不知道依据的是哪篇资料，没法核对。</text>
+    <line class="oldS" x1="214" y1="186" x2="246" y2="186" marker-end="url(#ahO)"/>
+    <rect class="softS" x="250" y="158" width="410" height="58" rx="8"/>
+    <text class="b to" x="266" y="182">会编</text>
+    <text class="sm" x="266" y="202">记不清时仍写出一个像样的答案（幻觉）。</text>
+  </svg>
+  </div>
+  <figcaption>三个毛病出自原文第 1 节。例如 007 篇里 GPT-2 闭卷做 Natural Questions 只有 4.1%，本文 Table 1 里 110 亿参数的 T5 闭卷做到 34.5%。</figcaption>
+</figure>
+
+<p>知识写死了：想让模型知道 2018 年的秘鲁总统，不是 2016 年的，只能继续训练。依据说不清：答案出来，没人知道它读的是哪篇。会编造：记不清的事，模型也写得很流畅。</p>
+<p>反过来，「先检索，再抠答案」的路线能解决这三点，但此前只用于<b>抽取式</b>问答：答案必须是文档里的一段原话，不能自由生成。把检索和语言模型结合的 REALM 也只做抽取式，而且要昂贵的专门预训练。</p>
+<p>直接的想法是「先检索，把文档塞给生成器」。这里有第二个毛病：</p>
+<figure class="fig">
+  <span class="tag">图 2 · 第二个毛病：没有人告诉检索器该查哪篇</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 250" role="img" aria-label="上方是一对训练数据：问题 Define middle ear，答案是中耳包括鼓室和三块听小骨，没有证据段落的标注。下方两个方框：赭色，硬选最像的一篇，离散选择不可导，答案对错传不回检索器；蓝色，软选，前 K 篇按概率加权，权重连续，误差可以传回检索器。">
+    <rect class="softS" x="20" y="22" width="640" height="54" rx="8"/>
+    <text class="sm m" x="36" y="44">训练数据只有这一对：</text>
+    <text class="sm mo" x="36" y="64">x = "Define middle ear"　y = "The middle ear includes the tympanic cavity…"</text>
+    <text class="m" x="20" y="108">该查维基百科 2100 万段里的哪一段？没有任何标注告诉你。两条路：</text>
+    <rect class="oldT" x="20" y="124" width="310" height="106" rx="8"/>
+    <text class="b to" x="36" y="150">硬选：只取最像的那一篇</text>
+    <text class="sm" x="36" y="174">「选了哪篇」是一个离散结果，</text>
+    <text class="sm" x="36" y="192">答案对错没法告诉检索器「你该选别的」。</text>
+    <text class="sm m" x="36" y="214">检索器学不到东西，只能用现成的不动。</text>
+    <rect class="newT" x="350" y="124" width="310" height="106" rx="8"/>
+    <text class="b tn" x="366" y="150">软选：前 K 篇都参考，按概率加权</text>
+    <text class="sm" x="366" y="174">权重是连续的数，</text>
+    <text class="sm" x="366" y="192">答案对错的信号可以顺着权重传回检索器。</text>
+    <text class="sm m" x="366" y="214">这就是第 4、5 节要讲的做法。</text>
+  </svg>
+  </div>
+  <figcaption>示例来自原文 2.4 节与 Table 3。多数真实任务都没有「证据文档」标注，本文也特意不用 FEVER 自带的证据标注。</figcaption>
+</figure>
+
+<p>训练数据只有「问题-答案」，没有人标注「该查哪一段」。如果检索器是现成的、不动，检索错了生成器无从纠正；如果想训练它，就得让答案的对错能传回检索器。这正是后面三步要做到的：<b>用现成的检索器和生成器，只靠问题和答案，把两者一起训练。</b></p>
+
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>第一步：外挂一本能查的书（检索器）</h2>
+<p>这本书是 2018 年 12 月的维基百科：每篇文章切成互不重叠的 100 词片段，共 <b>2100 万段</b>，每一段算一个「文档」。检索器要做的事，是给一个问题，从 2100 万段里挑出最相关的前 K 段。</p>
+<p>做法是<b>双塔</b>：一个 BERT 把问题变成一个向量，另一个 BERT 把每段文字变成一个向量，两个向量的内积越大，说明越相关。文档向量可以提前算好存进索引，来一个问题，只需编码问题一次，再在索引里找内积最大的向量（最大内积搜索 MIPS，用近似索引，查询时间比库的大小增长得慢）。检索器直接拿训练好的 DPR 初始化，不从零训练。</p>
+<figure class="fig">
+  <span class="tag">图 3 · 检索器怎么打分：向量内积，再变成概率</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="四个横条表示查询 q 等于 1,2 与四篇文档向量的内积：d4 为 6，d3 为 4，d1 为 3，d2 为 3。前两条蓝色，取前两篇做 softmax，概率分别是 88.1% 和 11.9%。">
+    <text class="sm m" x="20" y="22">查询 q = [1, 2]，四篇文档的向量，分数 = 内积（示意：真实向量约 768 维）</text>
+          <text x="140" y="56" text-anchor="end">d₄ = [2, 2]</text>
+      <rect class="new" x="150" y="40" width="250.0" height="22" rx="4"/>
+      <text class="mo sm" x="408.0" y="56">6</text>
+      <text x="140" y="90" text-anchor="end">d₃ = [0, 2]</text>
+      <rect class="new" x="150" y="74" width="166.7" height="22" rx="4"/>
+      <text class="mo sm" x="324.7" y="90">4</text>
+      <text x="140" y="124" text-anchor="end">d₁ = [3, 0]</text>
+      <rect class="mutF" x="150" y="108" width="125.0" height="22" rx="4"/>
+      <text class="mo sm" x="283.0" y="124">3</text>
+      <text x="140" y="158" text-anchor="end">d₂ = [1, 1]</text>
+      <rect class="mutF" x="150" y="142" width="125.0" height="22" rx="4"/>
+      <text class="mo sm" x="283.0" y="158">3</text>
+    <rect class="newT" x="470" y="36" width="190" height="76" rx="8"/>
+    <text class="sm tn" x="565" y="58" text-anchor="middle">取前 2 篇，再做 softmax</text>
+    <text class="mo sm" x="565" y="80" text-anchor="middle">p(d₄) = 88.1%</text>
+    <text class="mo sm" x="565" y="98" text-anchor="middle">p(d₃) = 11.9%</text>
+    <line class="newS" x1="430" y1="70" x2="466" y2="70" marker-end="url(#ahN)"/>
+    <text class="sm m" x="20" y="200">分数只差 2，概率就差到 88% 对 12%：softmax 把差距放大。</text>
+    <text class="sm m" x="20" y="220">另外 d₂ 与 d₄ 方向相同，内积却是 3 对 6：内积还受向量长度影响。</text>
+  </svg>
+  </div>
+  <figcaption>示意数字，已验算：e⁶≈403.4，e⁴≈54.6，403.4/458.0≈0.881。公式见附录 A 式 1。</figcaption>
+</figure>
+
+<p>内积经过 softmax 变成概率：每篇文档被「选中」的可能性。分数差被放大，所以前几名的概率很集中。这一步对着<b>第一个毛病里的「改不了、说不清」</b>：知识放在索引里，换得了，也知道取了哪几段。精确写法见附录 A 式 1。</p>
+
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>第二步：照着查到的段落写（生成器）</h2>
+<p>生成器是预训练好的 BART（4 亿参数的 Transformer 编码器-解码器）。做法简单到几乎没有新结构：<b>把问题 x 和一段文档 z 直接拼起来，送进 BART</b>，让它自回归地写出答案 y。它的参数本来就存着一部分知识，原文叫参数记忆；索引加检索器是非参数记忆。两种记忆配合，不是二选一。</p>
+<p>因为生成器是通用的「文字进、文字出」，同一套结构能做开放域问答、写完整句子的问答、生成 Jeopardy 式的问题，也能做事实核查（把「支持、反驳、信息不足」当成一个词输出）。下面是原文给的整体图，前两步在中间，后两步（加权平均和训练）在下面两节。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 1 · 整个模型的结构</span>
+  <img class="orig" src="orig-fig1.png" alt="原文 Figure 1：左边是三类输入，问答的问题、事实核查的断言、Jeopardy 的答案实体。中间是检索器，查询编码器得到 q(x)，经 MIPS 在文档索引里取出文档 z1 到 z4；右边是生成器，输出答案、标签或问题。上方一条虚线标着端到端反向传播经过 q 和生成器参数。" loading="lazy">
+  <figcaption>原文 Figure 1。<b>左边三种输入，右边三种输出，中间都是同一套检索加生成。</b>怎么看：蓝绿色是检索器（非参数记忆），蓝色是生成器（参数记忆），上方虚线是训练时误差传回的路。图源：Lewis 等 2020 原文。</figcaption>
+</figure>
+
+<p>这一步对着<b>「抽取式只能抠原话」</b>：答案不必逐字出现在文档里，线索散在几篇里也能综合。原文给了一个数：当正确答案不在任何一篇检索到的文档里时，RAG 在 Natural Questions 上仍答对 11.8%，抽取式模型是 0%。</p>
+
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>第三步：不知道哪篇对，就都参考，按概率加权</h2>
+<p>现在有 K 段文档，哪一段对没人知道。本文的办法：<b>把「用哪篇文档」当作一个没被观察到的中间变量（隐变量），对前 K 篇都算一遍，再用检索器给的概率加权平均。</b>这叫边缘化。直觉：去问 K 位专家，按你对每位的信任程度加权他们的把握。</p>
+<p>加权有两种做法，区别在「乘」和「加」谁先谁后：</p>
+<ul>
+  <li><b>RAG-Sequence</b>：整个答案参考同一篇文档。先对每篇文档算出整句答案的概率，再按文档概率加权相加。</li>
+  <li><b>RAG-Token</b>：每个词可以参考不同的文档。每写一个词，先把 K 篇文档各自的预测加权混合，再把各词的概率连乘。</li>
+</ul>
+<figure class="fig">
+  <span class="tag">图 4 · 同一组数，两种加权：先乘后加，还是先加后乘</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 286" role="img" aria-label="上方一张小表：三篇文档的概率 0.6、0.3、0.1，生成器在各文档下写出第一个词的概率 0.8、0.5、0.1，第二个词 0.9、0.6、0.2，整句是两词相乘 0.72、0.30、0.02。下方左边 RAG-Sequence 先对每篇文档算整句再加权，得 0.524；右边 RAG-Token 每个词先加权混合再相乘，得 0.4736。">
+    <text class="sm m b" x="20" y="30">文档</text>
+    <text class="sm m b" x="100" y="30">p(z|x)</text>
+    <text class="sm m b" x="190" y="30">第 1 个词</text>
+    <text class="sm m b" x="290" y="30">第 2 个词</text>
+    <text class="sm m b" x="390" y="30">整句 = 两词相乘</text>
+    <path class="ln" d="M20 38 H660"/>
+    <text class="mo" x="20" y="60">z₁</text>
+    <text class="mo" x="100" y="60">0.6</text>
+    <text class="mo" x="190" y="60">0.8</text>
+    <text class="mo" x="290" y="60">0.9</text>
+    <text class="mo" x="390" y="60">0.72</text>
+    <text class="mo" x="20" y="86">z₂</text>
+    <text class="mo" x="100" y="86">0.3</text>
+    <text class="mo" x="190" y="86">0.5</text>
+    <text class="mo" x="290" y="86">0.6</text>
+    <text class="mo" x="390" y="86">0.30</text>
+    <text class="mo" x="20" y="112">z₃</text>
+    <text class="mo" x="100" y="112">0.1</text>
+    <text class="mo" x="190" y="112">0.1</text>
+    <text class="mo" x="290" y="112">0.2</text>
+    <text class="mo" x="390" y="112">0.02</text>
+    <text class="sm m" x="520" y="60">生成器在各文档下</text>
+    <text class="sm m" x="520" y="82">写出每个词的概率</text>
+    <text class="sm m" x="520" y="104">（示意数字）</text>
+    <rect class="newT" x="20" y="142" width="316" height="128" rx="8"/>
+    <text class="b tn" x="36" y="166">RAG-Sequence：先乘后加</text>
+    <text class="sm" x="36" y="190">每篇文档先写出整句：0.72 / 0.30 / 0.02</text>
+    <text class="sm" x="36" y="212">再按文档概率加权：</text>
+    <text class="mo sm" x="36" y="236">0.6×0.72 + 0.3×0.30 + 0.1×0.02</text>
+    <text class="mo sm b" x="36" y="258">= 0.524</text>
+    <rect class="newT" x="344" y="142" width="316" height="128" rx="8"/>
+    <text class="b tn" x="360" y="166">RAG-Token：先加后乘</text>
+    <text class="sm" x="360" y="190">每个词先混合 3 篇文档：</text>
+    <text class="mo sm" x="360" y="212">第 1 词 0.6×0.8+0.3×0.5+0.1×0.1 = 0.64</text>
+    <text class="mo sm" x="360" y="234">第 2 词 0.6×0.9+0.3×0.6+0.1×0.2 = 0.74</text>
+    <text class="mo sm b" x="360" y="258">再相乘 0.64×0.74 = 0.4736</text>
+  </svg>
+  </div>
+  <figcaption>示意数字，已验算。Sequence 假定一篇文档负责整个答案，Token 允许每个词各自混合多篇文档的意见。两个公式见附录 A 式 2、式 3。</figcaption>
+</figure>
+
+<p>同样的数据，两种做法得到不同的数。Token 的好处在答案由两条分散的信息拼成时最明显：设两篇文档各占一半，第一个词只有文档 A 知道，第二个词只有文档 B 知道，Sequence 得 0.009，Token 得 0.207（示意，已验算，计算见附录 A）。原文用它解释为什么 Jeopardy 上 Token 更好、MS-MARCO 上 Sequence 更好，这是作者的假说，没有做专门的对照实验。</p>
+<p>这一步对着<b>第二个毛病</b>：没有「该查哪篇」的标注也没关系，所有候选都参与，权重是连续的数，下一步误差就能顺着权重传回去。精确写法见附录 A 式 2、式 3。</p>
+
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>第四步：检索器怎么学会查：答案对不对，一路传回检索器</h2>
+<p>训练目标就是让标准答案的概率尽量大：对每对（问题，答案），最小化 −log p(y|x)，用 Adam（见 005 <a href="../005-adam/index.html">Adam</a>）。p(y|x) 是上一步加权平均出来的数，里面带着检索器的概率，所以梯度能流进检索器。</p>
+<p>流进去的是什么？我用 RAG-Sequence 推了一遍（原文没有写这个推导）：对第 j 篇文档的分数，梯度正好是「<b>看到答案之后这篇文档的后验概率，减去看到答案之前检索器给它的先验概率</b>」。</p>
+<figure class="fig">
+  <span class="tag">图 5 · 检索器怎么被「教会」：梯度 = 后验 − 先验</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 250" role="img" aria-label="三组柱子对应三篇文档。z1：先验 0.6，后验 0.824，梯度 +0.224，分数被抬高；z2：先验 0.3，后验 0.172，梯度 −0.128；z3：先验 0.1，后验 0.004，梯度 −0.096。">
+    <path class="ln" d="M40 190 H640"/>
+    <text class="sm m" x="20" y="20">每篇文档在检索器眼里的概率：看到答案之前（先验），看到答案之后（后验）</text>
+    <rect class="mutF" x="90" y="112.0" width="28" height="78.0" rx="3"/>
+    <text class="mo sm" x="104" y="106.0" text-anchor="middle">0.6</text>
+    <rect class="new" x="122" y="82.9" width="28" height="107.1" rx="3"/>
+    <text class="mo sm" x="136" y="76.9" text-anchor="middle">0.824</text>
+    <text class="b" x="120" y="210" text-anchor="middle">z₁</text>
+    <text class="sm m" x="120" y="228" text-anchor="middle">能写出答案（0.72）</text>
+    <text class="sm tn" x="188" y="120" text-anchor="middle">梯度</text>
+    <text class="mo b tn" x="188" y="138" text-anchor="middle">+0.224</text>
+    <rect class="mutF" x="290" y="151.0" width="28" height="39.0" rx="3"/>
+    <text class="mo sm" x="304" y="145.0" text-anchor="middle">0.3</text>
+    <rect class="new" x="322" y="167.6" width="28" height="22.4" rx="3"/>
+    <text class="mo sm" x="336" y="161.6" text-anchor="middle">0.172</text>
+    <text class="b" x="320" y="210" text-anchor="middle">z₂</text>
+    <text class="sm m" x="320" y="228" text-anchor="middle">写得出一点（0.30）</text>
+    <text class="sm to" x="388" y="120" text-anchor="middle">梯度</text>
+    <text class="mo b to" x="388" y="138" text-anchor="middle">−0.128</text>
+    <rect class="mutF" x="490" y="177.0" width="28" height="13.0" rx="3"/>
+    <text class="mo sm" x="504" y="171.0" text-anchor="middle">0.1</text>
+    <rect class="new" x="522" y="188.5" width="28" height="1.5" rx="3"/>
+    <text class="mo sm" x="536" y="182.5" text-anchor="middle">0.004</text>
+    <text class="b" x="520" y="210" text-anchor="middle">z₃</text>
+    <text class="sm m" x="520" y="228" text-anchor="middle">几乎写不出（0.02）</text>
+    <text class="sm to" x="588" y="120" text-anchor="middle">梯度</text>
+    <text class="mo b to" x="588" y="138" text-anchor="middle">−0.096</text>
+    <rect class="mutF" x="52" y="32" width="10" height="10" rx="2"/>
+    <text class="sm" x="68" y="41">先验 p(z|x)</text>
+    <rect class="new" x="170" y="32" width="10" height="10" rx="2"/>
+    <text class="sm" x="186" y="41">后验 p(z|x,y)</text>
+  </svg>
+  </div>
+  <figcaption>示意数字，延续图 4（RAG-Sequence）并已验算：后验 = 先验×整句概率 ÷ 0.524；三个梯度之和为 0。这个推导是我做的，原文没有写出，见附录 A 式 4。</figcaption>
+</figure>
+
+<p>文档 z₁ 让生成器很容易写出标准答案，后验 0.824 高于先验 0.6，梯度为正，训练就把这个问题的向量往 z₁ 的向量方向推；写不出答案的文档被压低。检索器从来没被告知哪篇对，它是靠「哪篇让答案更容易写对」这个间接信号自己学会的。一个限制：前 K 篇之外的文档得不到梯度。</p>
+<p>另一个让训练跑得动的设计：<b>只训练问题一侧（查询编码器）和 BART，文档编码器和索引冻结。</b>文档编码器一更新，2100 万个文档向量全部过期，要整库重新编码、重建索引，每个训练步都这样做不可能完成。问题向量是在线现算的，随便更新。</p>
+<figure class="fig">
+  <span class="tag">图 6 · 只训练问题一侧，文档一侧冻结</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="上排是文档一侧：100 词一段、共 2100 万段，经冻结的 BERT_d 编码成向量索引，提前建好。下排是问题一侧：一批问题经随任务更新的 BERT_q 得到查询向量。两者汇到 MIPS，取前 K 段。底部说明：假如也更新文档编码器，2100 万个向量全部过期，要重新编码重建索引；本文不这样做，换新书时用同一个编码器编码一遍即可。">
+    <text class="sm m b" x="20" y="20">文档一侧：冻结，提前算好</text>
+    <rect class="softS" x="20" y="30" width="130" height="50" rx="8"/>
+    <text class="sm" x="85" y="52" text-anchor="middle">每段 100 词</text>
+    <text class="sm m" x="85" y="69" text-anchor="middle">共 2100 万段</text>
+    <line class="mutS" x1="152" y1="55" x2="184" y2="55" marker-end="url(#ah)"/>
+    <rect class="softS dash" x="186" y="30" width="130" height="50" rx="8"/>
+    <text class="mo" x="251" y="52" text-anchor="middle">BERT_d</text>
+    <text class="sm m" x="251" y="69" text-anchor="middle">冻结，不更新</text>
+    <line class="mutS" x1="318" y1="55" x2="350" y2="55" marker-end="url(#ah)"/>
+    <rect class="softS" x="352" y="30" width="150" height="50" rx="8"/>
+    <text class="sm" x="427" y="52" text-anchor="middle">向量索引 d(z)</text>
+    <text class="sm m" x="427" y="69" text-anchor="middle">约 100 GB，提前建好</text>
+    <text class="sm tn b" x="20" y="112">问题一侧：训练，在线算</text>
+    <rect class="softS" x="20" y="122" width="130" height="50" rx="8"/>
+    <text class="sm" x="85" y="152" text-anchor="middle">一批问题 x</text>
+    <line class="newS" x1="152" y1="147" x2="184" y2="147" marker-end="url(#ahN)"/>
+    <rect class="new" x="186" y="122" width="130" height="50" rx="8"/>
+    <text class="mo on" x="251" y="144" text-anchor="middle">BERT_q</text>
+    <text class="sm on" x="251" y="161" text-anchor="middle">随任务更新</text>
+    <line class="newS" x1="318" y1="147" x2="350" y2="147" marker-end="url(#ahN)"/>
+    <rect class="newT" x="352" y="122" width="150" height="50" rx="8"/>
+    <text class="sm" x="427" y="144" text-anchor="middle">查询向量 q(x)</text>
+    <text class="sm m" x="427" y="161" text-anchor="middle">每步重新算</text>
+    <line class="mutS" x1="504" y1="55" x2="560" y2="88" marker-end="url(#ah)"/>
+    <line class="mutS" x1="504" y1="147" x2="560" y2="124" marker-end="url(#ah)"/>
+    <rect class="newT" x="562" y="76" width="98" height="60" rx="8"/>
+    <text class="b tn" x="611" y="102" text-anchor="middle">MIPS</text>
+    <text class="sm" x="611" y="120" text-anchor="middle">取前 K 段</text>
+    <rect class="oldT" x="20" y="196" width="640" height="50" rx="8"/>
+    <text class="sm" x="36" y="218">假如也更新 BERT_d：2100 万个向量全部过期，要把整库重新编码、重建索引。</text>
+    <text class="sm" x="36" y="236">本文不这样做；换一本新书时，用同一个 BERT_d 编码一遍即可，查询编码器和 BART 都不用动。</text>
+  </svg>
+  </div>
+  <figcaption>原文 2.4 节的设计选择：作者说没有发现更新文档编码器对强结果是必要的，没有给出机制解释。</figcaption>
+</figure>
+
+<p>原文说没有发现更新文档编码器对强结果是必要的，没有给出原因。我的推测（不是原文说法）：DPR 的文档向量空间本来就有不错的语义结构，只调问题落在哪里，已足以改变每个问题查出哪些文档。一个衍生的好处：换一本新书，只需要用同一个文档编码器重新编码，这是第 6 节最后一个实验的基础。这一步对着<b>第二个毛病里的「检索器怎么训练」</b>。精确写法见附录 A 式 4；解码时两种模型怎么搜索，见附录 B。</p>
+
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>证据：它到底做到了多少</h2>
+<h3>外挂一本书，比多背参数更划算</h3>
+<p>开放域问答的核心结果在 Natural Questions：闭卷的 T5-11B 是 34.5，抽取式的 REALM 和 DPR 是 40.4 和 41.5，RAG 是 44.1 和 44.5。RAG 不需要重排器，也不需要抽取式阅读器，也不需要 REALM 那样的专门预训练。</p>
+<figure class="fig">
+  <span class="tag">图 7 · 证据一：外挂一本书，比多背 20 倍参数更划算</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 244" role="img" aria-label="横向柱状图，Natural Questions 精确匹配：T5-11B 闭卷 34.5，REALM 40.4，DPR 41.5，RAG-Token 44.1，RAG-Sequence 44.5。前三个赭色，后两个蓝色。">
+    <text class="sm m" x="20" y="20">Natural Questions 测试集，精确匹配 EM（原文 Table 1）</text>
+          <text x="160" y="52" text-anchor="end">T5-11B　闭卷</text>
+      <rect class="old" x="170" y="36" width="289.8" height="22" rx="4"/>
+      <text class="mo sm" x="467.8" y="52">34.5</text>
+      <text x="160" y="86" text-anchor="end">REALM　抽取式</text>
+      <rect class="old" x="170" y="70" width="339.4" height="22" rx="4"/>
+      <text class="mo sm" x="517.4" y="86">40.4</text>
+      <text x="160" y="120" text-anchor="end">DPR　抽取式</text>
+      <rect class="old" x="170" y="104" width="348.6" height="22" rx="4"/>
+      <text class="mo sm" x="526.6" y="120">41.5</text>
+      <text x="160" y="154" text-anchor="end">RAG-Token</text>
+      <rect class="new" x="170" y="138" width="370.4" height="22" rx="4"/>
+      <text class="mo sm" x="548.4" y="154">44.1</text>
+      <text x="160" y="188" text-anchor="end">RAG-Sequence</text>
+      <rect class="new" x="170" y="172" width="373.8" height="22" rx="4"/>
+      <text class="mo sm" x="551.8" y="188">44.5</text>
+    <text class="sm m" x="20" y="226">T5-11B 有 110 亿参数；RAG 可训练的约 5–6 亿，不到它的二十分之一。</text>
+  </svg>
+  </div>
+  <figcaption>数字逐格对过原文 Table 1。可训练参数约 516M（只训练查询编码器和 BART，见附录 D）；原文口径是 626M。</figcaption>
+</figure>
+
+<p>要读准的地方：不是每个格子都赢。TriviaQA 标准测试集上 RAG 是 55.2 和 56.8，低于 DPR 的 57.9；原文说的最优成绩只限于和 T5 可比的拆分（TQA-Wiki，RAG-Seq 68.0）。CuratedTrec 上 RAG-Token 的 50.0 也略低于 DPR 的 50.6。完整表见附录 E。</p>
+
+<h3>检索器跟着任务学，是关键</h3>
+<p>把检索器换成三种，其余不变：固定的 BM25（只看词有没有重合）、冻结的 DPR、继续训练查询编码器的 RAG。</p>
+<figure class="fig">
+  <span class="tag">图 8 · 证据二：检索器跟着任务一起学，有用</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 252" role="img" aria-label="横向柱状图，Natural Questions 开发集精确匹配。固定的 BM25：Token 29.7，Seq 31.8。冻结 DPR：Token 37.8，Seq 41.2。学出来的检索器：Token 43.5，Seq 44.0。">
+    <text class="sm m" x="20" y="20">Natural Questions 开发集 EM（原文 Table 6）。检索器换成什么：</text>
+          <text x="175" y="52" text-anchor="end">固定的 BM25　Token</text>
+      <rect class="old" x="185" y="36" width="243.5" height="22" rx="4"/>
+      <text class="mo sm" x="436.5" y="52">29.7</text>
+      <text x="175" y="86" text-anchor="end">固定的 BM25　Seq</text>
+      <rect class="old" x="185" y="70" width="260.8" height="22" rx="4"/>
+      <text class="mo sm" x="453.8" y="86">31.8</text>
+      <text x="175" y="120" text-anchor="end">冻结 DPR　Token</text>
+      <rect class="mutF" x="185" y="104" width="310.0" height="22" rx="4"/>
+      <text class="mo sm" x="503.0" y="120">37.8</text>
+      <text x="175" y="154" text-anchor="end">冻结 DPR　Seq</text>
+      <rect class="mutF" x="185" y="138" width="337.8" height="22" rx="4"/>
+      <text class="mo sm" x="530.8" y="154">41.2</text>
+      <text x="175" y="188" text-anchor="end">学出来的　Token</text>
+      <rect class="new" x="185" y="172" width="356.7" height="22" rx="4"/>
+      <text class="mo sm" x="549.7" y="188">43.5</text>
+      <text x="175" y="222" text-anchor="end">学出来的　Seq</text>
+      <rect class="new" x="185" y="206" width="360.8" height="22" rx="4"/>
+      <text class="mo sm" x="553.8" y="222">44.0</text>
+  </svg>
+  </div>
+  <figcaption><b>BM25 换成学出来的稠密检索，涨 12 到 14 个点；冻结 DPR 换成继续训练查询编码器，再涨 2.8 到 5.7 个点。</b>例外是 FEVER：BM25 最好（75.1 对 74.5），作者推测是断言以实体为中心，词面重合就够。这里是开发集，不能直接和 Table 1 的测试集比。</figcaption>
+</figure>
+
+<p>开放域问答里，学出来的稠密检索是关键，CuratedTrec 上 BM25 只有 33.1，学出来的有 51.9。这是「端到端训练检索器有没有用」的直接证据，对着第 5 节。</p>
+
+<h3>写出来的东西更具体、更符合事实</h3>
+<p>同样的预训练 BART，加不加检索，是最干净的对比。MS-MARCO 上 RAG-Sequence 比 BART 高 2.6 个 BLEU 和 2.6 个 ROUGE-L（44.2 对 41.6，40.8 对 38.2）；Jeopardy 的 Q-BLEU-1 上，RAG-Token 22.2，BART 19.7。事实核查 FEVER 上，三分类 RAG 72.5，BART 64.0，二分类 89.5 对 81.1。RAG 没有用任何证据标注，三分类离最优流水线系统只差 4.3 个点，二分类差 2.7（那个系统用了金标准证据）。</p>
+<p>自动指标测不出「是不是真的」，所以还要人评：</p>
+<figure class="fig">
+  <span class="tag">图 9 · 证据三：人评认为 RAG 写得更符合事实、更具体</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 230" role="img" aria-label="两条横向堆叠条。事实性：RAG 更好 42.7%，BART 更好 7.1%，都好 11.7%，都差 17.7%，无多数意见 20.8%。具体性：RAG 更好 37.4%，BART 更好 16.8%，都好 11.8%，都差 6.9%，无多数意见 20.1%，合计 93.0%。">
+    <text class="sm m" x="20" y="20">人评：Jeopardy 问题生成，BART 对 RAG-Token（原文 Table 4）</text>
+    <rect class="new" x="20" y="34" width="12" height="12" rx="2"/>
+    <text class="sm" x="38" y="45">RAG 更好</text>
+    <rect class="old" x="132" y="34" width="12" height="12" rx="2"/>
+    <text class="sm" x="150" y="45">BART 更好</text>
+    <rect class="softS" x="256" y="34" width="12" height="12" rx="2"/>
+    <text class="sm" x="274" y="45">都好</text>
+    <rect class="mutF" x="320" y="34" width="12" height="12" rx="2"/>
+    <text class="sm" x="338" y="45">都差</text>
+    <rect class="softS" x="384" y="34" width="12" height="12" rx="2"/>
+    <text class="sm" x="402" y="45">无多数意见</text>
+    <text class="b" x="20" y="80">事实性</text>
+    <rect class="new" x="100.0" y="64" width="230.6" height="26" rx="2"/>
+    <text class="mo sm" x="215.3" y="108" text-anchor="middle">42.7</text>
+    <rect class="old" x="330.6" y="64" width="38.3" height="26" rx="2"/>
+    <text class="mo sm" x="349.8" y="108" text-anchor="middle">7.1</text>
+    <rect class="softS" x="368.90000000000003" y="64" width="63.2" height="26" rx="2"/>
+    <text class="mo sm" x="400.5" y="108" text-anchor="middle">11.7</text>
+    <rect class="mutF" x="432.1" y="64" width="95.6" height="26" rx="2"/>
+    <text class="mo sm" x="479.9" y="108" text-anchor="middle">17.7</text>
+    <rect class="softS" x="527.7" y="64" width="112.3" height="26" rx="2"/>
+    <text class="mo sm" x="583.9" y="108" text-anchor="middle">20.8</text>
+    <text class="b" x="20" y="148">具体性</text>
+    <rect class="new" x="100.0" y="132" width="202.0" height="26" rx="2"/>
+    <text class="mo sm" x="201.0" y="176" text-anchor="middle">37.4</text>
+    <rect class="old" x="302.0" y="132" width="90.7" height="26" rx="2"/>
+    <text class="mo sm" x="347.4" y="176" text-anchor="middle">16.8</text>
+    <rect class="softS" x="392.7" y="132" width="63.7" height="26" rx="2"/>
+    <text class="mo sm" x="424.6" y="176" text-anchor="middle">11.8</text>
+    <rect class="mutF" x="456.4" y="132" width="37.3" height="26" rx="2"/>
+    <text class="mo sm" x="475.0" y="176" text-anchor="middle">6.9</text>
+    <rect class="softS" x="493.7" y="132" width="108.5" height="26" rx="2"/>
+    <text class="mo sm" x="548.0" y="176" text-anchor="middle">20.1</text>
+    <text class="sm m" x="20" y="214">「具体性」一列原表五个数合计 93.0%，条没有填满，原文没有解释。</text>
+  </svg>
+  </div>
+  <figcaption>452 对生成。条从左到右依次是 RAG 更好、BART 更好、都好、都差、无多数意见，颜色见上方图例。数字逐格对过原文 Table 4。</figcaption>
+</figure>
+
+<p>事实性上 RAG 更好的占 42.7%，BART 更好的占 7.1%。这是 452 对生成的结果，约五分之一没有形成多数意见，别把 42.7% 当成精确值。</p>
+<p>另外，RAG-Token 写每个词时参考哪篇文档，原文 Figure 2 画了出来：</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 2 · RAG-Token 写每个词时，各文档的后验</span>
+  <img class="orig" src="orig-fig2.png" alt="原文 Figure 2：左边是两段文档，文档 1 提到《永别了，武器》，文档 2 提到《太阳照常升起》。右边是热图，横轴是生成的词，纵轴是 5 篇文档，颜色越深后验越高。生成 Sun 时文档 2 最深，生成 A 时文档 1 最深。" loading="lazy">
+  <figcaption>原文 Figure 2。<b>写《太阳照常升起》时，文档 2 的后验最高；写《永别了，武器》时，文档 1 最高。</b>怎么看：颜色越深，说明「看到这个词之后，哪篇文档最能解释它」。注意书名第一个词之后，后验都变平了。图源：Lewis 等 2020 原文。</figcaption>
+</figure>
+
+<p>作者还观察到：书名第一个词写出来之后，后验就变平了。他们给纯 BART 喂前缀 <code>"The Sun</code>，它自己补出了完整书名。作者的假说是：检索到的文档只负责「点一下」，让参数里已有的记忆被唤醒。两种记忆是配合的，不是互相替代。</p>
+
+<h3>换一本书，知识就换了</h3>
+<figure class="fig">
+  <span class="tag">图 10 · 证据四：换一本书，答案就跟着换</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 238" role="img" aria-label="两行两列的格子。用 2016 年索引问 2016 年领导人答对 70%，问 2018 年领导人 4%；用 2018 年索引问 2016 年领导人 12%，问 2018 年领导人 68%。对角线蓝色，非对角线赭色。">
+    <text class="sm m" x="20" y="20">同一个训练好的模型，不重训，只换索引。问 82 位换了人的世界领导人：</text>
+    <text class="b" x="300" y="52" text-anchor="middle">问 2016 年的领导人</text>
+    <text class="b" x="500" y="52" text-anchor="middle">问 2018 年的领导人</text>
+    <text class="b" x="20" y="94">用 2016 年的索引</text>
+    <text class="b" x="20" y="150">用 2018 年的索引</text>
+    <rect class="new" x="210" y="66" width="180" height="46" rx="6"/><text class="mo lg b on" x="300" y="96" text-anchor="middle">70%</text>
+    <rect class="oldT" x="410" y="66" width="180" height="46" rx="6"/><text class="mo lg b" x="500" y="96" text-anchor="middle">4%</text>
+    <rect class="oldT" x="210" y="122" width="180" height="46" rx="6"/><text class="mo lg b" x="300" y="152" text-anchor="middle">12%</text>
+    <rect class="new" x="410" y="122" width="180" height="46" rx="6"/><text class="mo lg b on" x="500" y="152" text-anchor="middle">68%</text>
+    <text class="sm m" x="20" y="200">答案跟着索引走，说明模型确实在用查到的文字，不只是背下来的旧知识。</text>
+    <text class="sm m" x="20" y="220">70 对 68 的差只是噪音：82 个问题，标准误约 5 个点。</text>
+  </svg>
+  </div>
+  <figcaption>数字出自原文 4.5 节「Index hot-swapping」。只有 82 个问题、一个模板、一种任务；它证明事实能靠换库更新，没有证明模型遇到冲突信息时怎么取舍。</figcaption>
+</figure>
+
+<p>这是「非参数记忆可更新」最直接的证据，对着第 1 节的「改不了」。我补充的：82 个样本上，70% 的误差约 5 个点，70 和 68 的差别不能读成「2016 更好」；非对角线为什么是 12% 和 4%，原文没解释。</p>
+
+<h3>检索多少篇</h3>
+<p>训练时 K 取 5 或 10 差别不显著；测试时可以调。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 3 · 查多少篇（K）的影响</span>
+  <img class="orig" src="orig-fig3.png" alt="原文 Figure 3：三个小图，横轴是检索文档数 K。左：Natural Questions 精确匹配，RAG-Seq 随 K 增大基本单调上升，RAG-Token 在 K 约 10 处最高，之后略降。中：答案召回率，学出来的 RAG 检索器高于固定的 DPR，BM25 最低。右：MS-MARCO 的 Rouge-L 与 Bleu-1。" loading="lazy">
+  <figcaption>原文 Figure 3。<b>左图：RAG-Seq 查得越多越好，RAG-Token 在 10 篇处最高，之后略降。</b>中图是答案召回率，学出来的检索器高于固定的 DPR，BM25 最低。作者没有给机制解释；我的推测是 Token 每步都混合所有文档，不相关的文档多了，混出来的分布变「稀」。图源：Lewis 等 2020 原文。</figcaption>
+</figure>
+
+<p><b>结论收在两句：</b>外挂可更新、可追溯的知识库，比把知识全背进更多参数更划算（NQ 上 44.5 对 34.5）；检索器和生成器只靠「问题-答案」就能一起训练，不需要「该查哪篇」的标注。</p>
+
+
+<!-- ================= 7 ================= -->
+<h2 id="s7"><span class="no">7</span>局限和后来</h2>
+<ul>
+  <li><b>检索可能塌缩</b>：在故事生成这类对事实知识需求不明确的任务里，检索器会学成不管输入是什么都返回同样的文档，RAG 退化成 BART（原文附录 H，作者的假说）。</li>
+  <li><b>知识源不完美</b>：维基百科不保证事实正确，也有偏见；生成模型本身也有被滥用的风险。</li>
+  <li><b>没有从零联合预训练</b>：两个部件都是现成的，联合预训练被留作未来工作。</li>
+  <li>幻觉只是减少，没有消失；原文没有测生成的内容是否忠实于查到的文档（我补充的）。</li>
+</ul>
+<p>后来：「RAG」成了通用名词，但今天常说的 RAG 多半是「检索结果放进提示词」，生成器是不更新的大模型，检索器单独训练或用现成的嵌入模型。它保留了「外挂非参数记忆」这个核心，丢掉了「联合训练检索器」这个设计（我的观察，待核实）。本文微调 BART 的全部参数，代价不低，下一篇 014 <a href="../014-lora/index.html">LoRA</a> 讲怎样便宜地微调大模型。更多见附录 G。</p>
+
+
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块默认折叠，标明对应原文第几节。</p>
+
+<details class="ext"><summary>A · 公式和符号表（原文第 2 节）</summary>
+<p><b>记号。</b>x：输入；y：目标序列，共 N 个 token；z：一篇检索到的文档。p<sub>η</sub>(z|x)：检索器，参数 η，返回每篇文档的概率，只保留前 K 篇；p<sub>θ</sub>(y<sub>i</sub> | x, z, y<sub>1:i−1</sub>)：生成器，参数 θ。</p>
+<div class="formula">式 1　p<sub>η</sub>(z|x) ∝ exp( d(z)<sup>T</sup> q(x) )　　d(z) = BERT<sub>d</sub>(z)，q(x) = BERT<sub>q</sub>(x)<span class="fsrc">原文 2.2 节</span></div>
+<p>分母是对所有文档的 exp(分数) 之和，即 softmax；实际只对前 K 篇近似。本文用的是内积，不是余弦相似度。</p>
+<div class="formula">式 2　p<sub>RAG-Sequence</sub>(y|x) ≈ Σ<sub>z∈top-k</sub> p<sub>η</sub>(z|x) · Π<sub>i=1..N</sub> p<sub>θ</sub>(y<sub>i</sub> | x, z, y<sub>1:i−1</sub>)<span class="fsrc">原文 2.1 节</span></div>
+<div class="formula">式 3　p<sub>RAG-Token</sub>(y|x) ≈ Π<sub>i=1..N</sub> Σ<sub>z∈top-k</sub> p<sub>η</sub>(z|x) · p<sub>θ</sub>(y<sub>i</sub> | x, z, y<sub>1:i−1</sub>)<span class="fsrc">原文 2.1 节</span></div>
+<p>两式只差 Π 和 Σ 的位置。分类任务把类别当成长度 1 的序列，两式相同，所以 FEVER 只有一行 RAG。RAG-Token 里的权重 p<sub>η</sub>(z|x) 每一步都是同一个先验，不随已写的词变化。</p>
+<p><b>分散信息的例子（示意，已验算）。</b>两篇文档各 0.5。第一个词 p(y₁|A)=0.9，p(y₁|B)=0.01；第二个词 p(y₂|A)=0.01，p(y₂|B)=0.9。</p>
+<div class="formula">Sequence：0.5×(0.9×0.01) + 0.5×(0.01×0.9) = 0.009</div>
+<div class="formula">Token：(0.5×0.9 + 0.5×0.01) × (0.5×0.01 + 0.5×0.9) = 0.455×0.455 ≈ 0.207　约 23 倍</div>
+<div class="formula">式 4　L = Σ<sub>j</sub> −log p(y<sub>j</sub>|x<sub>j</sub>)；∂log p(y|x)/∂s<sub>j</sub> = p(z<sub>j</sub>|x,y) − p<sub>η</sub>(z<sub>j</sub>|x)<span class="fsrc">原文 2.4 节为目标函数；梯度是我对 RAG-Sequence 的推导</span></div>
+<p>s<sub>j</sub> 是第 j 篇文档的检索分数（内积），后验 p(z<sub>j</sub>|x,y) = p<sub>j</sub>a<sub>j</sub> / Σ<sub>k</sub>p<sub>k</sub>a<sub>k</sub>，a<sub>k</sub> = p<sub>θ</sub>(y|x,z<sub>k</sub>)。图 5 的验算：先验 (0.6, 0.3, 0.1)，a = (0.72, 0.30, 0.02)，Σp·a = 0.524，后验约 (0.824, 0.172, 0.004)，梯度 (+0.224, −0.128, −0.096)。</p>
+</details>
+
+<details class="ext"><summary>B · 解码：两种模型怎么搜索（原文 2.5 节、附录 A）</summary>
+<p><b>RAG-Token</b> 本身是标准的自回归模型，每一步的下一个词分布是 K 篇文档预测的加权混合，直接用普通束搜索。</p>
+<p><b>RAG-Sequence</b> 不行：整句概率是对文档求和之后的数，不能拆成逐词连乘。做法是对每篇文档单独做一次束搜索，把所有候选合成集合 Y；要估计候选 y 的概率，需要它在每篇文档下的概率。有的 y 没出现在某篇文档的束里，那就再做一次前向计算，这叫 <b>Thorough Decoding</b>；更快的近似是直接认为没出现的 p(y|x,z)≈0，叫 <b>Fast Decoding</b>。</p>
+<p>示意（K=2，已验算）：z₁（0.7）的束里有 A:0.5、B:0.2，z₂（0.3）的束里有 A:0.4、C:0.3。Fast：p(A)=0.7×0.5+0.3×0.4=0.47，p(B)=0.14，p(C)=0.09。Thorough：若 p(B|x,z₂)=0.25，则 p(B)=0.14+0.3×0.25=0.215。</p>
+<p>作者实际用的：开放域问答，RAG-Token 用 15 篇，RAG-Sequence 用 50 篇加 Thorough Decoding，贪心解码（束搜索没有提升）；MS-MARCO 和 Jeopardy 用 10 篇、束宽 4，RAG-Sequence 用 Fast Decoding。训练时 K 取 5 或 10。</p>
+</details>
+
+<details class="ext"><summary>C · 几个概念：参数与非参数记忆、三种问答范式、BM25 与稠密检索、双塔、MIPS、BART、指标（原文第 1、3 节）</summary>
+<h4>参数记忆与非参数记忆</h4>
+<div class="tbl"><table>
+<tr><th></th><th>参数记忆</th><th>非参数记忆</th></tr>
+<tr><td>类比</td><td>闭卷考试</td><td>开卷考试</td></tr>
+<tr><td>存在哪</td><td>网络权重里，隐式、分散</td><td>外部文档库，原始文本</td></tr>
+<tr><td>更新</td><td>要重训</td><td>换文档库</td></tr>
+<tr><td>能否追溯</td><td>不能</td><td>能，知道取了哪几段</td></tr>
+</table></div>
+<p>「知识密集型任务」原文的定义是：人类在没有外部知识来源时，不能合理地期望完成的任务。</p>
+<h4>开放域问答的三种范式</h4>
+<p><b>闭卷</b>：不检索，直接生成（T5-11B）。<b>开卷、抽取式</b>：先检索，在文档里圈出一段原文当答案（DPR、ORQA、REALM）。<b>开卷、生成式</b>：先检索，再让生成器自己写（RAG）。开放域和 SQuAD 的区别：SQuAD 每题附一段文章，开放域要自己先找文章。</p>
+<h4>BM25、稠密检索、双塔与交叉编码器</h4>
+<p><b>BM25</b>是稀疏检索：看词有没有重合，稀有词权重高，不需要训练，对人名地名友好，词不一样就认不出。<b>稠密检索</b>把查询和文档各变成一个向量，意思相近就靠近，能跨词汇匹配，对精确实体名有时不如 BM25（FEVER 的结果是例证）。<b>双塔</b>：查询和文档各过一个编码器，文档向量可提前算好；<b>交叉编码器</b>：查询和文档拼在一起过一个 BERT，更准，但每个查询要对每篇文档各跑一次，不能用于全库检索。DPR 的完整问答系统是「双塔粗筛，再用交叉编码器重排，再接抽取式阅读器」，RAG 的主张之一是后两者都不需要。DPR 用 BERT-base 做编码器，具体用哪个位置的输出，原文没说；DPR 论文用的是 [CLS]，这是按 DPR 论文的理解，不是本文原文内容。</p>
+<h4>MIPS、FAISS、HNSW</h4>
+<p>最大内积搜索：找内积最大的向量。朴素做法对 2100 万个向量各做一次内积，太慢。近似 MIPS 用预先建好的索引，搜索只看一小部分，换来亚线性时间。FAISS 是 Facebook 的向量检索库，HNSW 是一种多层近邻图索引：从顶层稀疏图开始，一层层向下逼近。索引放在 CPU 内存，约 100 GB，压缩后 36 GB；在 CPU 上做 MIPS 已经够快。一旦文档编码器的参数变了，所有向量作废，索引要重建，这是冻结它的原因。</p>
+<h4>BART</h4>
+<p>预训练好的 Transformer 编码器-解码器，4 亿参数（正文写 400M，附录 G 写 406M），预训练是去噪：把文本弄坏再还原。可以理解为编码器像 BERT 一样双向读，解码器像 GPT 一样自回归写（这是概括，原文只说它在多种生成任务上达到最好成绩、超过同等大小的 T5）。输入是文字、输出是文字，所以能统一处理多种任务。</p>
+<h4>任务与指标</h4>
+<p><b>NQ、TriviaQA、WebQuestions、CuratedTrec</b>：开放域问答，指标是精确匹配（EM，归一化后一字不差才算对）。后两个数据集小，用 NQ 训练好的 RAG 初始化。<b>MS-MARCO NLG</b>：问题到一句完整的答案，ROUGE-L 和 BLEU-1；本文不用它自带的金标准段落。<b>Jeopardy 问题生成</b>：给答案实体，生成一条陈述式的问题，本文新提出的任务，BLEU-1、Q-BLEU-1（对实体匹配给更高权重）和人评。<b>FEVER</b>：给一条断言，判断被维基百科支持、反驳还是信息不足；标签映射成单个词，不使用证据标注监督。<b>人评</b>：事实性是能否被可信的外部来源证实，具体性是输入和输出高度相互依赖；每次看一个答案和两条生成的问题，四选一。<b>distinct 三元组比例</b>：不重复的三元组数除以三元组总数，越高越不重复。</p>
+<h4>隐变量与边缘化，补一点</h4>
+<p>全概率公式：p(y|x) = Σ<sub>z</sub> p(z|x)·p(y|x,z)。理论上对 2100 万篇求和，实际只取前 K 篇。原文没有明说前 K 篇的概率是否重新归一化；图 3、图 4 的例子按「归一化到和为 1」处理，这是我的假设。</p>
+</details>
+
+<details class="ext"><summary>D · 训练设置和参数量（原文第 3 节、附录 C、D、F、G、H）</summary>
+<div class="tbl"><table>
+<tr><th>项</th><th>内容</th></tr>
+<tr><td>资料库</td><td>2018 年 12 月维基百科，100 词互不重叠片段，2100 万段</td></tr>
+<tr><td>索引</td><td>FAISS + HNSW 近似，放 CPU，约 100 GB，压缩后 36 GB</td></tr>
+<tr><td>硬件、框架</td><td>Fairseq，混合精度，8 张 32GB V100（也可单卡）；后移植到 HuggingFace Transformers</td></tr>
+<tr><td>优化器</td><td>Adam</td></tr>
+<tr><td>可训练参数</td><td>查询编码器 BERT-base 110M + BART-large 406M；文档编码器 110M 不训练</td></tr>
+<tr><td>训练时 K</td><td>5 或 10，差异不显著</td></tr>
+<tr><td>微调数据</td><td>各任务自带的输入-输出对，没有检索标注</td></tr>
+</table></div>
+<p><b>参数量的核对。</b>原文附录 G 说总共 6.26 亿可训练参数（110M+110M+406M），但同一段说文档编码器不由他们训练，实际被训练的应是 110M+406M=516M。这是我的算术核对。无论哪个数，都比 T5-11B 小一个数量级以上；最接近的 T5-large（7.7 亿参数）在 NQ 上只有 28.9。索引本身不计入可训练参数，但占大量存储，所以「参数少」不等于「总资源少」。</p>
+<p><b>数据集处理（附录 D）。</b>NQ 和 WebQuestions 有多个标准答案，每个（问题，答案）对各作一条训练样本。TriviaQA 过滤掉不出现在该问题前 1000 篇检索文档中的答案候选。CuratedTrec 的答案是正则表达式，作者对每个问题检索前 1000 篇，选最常匹配该正则的答案作监督目标。TriviaQA 有两个测试集，RAG 在 TQA-Wiki 上更高，作者认为是因为这个测试集的问题更容易由维基百科回答，不同论文用不同测试集，不能混着比。</p>
+<p><b>没有生效的尝试。</b>空文档机制（仿照 REALM，让模型表示「检索到的都没用」）试了三种建模方式都没有提升，删掉了；在 MS-MARCO 上不太受益于检索的问题，模型学会了总是检索同一批文档（附录 F）。检索塌缩见第 7 节（附录 H）。</p>
+</details>
+
+<details class="ext"><summary>E · 完整的结果表（原文 Table 1、2、5、6）</summary>
+<h4>Table 1 · 开放域问答测试集，EM</h4>
+<div class="tbl"><table>
+<tr><th>模型</th><th>类型</th><th class="num">NQ</th><th class="num">TQA（标准 / TQA-Wiki）</th><th class="num">WQ</th><th class="num">CT</th></tr>
+<tr><td>T5-11B</td><td>闭卷</td><td class="num">34.5</td><td class="num">- / 50.1</td><td class="num">37.4</td><td class="num">-</td></tr>
+<tr><td>T5-11B + SSM</td><td>闭卷</td><td class="num">36.6</td><td class="num">- / 60.5</td><td class="num">44.7</td><td class="num">-</td></tr>
+<tr><td>REALM</td><td>开卷、抽取</td><td class="num">40.4</td><td class="num">- / -</td><td class="num">40.7</td><td class="num">46.8</td></tr>
+<tr><td>DPR</td><td>开卷、抽取</td><td class="num">41.5</td><td class="num">57.9 / -</td><td class="num">41.1</td><td class="num">50.6</td></tr>
+<tr><td>RAG-Token</td><td>开卷、生成</td><td class="num">44.1</td><td class="num">55.2 / 66.1</td><td class="num">45.5</td><td class="num">50.0</td></tr>
+<tr><td>RAG-Seq.</td><td>开卷、生成</td><td class="num">44.5</td><td class="num">56.8 / 68.0</td><td class="num">45.2</td><td class="num">52.2</td></tr>
+</table></div>
+<h4>Table 2 · 生成与分类测试集</h4>
+<div class="tbl"><table>
+<tr><th>模型</th><th class="num">Jeopardy B-1</th><th class="num">Jeopardy QB-1</th><th class="num">MS-MARCO R-L</th><th class="num">MS-MARCO B-1</th><th class="num">FEVER-3</th><th class="num">FEVER-2</th></tr>
+<tr><td>SotA</td><td class="num">-</td><td class="num">-</td><td class="num">49.8*</td><td class="num">49.9*</td><td class="num">76.8</td><td class="num">92.2*</td></tr>
+<tr><td>BART</td><td class="num">15.1</td><td class="num">19.7</td><td class="num">38.2</td><td class="num">41.6</td><td class="num">64.0</td><td class="num">81.1</td></tr>
+<tr><td>RAG-Tok.</td><td class="num">17.3</td><td class="num">22.2</td><td class="num">40.1</td><td class="num">41.5</td><td class="num" rowspan="2">72.5</td><td class="num" rowspan="2">89.5</td></tr>
+<tr><td>RAG-Seq.</td><td class="num">14.7</td><td class="num">21.4</td><td class="num">40.8</td><td class="num">44.2</td></tr>
+</table></div>
+<p>* 表示该系统使用了金标准上下文或证据。FEVER 是分类，两种 RAG 等价，所以只有一行。</p>
+<h4>Table 5 · 生成多样性（distinct 三元组比例）</h4>
+<div class="tbl"><table>
+<tr><th></th><th class="num">MS-MARCO</th><th class="num">Jeopardy</th></tr>
+<tr><td>金标准（人写）</td><td class="num">89.6%</td><td class="num">90.0%</td></tr>
+<tr><td>BART</td><td class="num">70.7%</td><td class="num">32.4%</td></tr>
+<tr><td>RAG-Token</td><td class="num">77.8%</td><td class="num">46.8%</td></tr>
+<tr><td>RAG-Seq.</td><td class="num">83.5%</td><td class="num">53.8%</td></tr>
+</table></div>
+<p>没有使用任何促进多样性的解码技巧；离人类水平仍有明显差距，所以不能说 RAG 解决了重复。</p>
+<h4>Table 6 · 检索消融，开发集</h4>
+<div class="tbl"><table>
+<tr><th>模型</th><th class="num">NQ</th><th class="num">TQA</th><th class="num">WQ</th><th class="num">CT</th><th class="num">Jeopardy B-1</th><th class="num">Jeopardy QB-1</th><th class="num">MS-MARCO R-L</th><th class="num">MS-MARCO B-1</th><th class="num">FVR-3</th><th class="num">FVR-2</th></tr>
+<tr><td>RAG-Token-BM25</td><td class="num">29.7</td><td class="num">41.5</td><td class="num">32.1</td><td class="num">33.1</td><td class="num">17.5</td><td class="num">22.3</td><td class="num">55.5</td><td class="num">48.4</td><td class="num" rowspan="2">75.1</td><td class="num" rowspan="2">91.6</td></tr>
+<tr><td>RAG-Seq-BM25</td><td class="num">31.8</td><td class="num">44.1</td><td class="num">36.6</td><td class="num">33.8</td><td class="num">11.1</td><td class="num">19.5</td><td class="num">56.5</td><td class="num">46.9</td></tr>
+<tr><td>RAG-Token-Frozen</td><td class="num">37.8</td><td class="num">50.1</td><td class="num">37.1</td><td class="num">51.1</td><td class="num">16.7</td><td class="num">21.7</td><td class="num">55.9</td><td class="num">49.4</td><td class="num" rowspan="2">72.9</td><td class="num" rowspan="2">89.4</td></tr>
+<tr><td>RAG-Seq-Frozen</td><td class="num">41.2</td><td class="num">52.1</td><td class="num">41.8</td><td class="num">52.6</td><td class="num">11.8</td><td class="num">19.6</td><td class="num">56.7</td><td class="num">47.3</td></tr>
+<tr><td>RAG-Token</td><td class="num">43.5</td><td class="num">54.8</td><td class="num">46.5</td><td class="num">51.9</td><td class="num">17.9</td><td class="num">22.6</td><td class="num">56.2</td><td class="num">49.4</td><td class="num" rowspan="2">74.5</td><td class="num" rowspan="2">90.6</td></tr>
+<tr><td>RAG-Seq</td><td class="num">44.0</td><td class="num">55.8</td><td class="num">44.9</td><td class="num">53.4</td><td class="num">15.3</td><td class="num">21.5</td><td class="num">57.2</td><td class="num">47.5</td></tr>
+</table></div>
+<p>这是开发集成绩，和 Table 1 的测试集不能直接比（例如 NQ：Table 6 的 RAG-Token 43.5，Table 1 是 44.1）。WQ 上 Token 优于 Seq、CT 上 Seq 优于 Token，数据集小，差异可能是噪音，不要过度解读。</p>
+<h4>FEVER 检索质量的侧面验证（4.4 节）</h4>
+<p>取 RAG 检索到的前 k 篇，看文章标题是否和 FEVER 金标准证据对上：第一名文档来自金标准文章的占 71%，前 10 名里含金标准文章的占 90%。检索器没被教过 FEVER 的证据，却能找对。</p>
+</details>
+
+<details class="ext"><summary>F · 当时的背景（原文第 1、5 节）</summary>
+<ul>
+  <li><b>规模路线正盛</b>：T5-11B 的闭卷问答展示了「只靠参数就能答一部分开放域问题」。RAG 与这条路线同时间并行：一边把模型做大，一边让模型会查。</li>
+  <li><b>检索进入神经时代</b>：DPR 用 BERT 双塔取代 BM25 作问答检索器；ORQA、REALM 把检索器放进预训练，REALM 在预训练期间周期性刷新索引。RAG 和它们是同一波工作，区别是生成式而非抽取式，且不做专门预训练。</li>
+  <li><b>通用生成模型成熟</b>：BART、T5 推出，第一次有了「一个模型接所有文本到文本任务」的生成器。</li>
+  <li><b>相关路线</b>：记忆网络；检索再编辑（retrieve-and-edit），原文说 RAG 更强调整合多段检索内容，不是轻编辑一条检索结果。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>G · 后来的发展和前后篇衔接（原文之外，多数待核实）</summary>
+<ul>
+  <li><b>后来的 RAG</b>：多是生成器不更新的大模型，加向量数据库和现成的嵌入模型，检索结果放进提示词；保留外挂非参数记忆，丢掉联合训练检索器。具体比例待核实。</li>
+  <li><b>同期与后续方向</b>：Fusion-in-Decoder、联合预训练检索器和语言模型的 Atlas、预训练阶段就接入检索的 RETRO。细节我没有核对。</li>
+  <li><b>稠密对关键词</b>：FEVER 上 BM25 反而更好，后来很多系统用「稠密加关键词混合检索，再重排」，与此一致（待核实）。</li>
+  <li><b>继承自</b>：008 <a href="../008-bert/index.html">BERT</a>（检索器编码器，预训练加微调）；004 <a href="../004-transformer/index.html">Transformer</a>（BART）；002 <a href="../002-seq2seq/index.html">Seq2Seq</a>（逐词概率分解与束搜索）；001 <a href="../001-nplm/index.html">NPLM</a>（softmax、对数似然）；005 <a href="../005-adam/index.html">Adam</a>；007 <a href="../007-gpt-2/index.html">GPT-2</a> 的「把知识压进参数」是本篇的对立面。</li>
+  <li><b>留下的问题</b>：微调 BART 全部 4 亿参数代价高，014 <a href="../014-lora/index.html">LoRA</a> 讲便宜地微调；幻觉、有用性、遵循指令不只是知识来源问题，还涉及输出是否符合人的偏好，见 015 <a href="../015-human-preferences/index.html">人类偏好</a>、016 <a href="../016-ppo/index.html">PPO</a>、017 <a href="../017-alignment-lab/index.html">对齐</a>、018 <a href="../018-instructgpt/index.html">InstructGPT</a>；大模型能装多少知识由规模定律决定，见 009 <a href="../009-scaling-laws/index.html">规模定律</a>、011 <a href="../011-gpt-3/index.html">GPT-3</a>。本篇提供的是另一个方向：不必只靠变大。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>H · 疑点和没有核实的地方</summary>
+<ul>
+  <li><b>索引维度和数值总数：</b>原文附录 G 写 728 维、153 亿个数值，前后自洽（2100 万×728）；但 BERT-base 的向量是 768 维，按 768 算约 161 亿个。疑似原文笔误，待核实。</li>
+  <li><b>参数量：</b>626M 把不训练的文档编码器也算进去了，实际训练的应是约 516M。</li>
+  <li><b>Table 4 的合计：</b>「具体性」一列五个数相加是 93.0%；4.3 节正文写「两者都事实正确的占 17%」，而表里是「都好 11.7%、都差 17.7%」，疑似正文把 both poor 当成了 both good。待核实。</li>
+  <li><b>人评：</b>原文没交代每条样本有几位评估者；无多数意见占约 20%。</li>
+  <li><b>Table 6 的 MS-MARCO ROUGE-L 在 55 到 57，Table 2 测试集是 38 到 41：</b>原文没有解释，应是开发集与测试集不同，我没有核实。</li>
+  <li><b>「SOTA」的口径：</b>摘要说三个开放域问答任务刷新最好成绩，4.1 节说四个任务都是，但 TriviaQA 仅限 T5 可比拆分。</li>
+  <li><b>换索引实验：</b>12% 与 4% 为什么不对称，原文没解释。</li>
+  <li><b>为什么冻结文档编码器不伤效果、Token 为什么在 K 太大后下降：</b>原文没有给机制，正文里的说法是我的推测。</li>
+  <li><b>会议信息：</b>NeurIPS 2020 是通行说法，PDF 只标 arXiv v4，待核实。</li>
+</ul>
+</details>
+
+
+<footer>
+  AI 论文解读 · 013 · 原文：Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Küttler, Mike Lewis, Wen-tau Yih, Tim Rocktäschel, Sebastian Riedel, Douwe Kiela. <i>Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks.</i> arXiv 2005.11401（v4，2021 年 4 月），2020.<br>
+  图中标「示意」的数字是为了讲清机制设定的例子，都验算过。实验数字出自原文 Table 1–6、4.5 节；原文 Figure 1、2、3 的图源为原文。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>

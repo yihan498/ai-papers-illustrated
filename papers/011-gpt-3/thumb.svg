@@ -1,0 +1,16 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="一个蓝色方块 GPT-3 1750 亿，右边接一个提示框：说明加几个示范加问题，模型一次前向写出答案，不改参数">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <rect class="new" x="16" y="48" width="70" height="74" rx="8"/>
+  <text x="51" y="80" class="sm" text-anchor="middle" style="fill:var(--on);font-weight:700">GPT-3</text>
+  <text x="51" y="98" class="sm" text-anchor="middle" style="fill:var(--on)">1750 亿</text>
+  <path class="mutF" d="M92 79 L106 85 L92 91 Z"/>
+  <rect class="newT" x="112" y="30" width="112" height="22" rx="5"/>
+  <text x="168" y="45" class="sm tn" text-anchor="middle">说明</text>
+  <rect class="newT" x="112" y="58" width="112" height="22" rx="5"/>
+  <text x="168" y="73" class="sm tn" text-anchor="middle">示范 × K</text>
+  <rect class="newT" x="112" y="86" width="112" height="22" rx="5"/>
+  <text x="168" y="101" class="sm tn" text-anchor="middle">待答问题</text>
+  <rect class="softS" x="112" y="114" width="112" height="22" rx="5"/>
+  <text x="168" y="129" class="sm m" text-anchor="middle">续写答案</text>
+  <text x="120" y="162" class="sm m" text-anchor="middle">不改参数，只换输入</text>
+</svg>

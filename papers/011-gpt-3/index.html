@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GPT-3 图解</title>
+<meta name="description" content="Brown 等 2020《Language Models are Few-Shot Learners》图解：结构几乎不变，只把模型放大到 1750 亿参数；做题时不改任何参数，只把任务说明和几个示例写进输入，让模型接着写。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文的做法（175B 通用模型，做题只改输入、不改参数），赭 = 要被替代的旧做法（每个任务一套标注、一份微调后的参数）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;min-width:520px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th:first-child,td:first-child{white-space:nowrap}
+th:first-child,td:first-child{padding-right:20px}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+<main class="wrap">
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　011</nav>
+  <h1 style="margin-top:14px">不改一个参数，只在输入里放几个例子</h1>
+  <p class="lede">Brown 等人 2020 年在 OpenAI 写的《Language Models are Few-Shot Learners》，就是 GPT-3。它几乎没有新算法：结构沿用 GPT-2，只把参数放大到 1750 亿，在 3000 亿 token 上训练一次。新的是用法：<b>不再为任何任务更新参数，只把任务说明和几个示例写进输入，让模型接着写。</b>结果是，有的任务追平甚至超过专门微调的系统（LAMBADA、TriviaQA、法译英），有的仍接近随机（WiC、ANLI）；而且「示例越多越好」的趋势，只在大模型身上才明显。</p>
+  <div class="meta">
+    <span>Tom B. Brown、Benjamin Mann、Nick Ryder、Melanie Subbiah、Jared Kaplan 等 31 位作者（OpenAI）· 2020 年 · arXiv 2005.14165</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的做法（175B 通用模型，做题只改输入、不改参数）</span>
+    <span class="key"><i class="sw o"></i>赭色：要被替代的旧做法（每个任务一套标注、一份微调后的参数）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · 训练一次，之后每个任务只换输入</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 250" role="img" aria-label="上排三个方框依次连接：混合语料，3000 亿 token；GPT-3，1750 亿参数，只学猜下一个 token；做题，一次前向计算，不更新任何参数。中排是做题时的输入，由任务说明、K 个示范、待答问题三段拼成，箭头指向续写出答案。下排一行赭色文字说明旧做法：每个任务都要微调，几千到几十万条标注，一个任务一份参数。">
+      <rect class="softS" x="20" y="14" width="170" height="80" rx="8"/>
+      <text class="b" x="105" y="42" text-anchor="middle">混合语料</text>
+      <text class="sm" x="105" y="62" text-anchor="middle">3000 亿 token</text>
+      <text class="sm" x="105" y="79" text-anchor="middle">约 93% 是英语</text>
+      <line class="mutS" x1="192" y1="54" x2="218" y2="54" marker-end="url(#ah)"/>
+      <rect class="new" x="220" y="14" width="230" height="80" rx="8"/>
+      <text class="b on" x="335" y="42" text-anchor="middle">GPT-3 · 1750 亿参数</text>
+      <text class="sm on" x="335" y="62" text-anchor="middle">结构同 GPT-2，96 层</text>
+      <text class="sm on" x="335" y="79" text-anchor="middle">只学猜下一个 token</text>
+      <line class="mutS" x1="452" y1="54" x2="478" y2="54" marker-end="url(#ah)"/>
+      <rect class="newT" x="480" y="14" width="180" height="80" rx="8"/>
+      <text class="b tn" x="570" y="42" text-anchor="middle">做题：一次前向</text>
+      <text class="sm" x="570" y="62" text-anchor="middle">不更新任何参数</text>
+      <text class="sm" x="570" y="79" text-anchor="middle">梯度一步都没有</text>
+
+      <text class="sm m" x="20" y="126">做题时，输入由三段拼成，变的只有示范的个数 K：</text>
+      <rect class="softS" x="20" y="138" width="150" height="40" rx="6"/>
+      <text x="95" y="163" text-anchor="middle">任务说明</text>
+      <text class="m" x="181" y="163" text-anchor="middle">+</text>
+      <rect class="newT" x="192" y="138" width="200" height="40" rx="6"/>
+      <text class="tn" x="292" y="163" text-anchor="middle">K 个示范（问 → 答）</text>
+      <text class="m" x="403" y="163" text-anchor="middle">+</text>
+      <rect class="softS" x="414" y="138" width="116" height="40" rx="6"/>
+      <text x="472" y="163" text-anchor="middle">待答问题</text>
+      <line class="newS" x1="534" y1="158" x2="560" y2="158" marker-end="url(#ahN)"/>
+      <text class="tn" x="566" y="163">续写答案</text>
+      <text class="sm m" x="292" y="196" text-anchor="middle">K = 0 / 1 / 10~100，上限由 2048 token 的窗口决定</text>
+
+      <line class="ln" x1="20" y1="212" x2="660" y2="212"/>
+      <text class="sm to" x="20" y="236">对照，旧做法：每个任务都要微调，几千到几十万条标注，一个任务一份参数</text>
+    </svg>
+    </div>
+    <figcaption>左边的训练做一次；右边的使用对每个任务都一样，只是输入里的示范个数不同。示范的写法见第 4 节。</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>要解决的问题</a>
+    <a href="#s2"><span>2</span>作者的赌注：写进输入，再放大</a>
+    <a href="#s3"><span>3</span>第一步：训练一次</a>
+    <a href="#s4"><span>4</span>第二步：做题只改输入</a>
+    <a href="#s5"><span>5</span>证据：它做到了多少</a>
+    <a href="#s6"><span>6</span>局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>正文只走一条线</b>：旧做法卡在哪 → 作者的赌注 → 怎么训练 → 怎么做题 → 每个结论对应哪个实验 → 局限。只读每节标题和每段第一句，也能串起来。</li>
+      <li>公式、完整结果表、数据与训练设置、概念解释、当时的背景、前后篇衔接，都在页尾<b>附录</b>里，默认折叠，标明对应原文哪一节。</li>
+      <li>小数字例子都验算过：为讲解设定的标「示意」，按原文规格估算的标「推算」，对着原图估读的标「估读」。</li>
+      <li>零件在前面几篇讲过：结构在 004 <a href="../004-transformer/index.html">Transformer</a>，字节级 BPE 和零样本在 007 <a href="../007-gpt-2/index.html">GPT-2</a>，缩放定律在 009 <a href="../009-scaling-laws/index.html">Scaling Laws</a>。本篇是 007 的下一步：零样本变成少样本，模型放大约 113 倍。</li>
+    </ul>
+  </div>
+</header>
+
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>要解决的问题</h2>
+<p>2020 年的主流做法是预训练加微调（006 <a href="../006-gpt-1/index.html">GPT-1</a>、008 <a href="../008-bert/index.html">BERT</a>）：先在大量无标签文本上训一个通用模型，再为每个任务用有标签的数据继续训练。越往后越通用，但<b>最后一步仍然是任务相关的</b>。作者指出三个毛病，它们的性质不一样：</p>
+<ul>
+  <li><b>每个任务都要标注数据。</b>语言任务几乎数不完（语法纠错、给抽象故事写评语……），很多根本没有现成的数据。这是事实陈述。</li>
+  <li><b>容易学到假相关。</b>模型越强、微调的数据越窄，越容易抓住训练集里的偶然规律；作者引用文献认为，微调后「超过人类」可能只是利用了基准的偶然规律。这是作者的看法，本文没有直接检验。</li>
+  <li><b>人不需要这样。</b>人看一句说明、几个例子就会做新任务。这是动机上的类比，不是证据。</li>
+</ul>
+
+<figure class="fig">
+  <span class="tag">图 1 · 旧做法：每个任务一批标注，微调出一份参数</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="三行。每行左边是一个任务的标注数据，翻译、问答、语法纠错，每个都标注几千到几十万条；箭头指向右边微调之后的一份模型参数。右侧写着换任务就换一份。底部一行说明：模型越强、微调数据越窄，越容易学到偶然规律，这是作者的看法。">
+    <text class="sm m" x="20" y="20">一个任务，一批标注，一份微调后的参数（示意）</text>
+    <rect class="softS" x="20" y="34" width="210" height="44" rx="8"/><text x="125" y="54" text-anchor="middle">翻译的标注数据</text><text class="sm m" x="125" y="70" text-anchor="middle">几千到几十万条</text>
+    <line class="oldS" x1="234" y1="56" x2="288" y2="56" marker-end="url(#ahO)"/>
+    <rect class="oldT" x="292" y="34" width="190" height="44" rx="8"/><text class="to b" x="387" y="61" text-anchor="middle">翻译专用的一份参数</text>
+    <rect class="softS" x="20" y="90" width="210" height="44" rx="8"/><text x="125" y="110" text-anchor="middle">问答的标注数据</text><text class="sm m" x="125" y="126" text-anchor="middle">几千到几十万条</text>
+    <line class="oldS" x1="234" y1="112" x2="288" y2="112" marker-end="url(#ahO)"/>
+    <rect class="oldT" x="292" y="90" width="190" height="44" rx="8"/><text class="to b" x="387" y="117" text-anchor="middle">问答专用的一份参数</text>
+    <rect class="softS" x="20" y="146" width="210" height="44" rx="8"/><text x="125" y="166" text-anchor="middle">语法纠错的标注数据</text><text class="sm m" x="125" y="182" text-anchor="middle">几千到几十万条</text>
+    <line class="oldS" x1="234" y1="168" x2="288" y2="168" marker-end="url(#ahO)"/>
+    <rect class="oldT" x="292" y="146" width="190" height="44" rx="8"/><text class="to b" x="387" y="173" text-anchor="middle">纠错专用的一份参数</text>
+    <text class="sm to" x="500" y="108">换任务，就换一份</text>
+    <text class="sm m" x="20" y="220">模型越强、微调数据越窄，越容易学到数据里的偶然规律（作者的看法，本文没有检验）</text>
+  </svg>
+  </div>
+  <figcaption>标注要花钱，任务又数不完；每个任务还各存一份参数。006、008 把预训练做成通用的，但微调这一步没有变。</figcaption>
+</figure>
+
+<h3>上一步为什么不够：GPT-2 的零样本太弱</h3>
+<p>007 GPT-2 已经试过完全不给例子、只给任务说明（零样本）。方向对，但成绩很弱：原文第 1 节引用的数字是，GPT-2 在 Natural Questions 上约 4%，在 CoQA 上 55 F1。「换个更好的微调技巧」也解决不了问题，它能抬高某个任务的成绩，却没碰「每个任务都要一批数据、一份参数」这件事本身。</p>
+
+<figure class="fig">
+  <span class="tag">图 2 · 同一道题 Natural Questions：零样本很弱，加示例后涨很多</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 200" role="img" aria-label="横向条形图，Natural Questions 的准确率。GPT-2 零样本约 4%，赭色；GPT-3 零样本 14.6%，单样本 23.0%，少样本 29.9%，蓝色。横轴 0 到 50。">
+    <text class="sm m" x="20" y="20">Natural Questions 闭卷问答准确率（%）</text>
+    <line class="ln" x1="190" y1="34" x2="190" y2="170"/>
+    <text x="180" y="62" text-anchor="end">GPT-2 零样本</text><rect class="old" x="190" y="46" width="32" height="24" rx="3"/><text class="mo" x="230" y="63">约 4</text>
+    <text x="180" y="94" text-anchor="end">GPT-3 零样本</text><rect class="new" x="190" y="78" width="116.8" height="24" rx="3" style="opacity:.45"/><text class="mo" x="314" y="95">14.6</text>
+    <text x="180" y="126" text-anchor="end">GPT-3 单样本</text><rect class="new" x="190" y="110" width="184" height="24" rx="3" style="opacity:.7"/><text class="mo" x="382" y="127">23.0</text>
+    <text x="180" y="158" text-anchor="end">GPT-3 少样本</text><rect class="new" x="190" y="142" width="239.2" height="24" rx="3"/><text class="mo" x="437" y="159">29.9</text>
+    <text class="sm m" x="190" y="190">条长按 8 像素 = 1 个百分点；GPT-2 的数字是 011 原文第 1 节引用的</text>
+  </svg>
+  </div>
+  <figcaption>GPT-3 三个设定的数字出自 Table 3.3。这张图只想说明：同样不微调，加几个示例和放大模型，都有明显的差别。</figcaption>
+</figure>
+
+<p>要做成这件事，得同时过四关：模型要大到读得懂说明；要知道答案该写成什么形式；示例要塞得进 2048 token 的输入窗口；最后还得证明成绩不是背测试集背出来的。后面每一节都对着其中一关。</p>
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>作者的赌注：把任务写进输入，再把模型放大</h2>
+<p>009 <a href="../009-scaling-laws/index.html">Scaling Laws</a> 说，损失随模型和算力按幂律平滑下降。作者的假说是：既然语言建模的损失、很多任务的成绩都随规模平滑变好，那么「从输入里临时学会任务」这种能力，很可能也随规模变强。这是<b>假说</b>。本文在 8 个尺寸上看到了这个趋势，没有解释为什么。</p>
+
+<h3>三种「示例数」，一种不改参数的用法</h3>
+<p>做法是评测时只改输入：任务说明加 K 个示范，再接待答的问题。K 是 0 叫零样本，1 叫单样本，10 到 100 叫少样本。示范叫 demonstration，整段输入叫 prompt。<b>参数一个数都没变</b>，示范只是让下一个 token 的概率分布变了。</p>
+
+<figure class="fig">
+  <span class="tag">图 3 · 以翻译为例：四种方式，输入长什么样</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 270" role="img" aria-label="四行表格。微调：每任务数据几千到几十万条，改参数，推理时输入 cheese 箭头。少样本：10 到 100 对，不改参数，输入是任务说明、K 对示范、cheese 箭头。单样本：1 对，不改参数。零样本：0 对，不改参数，输入只有任务说明和 cheese 箭头。">
+    <text class="sm m" x="20" y="20">方式</text><text class="sm m" x="150" y="20">推理时的输入（翻译英译法）</text><text class="sm m" x="478" y="20">每任务数据</text><text class="sm m" x="580" y="20">参数</text>
+    <line class="ln" x1="20" y1="28" x2="660" y2="28"/>
+    <rect class="oldT" x="20" y="38" width="120" height="38" rx="6"/><text class="to b" x="80" y="62" text-anchor="middle">微调 FT</text>
+    <rect class="softS" x="150" y="38" width="320" height="38" rx="6"/><text class="mo sm" x="160" y="62">cheese =>（另训过一遍）</text>
+    <text class="mo sm" x="478" y="62">几千~几十万对</text><text class="to b" x="580" y="62">改</text>
+    <rect class="newT" x="20" y="92" width="120" height="38" rx="6"/><text class="tn b" x="80" y="116" text-anchor="middle">少样本 FS</text>
+    <rect class="softS" x="150" y="92" width="320" height="38" rx="6"/><text class="mo sm" x="160" y="116">[说明] [示范 × K] cheese =></text>
+    <text class="mo sm" x="478" y="116">10~100 对</text><text class="tn b" x="580" y="116">不改</text>
+    <rect class="newT" x="20" y="146" width="120" height="38" rx="6"/><text class="tn b" x="80" y="170" text-anchor="middle">单样本 1S</text>
+    <rect class="softS" x="150" y="146" width="320" height="38" rx="6"/><text class="mo sm" x="160" y="170">[说明] sea otter => loutre de mer</text>
+    <text class="mo sm" x="478" y="170">1 对</text><text class="tn b" x="580" y="170">不改</text>
+    <rect class="newT" x="20" y="200" width="120" height="38" rx="6"/><text class="tn b" x="80" y="224" text-anchor="middle">零样本 0S</text>
+    <rect class="softS" x="150" y="200" width="320" height="38" rx="6"/><text class="mo sm" x="160" y="224">[说明] cheese =></text>
+    <text class="mo sm" x="478" y="224">0 对</text><text class="tn b" x="580" y="224">不改</text>
+    <text class="sm m" x="20" y="260">单样本一行省略了末尾的待译词 cheese =>；说明是「Translate English to French:」这样的一句话</text>
+  </svg>
+  </div>
+  <figcaption>按原文 Figure 2.1 重画。少样本里 K 的上限不是人为规定，而是模型一次能读多长：2048 个 token 装不下更多示范。原文承认，少样本仍明显差于最好的微调模型，也仍需要少量任务数据。</figcaption>
+</figure>
+
+<h3>这样为什么可能行：训练文本里本来就夹着「几个例子再续写」</h3>
+<p>作者借用了元学习的说法：<b>预训练是外循环</b>，海量文本里天然有大量「前面几个例子，后面同类内容」的片段（列表、问答帖、对照翻译），模型为了猜下一个 token，不得不学会从上文识别模式并延续；<b>输入里的示范是内循环</b>，每个任务一次前向就适应。这是作者的解释思路，原文没有做机理验证。</p>
+
+<figure class="fig">
+  <span class="tag">图 4 · 外循环：预训练；内循环：输入里的示范</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 220" role="img" aria-label="左右两个方框。左边蓝色浅底，外循环，预训练，只做一次：文本里夹着很多前面几个例子后面同类内容的片段，例如列表、问答帖、对照翻译。右边蓝色浅底，内循环，使用：每个提示里放示范，模型一次前向就适应，参数不变。两框之间箭头标同一组参数。">
+    <rect class="newT" x="20" y="14" width="290" height="168" rx="10"/>
+    <text class="b tn" x="165" y="40" text-anchor="middle">外循环 · 预训练（做一次）</text>
+    <rect class="card" x="40" y="54" width="250" height="28" rx="5"/><text class="sm mo" x="50" y="72">1) … 2) … 3) …（列表）</text>
+    <rect class="card" x="40" y="90" width="250" height="28" rx="5"/><text class="sm mo" x="50" y="108">Q: … A: … Q: … A: …（问答帖）</text>
+    <rect class="card" x="40" y="126" width="250" height="28" rx="5"/><text class="sm mo" x="50" y="144">英文 = 法文 … 英文 = ?（对照）</text>
+    <text class="sm m" x="165" y="174" text-anchor="middle">猜下一个 token 时必须学会续写模式</text>
+    <line class="newS" x1="316" y1="98" x2="364" y2="98" marker-end="url(#ahN)"/>
+    <text class="sm tn" x="340" y="86" text-anchor="middle">同一组</text><text class="sm tn" x="340" y="120" text-anchor="middle">参数</text>
+    <rect class="newT" x="370" y="14" width="290" height="168" rx="10"/>
+    <text class="b tn" x="515" y="40" text-anchor="middle">内循环 · 使用（每个任务）</text>
+    <rect class="card" x="390" y="54" width="250" height="28" rx="5"/><text class="sm mo" x="400" y="72">[说明] [示范 × K] [待答]</text>
+    <text class="sm" x="515" y="108" text-anchor="middle">一次前向，不算梯度</text>
+    <text class="sm" x="515" y="130" text-anchor="middle">参数一个数都没变</text>
+    <text class="sm m" x="515" y="174" text-anchor="middle">换提示 = 换了一个条件分布</text>
+    <text class="sm m" x="20" y="208">这是作者的解释思路（原文第 1 节），没有做机理验证</text>
+  </svg>
+  </div>
+  <figcaption>图中三行小字是我举的片段类型的示意，不是原文数据。</figcaption>
+</figure>
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>第一步：训练一次，只学猜下一个 token</h2>
+<p>结构几乎原封不动地沿用 GPT-2：decoder-only 的 Transformer，Pre-LN，字节级 BPE，只是注意力层交替用「全部可见」和「只看附近一段」两种（原文一句话带过，没有做开关的消融实验）。新的是尺度：作者训了 8 个尺寸，从 1.25 亿到 1750 亿参数，最大的一个有 96 层、隐藏维度 12288、96 个头，输入窗口 2048 个 token（GPT-2 是 1024）。所有尺寸都只训 3000 亿 token。这一步对着第一关：模型得先大到读得懂。</p>
+<p>预算怎么花，照 009 的建议：多数给参数，少数给数据，不训到收敛。175B 参数只看 3000 亿 token，约每个参数 1.7 个 token（推算）。后来的 <a href="../010-chinchilla/index.html">010 Chinchilla</a> 认为这样分不够好。</p>
+
+<h3>数据：又要多，又要好</h3>
+<p>175B 要海量数据，互联网上最大的 Common Crawl 质量参差。作者做了三步：用逻辑回归分类器给网页打分，以 WebText、Wikipedia、图书为正例、原始 Common Crawl 为反例，按得分<b>随机</b>保留（高分几乎必留，低分也有一点概率）；做文档级模糊去重，平均削掉约 10%；再加进高质量语料（扩展版 WebText2、两套图书、Wikipedia）。</p>
+
+<figure class="fig">
+  <span class="tag">图 5 · 混合比例不按体量分：小而好的数据被看了好几遍</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="左右两组横条。左边灰色，语料体量，亿 token：Common Crawl 过滤后 4100，WebText2 190，Books1 120，Books2 550，Wikipedia 30。右边蓝色，训练时的混合比例：60%、22%、8%、8%、3%。右侧再列每个数据集在 3000 亿 token 里被看的遍数：0.44、2.9、1.9、0.43、3.4。">
+    <text class="sm m" x="140" y="20">语料体量（亿 token）</text><text class="sm m" x="400" y="20">训练混合比例</text><text class="sm m" x="560" y="20">被看的遍数</text>
+    <text x="130" y="52" text-anchor="end">Common Crawl</text><rect class="mutF" x="140" y="38" width="200" height="20" rx="3"/><text class="mo sm" x="346" y="53">4100</text>
+    <text x="130" y="88" text-anchor="end">WebText2</text><rect class="mutF" x="140" y="74" width="9.3" height="20" rx="3"/><text class="mo sm" x="156" y="89">190</text>
+    <text x="130" y="124" text-anchor="end">Books1</text><rect class="mutF" x="140" y="110" width="5.9" height="20" rx="3"/><text class="mo sm" x="152" y="125">120</text>
+    <text x="130" y="160" text-anchor="end">Books2</text><rect class="mutF" x="140" y="146" width="26.8" height="20" rx="3"/><text class="mo sm" x="173" y="161">550</text>
+    <text x="130" y="196" text-anchor="end">Wikipedia</text><rect class="mutF" x="140" y="182" width="1.5" height="20" rx="3"/><text class="mo sm" x="150" y="197">30</text>
+    <rect class="new" x="400" y="38" width="96" height="20" rx="3"/><text class="mo sm" x="502" y="53">60%</text>
+    <rect class="new" x="400" y="74" width="35.2" height="20" rx="3"/><text class="mo sm" x="441" y="89">22%</text>
+    <rect class="new" x="400" y="110" width="12.8" height="20" rx="3"/><text class="mo sm" x="419" y="125">8%</text>
+    <rect class="new" x="400" y="146" width="12.8" height="20" rx="3"/><text class="mo sm" x="419" y="161">8%</text>
+    <rect class="new" x="400" y="182" width="4.8" height="20" rx="3"/><text class="mo sm" x="411" y="197">3%</text>
+    <text class="mo" x="570" y="53">0.44</text><text class="mo tn b" x="570" y="89">2.9</text><text class="mo tn b" x="570" y="125">1.9</text><text class="mo" x="570" y="161">0.43</text><text class="mo tn b" x="570" y="197">3.4</text>
+    <text class="sm m" x="20" y="226">数字出自 Table 2.2；比例加总是 101%，原文四舍五入</text>
+  </svg>
+  </div>
+  <figcaption>Common Crawl 的体量是 WebText2 的 20 多倍，却只占 60% 的采样；高质量的小数据集重复看 2 到 3 遍。作者明确接受「轻微过拟合换更高质量」。训练数据按词数约 93% 是英语。</figcaption>
+</figure>
+<p>这一步对着第二关里「又大又好」的数据问题。精确的模型尺寸表、训练超参、算力账见附录 C、D、E。</p>
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>第二步：做题时只改输入</h2>
+<p>评测的流程是固定的：从训练集里<b>随机</b>抽 K 个示范，用一两个换行隔开，放在待答样本前面；K 在开发集上挑，上限是窗口能装下的个数。LAMBADA、StoryCloze、Winograd 没有训练集，示范从开发集取。模型一次前向，续写出答案，或者给每个选项打分：</p>
+<ul>
+  <li><b>多选题：</b>对每个候选算「每 token 的平均对数概率」，取最大的。不平均的话，长选项每多一个 token 就多乘一个小于 1 的概率，天然吃亏。</li>
+  <li>ARC、OpenBookQA、RACE 改用「在问题下的概率 ÷ 只在 "Answer:" 之后的概率」，去掉答案本身就常见的先验。</li>
+  <li><b>自由生成</b>（问答、翻译）：束搜索，宽度 4，长度惩罚 0.6，用 F1、BLEU 或精确匹配评分。</li>
+</ul>
+
+<figure class="fig">
+  <span class="tag">图 6 · 为什么选项要按每个 token 平均（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 238" role="img" aria-label="问题：法国首都是什么。两个候选：Paris 拆成两个 token，对数概率分别 负 2.0 和 负 1.0；Rome 一个 token，负 2.0。左边按总和比：Paris 负 3.0，Rome 负 2.0，选了 Rome，赭色，因为短而占便宜。右边按每 token 平均：Paris 负 1.5，Rome 负 2.0，选 Paris，蓝色。">
+    <text class="sm m" x="20" y="20">问题「法国首都是？」两个候选，设模型给出的对数概率如下（示意，不是原文数据）</text>
+    <rect class="softS" x="20" y="34" width="640" height="54" rx="8"/>
+    <text class="mo" x="36" y="56">Paris = 2 个 token：−2.0，−1.0</text>
+    <text class="mo" x="36" y="78">Rome  = 1 个 token：−2.0</text>
+    <rect class="oldT" x="20" y="104" width="310" height="104" rx="8"/>
+    <text class="to b" x="175" y="128" text-anchor="middle">按总和比</text>
+    <text class="mo" x="40" y="154">Paris  −3.0</text><text class="mo" x="40" y="174">Rome   −2.0</text>
+    <text class="to b" x="175" y="196" text-anchor="middle">选了 Rome：短，占了便宜</text>
+    <rect class="newT" x="350" y="104" width="310" height="104" rx="8"/>
+    <text class="tn b" x="505" y="128" text-anchor="middle">按每 token 平均</text>
+    <text class="mo" x="370" y="154">Paris  −3.0 ÷ 2 = −1.5</text><text class="mo" x="370" y="174">Rome   −2.0 ÷ 1 = −2.0</text>
+    <text class="tn b" x="505" y="196" text-anchor="middle">选对 Paris</text>
+    <text class="sm m" x="20" y="228">这个例子只说明为什么要归一化，不说明哪种打分在所有任务上最好</text>
+  </svg>
+  </div>
+  <figcaption>对数概率越接近 0 越大；−1.5 大于 −2.0，所以 Paris 胜出。</figcaption>
+</figure>
+
+<p>示范还有一个容易被忽略的作用：<b>告诉模型答案长什么样</b>。LAMBADA 要预测一段话的最后一个词，少样本时把题写成「填空加箭头」的固定格式，模型就学会只输出一个词：少样本 86.4%，零样本 76.2%，单样本反而只有 72.5%。作者的猜测是一个例子不足以让模型认出格式（原文用 "Perhaps"）；零样本用的格式和另两个也不完全一样，所以三个数字不能严格比较。这对着第二关里的格式问题。精确的打分写法见附录 A。</p>
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>证据：它做到了多少</h2>
+<p>原文第 3 节有二十多个基准，逐表罗列没有意义。这里按论证排：规模起作用吗？追平了多少？弱在哪？是在「现场学」吗？成绩可信吗？</p>
+
+<h3>规模起作用吗：损失继续下降，示范的收益随规模变陡</h3>
+<p>8 个模型的验证损失随训练算力呈幂律下降，又延伸了两个数量级，只有轻微的弯折。这和 009 的预测同向。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 3.1 · 损失随算力平滑下降</span>
+  <img class="orig" src="orig-fig3-1.png" alt="原文 Figure 3.1：横轴是训练算力（PetaFLOP/s-days，对数轴，10 的负 6 次方到 10 的 4 次方），纵轴是验证损失（对数轴，1.5 到 6）。每条彩色曲线是一个模型，颜色表示参数量，从深紫的 10 万到亮黄的 1000 亿以上。曲线的下包络贴着一条虚线 L = 2.57·C 的负 0.048 次方，最大的黄色曲线一直延伸到右下角。" loading="lazy">
+  <figcaption>每条曲线是一个模型，颜色是参数量；各条曲线的下包络贴着虚线 L = 2.57·C<sup>−0.048</sup>。<b>结论：最大的模型沿同一条幂律线继续往下走。</b>怎么看：模型各自在不同算力处离开虚线，意思是那之后再训不划算。图源：Brown 等 2020 原文，图中另有 6 个更小的模型。</figcaption>
+</figure>
+<p>更关键的是示范的收益。下图是一个「从单词里去掉多余符号还原单词」的简单任务：</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 1.2 · 模型越大，越会用输入里的示范</span>
+  <img class="orig" src="orig-fig1-2.png" alt="原文 Figure 1.2：横轴是上下文里的示例个数 K（对数轴），标出零样本、单样本、少样本区间；纵轴是准确率。三组曲线：175B 参数的蓝色、13B 的橙色、1.3B 的绿色，每组有实线（带自然语言任务说明）和虚线（不带说明）。175B 的曲线在 K 很小时就升到 40 多、50 多，随 K 增大升到 60 多；13B 缓慢升到 20 多；1.3B 几乎贴近底部。" loading="lazy">
+  <figcaption>175B 的实线在零样本时约 8%，单样本约 46%，K 增大后升到 60% 以上（以上为估读）；13B 和 1.3B 加再多示例也涨得慢。<b>结论：「示例越多越好」只在模型足够大时明显。</b>实线有自然语言说明，虚线没有，说明加一句说明也有帮助。图源：Brown 等 2020 原文。</figcaption>
+</figure>
+<p>把全部 42 个以准确率计分的基准聚合起来，也是同一个形状：三条线都随规模上升，但少样本和零样本之间的间距在大模型处更大。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 1.3 · 42 个基准的聚合</span>
+  <img class="orig" src="orig-fig1-3.png" alt="原文 Figure 1.3：横轴是模型参数量（0.1B 到 175B），纵轴是准确率 0 到 100。背景是几十条淡色的单个基准曲线，前景三条粗线带圆点：少样本橙色、单样本绿色、零样本蓝色。在 0.1B 处三条线都在 25 左右、几乎重合，到 175B 处少样本约 57、单样本约 51、零样本约 43。" loading="lazy">
+  <figcaption>小模型处三条线几乎重合，175B 处拉开到十几个点（估读）。<b>结论：大模型更会利用示范。</b>作者自己也说这只是一个启发式的整体印象，不是严格的基准。图源：Brown 等 2020 原文。</figcaption>
+</figure>
+<p class="note"><span class="lab">我补充的</span>这是<b>观察到的趋势</b>，不是「规模导致上下文学习」的因果证明。8 个模型沿同一个配方等比放大，更大的模型本来就把所有事都做得更好，包括普通的语言建模。所以「示范收益随规模变陡」比「绝对分数更高」更有说服力：它至少排除了「大模型只是整体更强」的一部分。为什么规模大了才出现，原文没有解释。</p>
+
+<h3>追平了多少：有的追平，有的没有</h3>
+<figure class="fig">
+  <span class="tag">图 7 · 四个任务：零样本、单样本、少样本，对着微调系统（赭色虚线）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 370" role="img" aria-label="四个小柱图，每个都是零样本、单样本、少样本三根蓝柱，加一条赭色虚线表示微调系统。LAMBADA 准确率 76.2、72.5、86.4，微调 SOTA 68.0。TriviaQA 64.3、68.0、71.2，RAG 68.0。Natural Questions 14.6、23.0、29.9，RAG 44.5。法译英 BLEU 21.2、33.7、39.2，监督 SOTA 35.0。前两个少样本超过虚线，后面 NQ 仍低于虚线，法译英超过。"><text class="b" x="20" y="26">LAMBADA 准确率（%）</text><line class="ln" x1="20" y1="160" x2="340" y2="160"/><rect class="new" x="40" y="83.8" width="40" height="76.2" rx="3" style="opacity:0.4"/><text class="mo sm" style="paint-order:stroke;stroke:var(--card);stroke-width:4px" x="60" y="78.8" text-anchor="middle">76.2</text><text class="sm m" x="60" y="174" text-anchor="middle">0S</text><rect class="new" x="95" y="87.5" width="40" height="72.5" rx="3" style="opacity:0.7"/><text class="mo sm" style="paint-order:stroke;stroke:var(--card);stroke-width:4px" x="115" y="82.5" text-anchor="middle">72.5</text><text class="sm m" x="115" y="174" text-anchor="middle">1S</text><rect class="new" x="150" y="73.6" width="40" height="86.4" rx="3"/><text class="mo sm" style="paint-order:stroke;stroke:var(--card);stroke-width:4px" x="170" y="68.6" text-anchor="middle">86.4</text><text class="sm m" x="170" y="174" text-anchor="middle">FS</text><line class="oldS dash" x1="28" y1="92.0" x2="200" y2="92.0"/><text class="sm to" x="206" y="90.0">微调 SOTA</text><text class="sm to mo" x="206" y="104.0">68.0</text><text class="b" x="350" y="26">TriviaQA 准确率（%）</text><line class="ln" x1="350" y1="160" x2="670" y2="160"/><rect class="new" x="370" y="95.7" width="40" height="64.3" rx="3" style="opacity:0.4"/><text class="mo sm" style="paint-order:stroke;stroke:var(--card);stroke-width:4px" x="390" y="90.7" text-anchor="middle">64.3</text><text class="sm m" x="390" y="174" text-anchor="middle">0S</text><rect class="new" x="425" y="92.0" width="40" height="68.0" rx="3" style="opacity:0.7"/><text class="mo sm" style="paint-order:stroke;stroke:var(--card);stroke-width:4px" x="445" y="87.0" text-anchor="middle">68.0</text><text class="sm m" x="445" y="174" text-anchor="middle">1S</text><rect class="new" x="480" y="88.8" width="40" height="71.2" rx="3"/><text class="mo sm" style="paint-order:stroke;stroke:var(--card);stroke-width:4px" x="500" y="83.8" text-anchor="middle">71.2</text><text class="sm m" x="500" y="174" text-anchor="middle">FS</text><line class="oldS dash" x1="358" y1="92.0" x2="530" y2="92.0"/><text class="sm to" x="536" y="90.0">RAG（微调）</text><text class="sm to mo" x="536" y="104.0">68.0</text><text class="b" x="20" y="216">Natural Questions（%）</text><line class="ln" x1="20" y1="350" x2="340" y2="350"/><rect class="new" x="40" y="335.4" width="40" height="14.6" rx="3" style="opacity:0.4"/><text class="mo sm" style="paint-order:stroke;stroke:var(--card);stroke-width:4px" x="60" y="330.4" text-anchor="middle">14.6</text><text class="sm m" x="60" y="364" text-anchor="middle">0S</text><rect class="new" x="95" y="327.0" width="40" height="23.0" rx="3" style="opacity:0.7"/><text class="mo sm" style="paint-order:stroke;stroke:var(--card);stroke-width:4px" x="115" y="322.0" text-anchor="middle">23.0</text><text class="sm m" x="115" y="364" text-anchor="middle">1S</text><rect class="new" x="150" y="320.1" width="40" height="29.9" rx="3"/><text class="mo sm" style="paint-order:stroke;stroke:var(--card);stroke-width:4px" x="170" y="315.1" text-anchor="middle">29.9</text><text class="sm m" x="170" y="364" text-anchor="middle">FS</text><line class="oldS dash" x1="28" y1="305.5" x2="200" y2="305.5"/><text class="sm to" x="206" y="303.5">RAG（微调）</text><text class="sm to mo" x="206" y="317.5">44.5</text><text class="b" x="350" y="216">法译英 BLEU</text><line class="ln" x1="350" y1="350" x2="670" y2="350"/><rect class="new" x="370" y="307.6" width="40" height="42.4" rx="3" style="opacity:0.4"/><text class="mo sm" style="paint-order:stroke;stroke:var(--card);stroke-width:4px" x="390" y="302.6" text-anchor="middle">21.2</text><text class="sm m" x="390" y="364" text-anchor="middle">0S</text><rect class="new" x="425" y="282.6" width="40" height="67.4" rx="3" style="opacity:0.7"/><text class="mo sm" style="paint-order:stroke;stroke:var(--card);stroke-width:4px" x="445" y="277.6" text-anchor="middle">33.7</text><text class="sm m" x="445" y="364" text-anchor="middle">1S</text><rect class="new" x="480" y="271.6" width="40" height="78.4" rx="3"/><text class="mo sm" style="paint-order:stroke;stroke:var(--card);stroke-width:4px" x="500" y="266.6" text-anchor="middle">39.2</text><text class="sm m" x="500" y="364" text-anchor="middle">FS</text><line class="oldS dash" x1="358" y1="280.0" x2="530" y2="280.0"/><text class="sm to" x="536" y="278.0">监督 SOTA</text><text class="sm to mo" x="536" y="292.0">35.0</text></svg>
+  </div>
+  <figcaption>数字出自 Table 3.2、3.3、3.4。LAMBADA、TriviaQA、法译英的少样本都越过了虚线；Natural Questions 仍差一大截。怎么看：虚线是此前最好的微调（或监督）系统，TriviaQA 的虚线是开卷的 RAG。</figcaption>
+</figure>
+<ul>
+  <li><b>LAMBADA</b>：少样本 86.4%，比此前 SOTA（68.0%）高；困惑度 1.92，对 8.63。其中一部分提升来自「告诉模型答案是一个词」（第 4 节）。StoryCloze（87.7 对 91.8）、HellaSwag（79.3 对 85.6）则仍差几个点，<b>所以不能概括成「GPT-3 超过微调模型」</b>。</li>
+  <li><b>TriviaQA</b>：单样本就追平开卷的 RAG（68.0），少样本 71.2 超过它。闭卷指不给参考文档，只凭参数里的记忆答题。<b>WebQuestions、Natural Questions</b> 从零样本到少样本涨幅很大，但少样本仍低于微调系统（NQ 29.9，对 RAG 44.5；WebQS 41.5，对 T5-11B+SSM 44.7、RAG 45.5）。作者猜这两个数据集的问题风格和训练文本不同，示范帮模型校准了回答的形式，原文没有对照实验。「知识全塞进参数」并不万能，013 <a href="../013-rag/index.html">RAG</a> 走的是外挂检索。</li>
+  <li><b>翻译</b>：训练数据只有约 7% 是非英语，也没有专门的平行语料。翻成英语好，翻出英语差：法译英 39.2、德译英 40.6，都超过作者找到的监督结果（35.0、40.2），但作者自己说不认为这些是真正的 SOTA；英译罗马尼亚语只有 21.0，比无监督 NMT 低十多 BLEU。作者猜与字节级 BPE 偏向英语有关。单样本比零样本高很多（法译英 21.2 → 33.7），示范的主要作用是告诉模型「现在在翻译」、输出什么语言。</li>
+</ul>
+
+<h3>弱在哪：要「比较两句话」的任务</h3>
+<p>SuperGLUE 是 8 个理解类任务的合集。GPT-3 少样本（K=32，不更新参数）总分 71.8，略高于微调的 BERT-Large（69.0），离微调 SOTA（89.0）还差约 17 分。每个任务只给不到 8 个示范，就能超过微调的 BERT-Large。</p>
+<figure class="fig">
+  <span class="tag">图 8 · SuperGLUE 五个任务：蓝点（GPT-3 少样本）的位置</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 252" role="img" aria-label="SuperGLUE 五个任务的点图，每行三个点：GPT-3 少样本、微调 BERT-Large、微调 SOTA。BoolQ 76.4、77.4、91.0。COPA 92.0、70.6、94.8。RTE 69.0、71.7、92.5。WiC 49.4、69.6、76.1。WSC 80.1、64.6、93.8。COPA 和 WSC 上蓝点高过赭点，WiC 上蓝点远在最左，接近随机。"><circle class="new ring" cx="150" cy="22" r="6"/><text class="sm" x="162" y="26">GPT-3 少样本（K=32）</text><circle class="old ring" cx="330" cy="22" r="6"/><text class="sm" x="342" y="26">微调 BERT-Large</text><circle class="mutF ring" cx="480" cy="22" r="6"/><text class="sm" x="492" y="26">微调 SOTA</text><text x="130" y="66" text-anchor="end">BoolQ</text><line class="ln" x1="441.20000000000005" y1="62" x2="558.0" y2="62"/><circle class="mutF ring" cx="558.0" cy="62" r="6"/><circle class="old ring" cx="449.20000000000005" cy="62" r="6"/><circle class="new ring" cx="441.20000000000005" cy="62" r="6"/><text class="mo sm tn" x="441.20000000000005" y="52" text-anchor="middle">76.4</text><text x="130" y="102" text-anchor="end">COPA</text><line class="ln" x1="394.79999999999995" y1="98" x2="588.4" y2="98"/><circle class="mutF ring" cx="588.4" cy="98" r="6"/><circle class="old ring" cx="394.79999999999995" cy="98" r="6"/><circle class="new ring" cx="566.0" cy="98" r="6"/><text class="mo sm tn" x="566.0" y="88" text-anchor="middle">92.0</text><text x="130" y="138" text-anchor="end">RTE</text><line class="ln" x1="382.0" y1="134" x2="570.0" y2="134"/><circle class="mutF ring" cx="570.0" cy="134" r="6"/><circle class="old ring" cx="403.6" cy="134" r="6"/><circle class="new ring" cx="382.0" cy="134" r="6"/><text class="mo sm tn" x="382.0" y="124" text-anchor="middle">69.0</text><text x="130" y="174" text-anchor="end">WiC</text><line class="ln" x1="225.2" y1="170" x2="438.79999999999995" y2="170"/><circle class="mutF ring" cx="438.79999999999995" cy="170" r="6"/><circle class="old ring" cx="386.79999999999995" cy="170" r="6"/><circle class="new ring" cx="225.2" cy="170" r="6"/><text class="mo sm tn" x="225.2" y="160" text-anchor="middle">49.4</text><text x="130" y="210" text-anchor="end">WSC</text><line class="ln" x1="346.79999999999995" y1="206" x2="580.4" y2="206"/><circle class="mutF ring" cx="580.4" cy="206" r="6"/><circle class="old ring" cx="346.79999999999995" cy="206" r="6"/><circle class="new ring" cx="470.79999999999995" cy="206" r="6"/><text class="mo sm tn" x="470.79999999999995" y="196" text-anchor="middle">80.1</text><line class="ln" x1="150" y1="214" x2="150" y2="220"/><text class="sm m" x="150" y="234" text-anchor="middle">40</text><line class="ln" x1="230" y1="214" x2="230" y2="220"/><text class="sm m" x="230" y="234" text-anchor="middle">50</text><line class="ln" x1="310" y1="214" x2="310" y2="220"/><text class="sm m" x="310" y="234" text-anchor="middle">60</text><line class="ln" x1="390" y1="214" x2="390" y2="220"/><text class="sm m" x="390" y="234" text-anchor="middle">70</text><line class="ln" x1="470" y1="214" x2="470" y2="220"/><text class="sm m" x="470" y="234" text-anchor="middle">80</text><line class="ln" x1="550" y1="214" x2="550" y2="220"/><text class="sm m" x="550" y="234" text-anchor="middle">90</text><line class="ln" x1="630" y1="214" x2="630" y2="220"/><text class="sm m" x="630" y="234" text-anchor="middle">100</text><line class="ln" x1="150" y1="214" x2="710" y2="214"/></svg>
+  </div>
+  <figcaption>数字出自 Table 3.8，测试集成绩。COPA、WSC 上蓝点远在赭点右边；WiC 只有 49.4，等于随机。完整八个任务见附录 F。</figcaption>
+</figure>
+<p>弱的是需要「比较两个句子或片段」的任务：WiC（判断同一个词在两句里是否同义）49.4%，RTE、CB 也弱；ANLI 的 R3 上，小模型接近随机（约 33%），175B 少样本大约补上了「随机到 SOTA」差距的一半。作者<b>猜测</b>与单向架构有关：模型从左往右读，没法像 008 BERT 那样双向对照。这是猜测，没有控制实验。ARC、RACE 这类任务示范也没帮上忙。示范有帮助和没帮助的任务之间，原文没有给出统一的规律。</p>
+
+<h3>像是在「现场学」：专门造的、几乎背不过的任务</h3>
+<p>作者特意造了一批任务来回答「这是不是真学」。最直接的是多位数加法：</p>
+<figure class="fig">
+  <span class="tag">图 9 · 175B 做多位数加法：位数越多越难，示范越多越好</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 232" role="img" aria-label="175B 模型做 2 到 5 位数加法的准确率，三根柱分别是零样本、单样本、少样本。2 位加 76.9、99.6、100.0。3 位加 34.2、65.5、80.4。4 位加 4.0、14.0、25.5。5 位加 0.7、3.5、9.3。位数越多越差，少样本总比零样本高。"><rect class="mutF" x="400" y="10" width="14" height="10" rx="2" style="opacity:.6"/><text class="sm" x="420" y="19">零样本</text><rect class="newT" x="480" y="10" width="14" height="10" rx="2"/><text class="sm" x="500" y="19">单样本</text><rect class="new" x="560" y="10" width="14" height="10" rx="2"/><text class="sm" x="580" y="19">少样本</text><text class="sm m" x="20" y="19">175B 的准确率（%），位数越多越难</text><rect class="mutF" x="50" y="100.0" width="36" height="100.0" rx="3" style="opacity:0.6"/><text class="mo sm" x="68" y="95.0" text-anchor="middle">76.9</text><rect class="newT" x="94" y="70.5" width="36" height="129.5" rx="3"/><text class="mo sm" x="112" y="65.5" text-anchor="middle">99.6</text><rect class="new" x="138" y="70.0" width="36" height="130.0" rx="3"/><text class="mo sm" x="156" y="65.0" text-anchor="middle">100.0</text><text x="112" y="220" text-anchor="middle">2 位加</text><rect class="mutF" x="210" y="155.5" width="36" height="44.5" rx="3" style="opacity:0.6"/><text class="mo sm" x="228" y="150.5" text-anchor="middle">34.2</text><rect class="newT" x="254" y="114.8" width="36" height="85.2" rx="3"/><text class="mo sm" x="272" y="109.8" text-anchor="middle">65.5</text><rect class="new" x="298" y="95.5" width="36" height="104.5" rx="3"/><text class="mo sm" x="316" y="90.5" text-anchor="middle">80.4</text><text x="272" y="220" text-anchor="middle">3 位加</text><rect class="mutF" x="370" y="194.8" width="36" height="5.2" rx="3" style="opacity:0.6"/><text class="mo sm" x="388" y="189.8" text-anchor="middle">4.0</text><rect class="newT" x="414" y="181.8" width="36" height="18.2" rx="3"/><text class="mo sm" x="432" y="176.8" text-anchor="middle">14.0</text><rect class="new" x="458" y="166.8" width="36" height="33.1" rx="3"/><text class="mo sm" x="476" y="161.8" text-anchor="middle">25.5</text><text x="432" y="220" text-anchor="middle">4 位加</text><rect class="mutF" x="530" y="199.1" width="36" height="0.9" rx="3" style="opacity:0.6"/><text class="mo sm" x="548" y="194.1" text-anchor="middle">0.7</text><rect class="newT" x="574" y="195.4" width="36" height="4.5" rx="3"/><text class="mo sm" x="592" y="190.4" text-anchor="middle">3.5</text><rect class="new" x="618" y="187.9" width="36" height="12.1" rx="3"/><text class="mo sm" x="636" y="182.9" text-anchor="middle">9.3</text><text x="592" y="220" text-anchor="middle">5 位加</text><line class="ln" x1="30" y1="200" x2="670" y2="200"/></svg>
+  </div>
+  <figcaption>数字出自 Table 3.9。2 位加法少样本达到 100%，5 位只有 9.3%。13B 在 2 位加减法上只有约一半对，175B 才几乎全对，作者称之为规模带来的「陡升」。</figcaption>
+</figure>
+<p>是背的还是算的？作者在训练集里检索了测试集中 3 位数加法、减法各 2000 道（只查了 3 位数），加法命中 17 道（0.8%），减法 2 道（0.1%）；模型的错误常是「忘了进位」，作者据此认为它在尝试计算，不是在查表。我提醒一句：没命中某个字符串，不等于没学过类似的算术文本，「在计算」也只是一种解释。</p>
+<p>其他几个：单词乱序，少样本把「随机插入符号」从 8.3% 提到 67.2%，说明能从示范里学规则，但所有模型都做不了「反转单词」（0.44%）。SAT 类比 374 题，少样本 65.2%，高于大学申请者平均 57%，但只是一场考试，推不出一般的推理能力。生成新闻能否被人认出来：约 200 词的短文，人判对率随模型变大从 76%（Small）一路降到 175B 的 52%（95% 置信区间 49% 到 54%），几乎等于抛硬币；故意做差的 160M 对照模型是 86%，说明这个测验本身有效。样本是 25 篇、每个模型约 80 人，只限新闻体裁，「分不出来」不等于「内容真实」。</p>
+
+<h3>结果可信吗：数据污染</h3>
+<p>训练语料来自整个互联网，测试题也在互联网上。作者对每个基准做了检查：测试样本里任何一个 13-gram（窗口随基准在 8 到 13 之间）在训练文本里精确出现，就标为 dirty，否则是 clean，再把 clean 子集的成绩和全集比。训练集和验证集损失差距很小，污染比例和性能变化之间没有发现相关性。逐任务的发现：</p>
+<ul>
+  <li>4 个 Wikipedia 语言建模基准、CBT、1BW 几乎全部包含在训练数据里，结果<b>撤下</b>，PTB 成为主要的语言建模基准。</li>
+  <li>PIQA 有 29% 被标 dirty，clean 子集下降约 3 点，结果<b>加星号</b>；Winograd 45% 被标，clean 下降 2.6%，也加星号。</li>
+  <li>LAMBADA 确有污染，但 clean 子集和全集的成绩差在 0.5% 内。QuAC、SQuADv2、DROP 超过 90% 被标，但只有原文片段在训练集、没有问答对，判为假阳性。</li>
+</ul>
+<p>作者自己承认两处局限：过滤程序在长文档（如整本书）上因一个缺陷失效，是事后做污染分析才发现的，太贵没有重训；clean 子集的难度未必和全集一致。我补充的：这种检查只能检出文本字面重合，检不出「同一个知识换了措辞」。没看到污染的影响，不代表没有。</p>
+
+<p class="punch">结论：<em>规模加示范</em>，在一部分任务上追平了专门微调的系统；在需要比较的任务上不行。示范的收益随规模变陡，是最有说服力的证据；它是观察到的趋势，不是机理。</p>
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>局限和后来</h2>
+<p>作者自己列了不少：</p>
+<ul>
+  <li><b>长文本会重复、前后矛盾</b>，偶尔出现不合逻辑的句子；对「常识物理」（奶酪放进冰箱会化吗）也弱。</li>
+  <li><b>单向</b>：没有双向或去噪的目标，作者猜双向模型微调更好（→ 008）。</li>
+  <li><b>样本效率低</b>：预训练见过的文本量远多于人一生读的。少样本到底在「学」新任务，还是在「认出」训练里见过的任务类型，作者认为是一条连续谱，没有答案。</li>
+  <li><b>推理成本大</b>，可能的出路是蒸馏；还有可解释性、校准和偏差（附录 G）。</li>
+</ul>
+<p>这些问题后来由别的篇回应：</p>
+<ul>
+  <li>同样的算力，参数和数据怎么分才好：<a href="../010-chinchilla/index.html">010 Chinchilla</a>。</li>
+  <li>把这类模型放到代码上继续训练：<a href="../012-codex/index.html">012 Codex</a>。</li>
+  <li>知识只存参数里，NQ、WebQS 上落后：<a href="../013-rag/index.html">013 RAG</a>。</li>
+  <li>175B 每个任务都全量微调一份承受不起：<a href="../014-lora/index.html">014 LoRA</a>。</li>
+  <li>模型不按用户意图回答、对提示敏感：<a href="../015-human-preferences/index.html">015</a>、<a href="../016-ppo/index.html">016</a>、<a href="../017-alignment-lab/index.html">017</a>、<a href="../018-instructgpt/index.html">018 InstructGPT</a>，用人类偏好和强化学习让模型遵循指令。</li>
+</ul>
+<p>附录 H 理了前后篇的衔接，附录 I 记了我没核实清楚、或原文自己对不上的地方。</p>
+
+
+<!-- ================= 附录 ================= -->
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块都默认折叠，标题里写明了对应的原文章节；正文用不到它们。标「我补充」的是原文之外我加的说明，标「待核实」的是我没有核对清楚的。</p>
+
+<details class="ext"><summary>A · 公式和符号表（原文 2.4 节、Appendix C、D）</summary>
+<p><b>多选题的默认打分：每 token 的平均对数概率</b>（对应正文图 6）</p>
+<div class="formula">score(c) = (1 / |c|) · Σ<sub>t=1…|c|</sub> log P( c<sub>t</sub> | context, c<sub>1</sub>, …, c<sub>t−1</sub> )</div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>是什么</th></tr></thead>
+  <tbody>
+    <tr><td>c</td><td>一个候选补全，由 |c| 个 token 组成</td></tr>
+    <tr><td>context</td><td>提示：说明 + K 个示范 + 待答问题</td></tr>
+    <tr><td>log P( c<sub>t</sub> | … )</td><td>在上文和已写出的前 t−1 个 token 之后，第 t 个 token 的对数概率，小于等于 0</td></tr>
+  </tbody>
+</table></div>
+<p><b>ARC、OpenBookQA、RACE 的另一种打分</b>（原文 2.4 节）：</p>
+<div class="formula">score(c) = P( c | context ) / P( c | "Answer: " )</div>
+<p>分母里的 "Answer: " 是一句固定的 "Answer: " 或 "A: "。得到的是「在这个问题下，这个答案比平时多出多少可能」，去掉了答案本身就常见的先验。作者说这在这几个数据集的开发集上有帮助。二分类题改写成 True / False 两个选项的多选题。</p>
+<p><b>训练算力：C ≈ 6ND</b>（009 的公式；GPT-3 的 Table D.1 与之吻合）</p>
+<p>推算：N = 1.746×10<sup>11</sup>，D = 3×10<sup>11</sup>，C ≈ 6 × 1.746×10<sup>11</sup> × 3×10<sup>11</sup> ≈ 3.14×10<sup>23</sup> FLOPs。1 PF-day = 10<sup>15</sup> × 86400 = 8.64×10<sup>19</sup> FLOPs，所以 3.14×10<sup>23</sup> ÷ 8.64×10<sup>19</sup> ≈ 3.6×10<sup>3</sup> PF-days，和原文 3.64×10<sup>3</sup> 一致。</p>
+<p><b>13-gram 污染检查</b>（Appendix C）：窗口长度 N 取该基准样本长度的第 5 百分位词数，最小 8，最大 13。示意：测试句 15 个词，13-gram 共 15 − 13 + 1 = 3 个，只要其中任何一个出现在训练文本里，整句标为 dirty。若某基准 1000 题里 200 题 dirty，全集 70%、clean 的 800 题 69%，差 1 个点，污染影响小；若 clean 只有 62%，就要怀疑模型从污染中获益。</p>
+<p><b>参数量验算</b>（我补充的）：每层约 12·d<sub>model</sub>²（注意力 4d² + 前馈 8d²，d<sub>ff</sub> = 4d）。Small：12 层 × 12 × 768² ≈ 8.49×10<sup>7</sup>，加词嵌入 50257 × 768 ≈ 3.86×10<sup>7</sup>、位置嵌入 2048 × 768 ≈ 1.6×10<sup>6</sup>，合计约 1.25×10<sup>8</sup>，对得上 125M。175B：12 × 96 × 12288² ≈ 1.74×10<sup>11</sup>，加词嵌入约 6×10<sup>8</sup>，约 1.75×10<sup>11</sup>。</p>
+</details>
+
+<details class="ext"><summary>B · 几个概念：元学习与术语、三个动机的性质、完形填空、稀疏注意力、人工判别、偏差探测</summary>
+<p><b>元学习与「零样本」的术语（原文第 1 节脚注 1）</b>：元学习有两层循环，外层是训练，学会「怎么学任务」；内层是遇到具体任务时按几个示例适应。作者把预训练当外循环，把输入里的示范当内循环。这套做法此前有时被叫作「零样本迁移」，这个叫法有歧义：它指不做梯度更新，实际上推理时常常给了示范。所以本文用「上下文学习」指内循环，再按示范数分成零、单、少样本。脚注还说明，这些术语对「模型是现学新任务，还是认出训练中见过的任务」不持立场。</p>
+<p><b>三个动机的性质</b>（原文第 1 节）：只有第一点（不用任务数据）可以被本文实验直接回答；第二点（假相关）本文只能间接说明；第三点（类比人）是修辞。读结果时不要把「模型像人一样会学」当成论文已证明的事（我补充的）。</p>
+<p><b>完形填空格式（3.1.2 节）</b>：LAMBADA 要预测一段话的最后一个词，普通语言模型会把标点或别的合理续写也当成可能，导致误判。把题目写成「填空 + 箭头」的固定格式后，少样本模型就学会只输出一个词。所以少样本的收益里有一部分是「告诉模型答案长什么样」，不是「教它新知识」。</p>
+<p><b>稀疏注意力（2.1 节）</b>：004 的全连接自注意力每层代价是 O(n²)。GPT-3 沿用 Sparse Transformer（Child 等 2019）的做法，让层与层之间交替使用「全部可见」和「局部带状」的注意力，目的是在 2048 的窗口里省算力。原文只用一句话带过，没有开关的消融，所以不知道它对结果有多大影响（待核实）。</p>
+<p><b>人工判别实验（3.9.4 节）</b>：每位参与者做一份 25 篇文章的测验，对每篇用 5 档量表判断是人写的还是机器写的（含「不知道」）；准确率 = 判对数 ÷ 非中立回答数。平均约 50% 说明分不出来。作者另设了一个故意做差的 160M 对照模型，用来验证评测本身有效。</p>
+<p><b>偏差探测（6.2 节）</b>：用模板句式（如 "The {occupation} was a ___"）统计后面出现的性别词的概率，或统计带种族、宗教提示词的续写里高频共现的形容词。这类方法描述的是模型输出的倾向，不等于测量「模型怀有偏见」。</p>
+<p><b>优化器（Appendix B）</b>：Adam（005），β<sub>1</sub> = 0.9，β<sub>2</sub> = 0.95，ε = 10<sup>−8</sup>。β<sub>2</sub> 取 0.95 而不是 005 推荐的 0.999，原文没有解释（我的推测：让二阶矩估计更快跟上变化的梯度尺度，待核实）。</p>
+</details>
+
+<details class="ext"><summary>C · 模型尺寸表和训练设置（原文 2.1 节、Table 2.1、Appendix B）</summary>
+<p><b>Table 2.1：8 个尺寸，同一个配方</b>（全部：n<sub>ctx</sub> = 2048，d<sub>ff</sub> = 4·d<sub>model</sub>，训练 3000 亿 token）</p>
+<div class="tbl"><table>
+  <thead><tr><th>模型</th><th class="num">参数</th><th class="num">层数</th><th class="num">d<sub>model</sub></th><th class="num">头数</th><th class="num">d<sub>head</sub></th><th class="num">批大小（token）</th><th class="num">学习率</th></tr></thead>
+  <tbody>
+    <tr><td>Small</td><td class="num">125M</td><td class="num">12</td><td class="num">768</td><td class="num">12</td><td class="num">64</td><td class="num">0.5M</td><td class="num">6.0e-4</td></tr>
+    <tr><td>Medium</td><td class="num">350M</td><td class="num">24</td><td class="num">1024</td><td class="num">16</td><td class="num">64</td><td class="num">0.5M</td><td class="num">3.0e-4</td></tr>
+    <tr><td>Large</td><td class="num">760M</td><td class="num">24</td><td class="num">1536</td><td class="num">16</td><td class="num">96</td><td class="num">0.5M</td><td class="num">2.5e-4</td></tr>
+    <tr><td>XL</td><td class="num">1.3B</td><td class="num">24</td><td class="num">2048</td><td class="num">24</td><td class="num">128</td><td class="num">1M</td><td class="num">2.0e-4</td></tr>
+    <tr><td>2.7B</td><td class="num">2.7B</td><td class="num">32</td><td class="num">2560</td><td class="num">32</td><td class="num">80</td><td class="num">1M</td><td class="num">1.6e-4</td></tr>
+    <tr><td>6.7B</td><td class="num">6.7B</td><td class="num">32</td><td class="num">4096</td><td class="num">32</td><td class="num">128</td><td class="num">2M</td><td class="num">1.2e-4</td></tr>
+    <tr><td>13B</td><td class="num">13.0B</td><td class="num">40</td><td class="num">5140</td><td class="num">40</td><td class="num">128</td><td class="num">2M</td><td class="num">1.0e-4</td></tr>
+    <tr><td>GPT-3 175B</td><td class="num"><b>175.0B</b></td><td class="num">96</td><td class="num">12288</td><td class="num">96</td><td class="num">128</td><td class="num">3.2M</td><td class="num">0.6e-4</td></tr>
+  </tbody>
+</table></div>
+<p>为什么要 8 个：论文的主张是「随规模变化的趋势」，没有一条曲线就没有趋势；Small 到 175B 跨了三个数量级。大模型用大批量、小学习率，作者说批大小依据梯度噪声尺度来选（009 的临界批量思想）。</p>
+<p>读数提醒：逐行复算 d<sub>model</sub> ÷ 头数，Small、Medium、Large、2.7B、6.7B、175B 都等于 d<sub>head</sub>。只有 XL（24 × 128 = 3072，不等于 2048）和 13B（40 × 128 = 5120，不等于 5140）对不上。我按原文印刷照录，可能是笔误，也可能是头的维度不等于 d<sub>model</sub> ÷ 头数（待核实）。</p>
+<p><b>训练超参（Appendix B）</b>：Adam，全局梯度范数裁剪 1.0；学习率先线性预热 3.75 亿 token，再按余弦衰减降到初值的 10%，衰减跨度 2600 亿 token，之后保持 10%；批量大小在训练开头 40 到 120 亿 token 内从 3.2 万 token 线性升到目标值；权重衰减 0.1；序列按 2048 token 打包，多篇文档用结束符隔开，不做特殊遮盖。硬件是微软提供的 V100 GPU 集群，模型并行同时切层和矩阵乘（2.3 节）。</p>
+</details>
+
+<details class="ext"><summary>D · 数据：过滤细节和 Table 2.2（原文 2.2 节、Appendix A）</summary>
+<p><b>三步处理（Appendix A）</b>：</p>
+<ul>
+  <li><b>质量过滤：</b>以 WebText、Wikipedia、图书语料为正例、原始 Common Crawl 为反例，训练一个逻辑回归分类器（Spark 的 HashingTF 特征）；对每个文档用得分，按 np.random.pareto(α=9) &gt; 1 − 得分 决定是否保留，所以是随机保留。α = 9 为了主要保留高分文档，同时仍纳入一些分布外文档；原文说这样重新加权提高了质量（以一系列分布外生成式数据上的损失衡量）。</li>
+  <li><b>模糊去重：</b>MinHashLSH（10 个哈希），文档级，平均削减约 10%；同时把 WebText 从 Common Crawl 里删掉，防止重复。</li>
+  <li><b>加高质量语料：</b>扩展版 WebText2、两套图书语料、Wikipedia。</li>
+</ul>
+<p><b>Table 2.2</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>数据集</th><th class="num">token 数</th><th class="num">训练混合比例</th><th class="num">3000 亿 token 里的遍数</th></tr></thead>
+  <tbody>
+    <tr><td>Common Crawl（过滤后）</td><td class="num">4100 亿</td><td class="num">60%</td><td class="num">0.44</td></tr>
+    <tr><td>WebText2</td><td class="num">190 亿</td><td class="num">22%</td><td class="num">2.9</td></tr>
+    <tr><td>Books1</td><td class="num">120 亿</td><td class="num">8%</td><td class="num">1.9</td></tr>
+    <tr><td>Books2</td><td class="num">550 亿</td><td class="num">8%</td><td class="num">0.43</td></tr>
+    <tr><td>Wikipedia</td><td class="num">30 亿</td><td class="num">3%</td><td class="num">3.4</td></tr>
+  </tbody>
+</table></div>
+<p>验算（我补充的）：Common Crawl：3000 亿 × 60% ÷ 4100 亿 = 0.44，对得上；Books2：3000 亿 × 8% ÷ 550 亿 = 0.44，对得上。但 WebText2 按此算是 3.5（表上 2.9），Books1 是 2.0（表上 1.9），Wikipedia 是 3.0（表上 3.4）。比例加总 101%，说明比例是四舍五入的；其余原因不明（待核实），不影响「高质量集被多次采样」的结论。</p>
+</details>
+
+<details class="ext"><summary>E · 训练算力（原文 Figure 2.2、Appendix D、6.3 节）</summary>
+<p>175B：3.64×10<sup>3</sup> PF-days，约 3.14×10<sup>23</sup> FLOPs（Table D.1）；验算见附录 A。其余尺寸：Small 2.60，Medium 7.42，Large 15.8，XL 27.5，2.7B 55.2，6.7B 139，13B 268 PF-days。</p>
+<p>对照：原文说 GPT-3 3B 与 RoBERTa-Large（355M）的训练算力都在约 50 PF-days 的量级，而 175B 比它们多约两个数量级。能耗（6.3 节）：训练需要数千 PF-days，GPT-2 1.5B 是几十 PF-days；训练好之后，生成 100 页文本只花约 0.4 kW·h。作者借此说明「训练贵、推理便宜」。</p>
+</details>
+
+<details class="ext"><summary>F · 完整的结果表（原文 3.1 到 3.9 节，Table 3.2 到 3.11）</summary>
+<p><b>语言建模与补全（Table 3.1、3.2）</b>。PTB 困惑度（越低越好）：此前 SOTA 35.8（GPT-2），GPT-3 零样本 20.5。</p>
+<div class="tbl"><table>
+  <thead><tr><th>任务</th><th class="num">此前 SOTA</th><th class="num">0S</th><th class="num">1S</th><th class="num">FS</th></tr></thead>
+  <tbody>
+    <tr><td>LAMBADA（acc）</td><td class="num">68.0</td><td class="num">76.2</td><td class="num">72.5</td><td class="num"><b>86.4</b></td></tr>
+    <tr><td>LAMBADA（ppl）</td><td class="num">8.63</td><td class="num">3.00</td><td class="num">3.35</td><td class="num"><b>1.92</b></td></tr>
+    <tr><td>StoryCloze</td><td class="num">91.8</td><td class="num">83.2</td><td class="num">84.7</td><td class="num">87.7</td></tr>
+    <tr><td>HellaSwag</td><td class="num">85.6</td><td class="num">78.9</td><td class="num">78.1</td><td class="num">79.3</td></tr>
+  </tbody>
+</table></div>
+<p><b>闭卷问答（Table 3.3）</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>任务</th><th class="num">0S</th><th class="num">1S</th><th class="num">FS</th><th>对照（微调系统）</th></tr></thead>
+  <tbody>
+    <tr><td>TriviaQA</td><td class="num">64.3</td><td class="num">68.0</td><td class="num"><b>71.2</b></td><td>RAG 68.0；T5-11B+SSM 60.5；T5-11B 50.1</td></tr>
+    <tr><td>WebQuestions</td><td class="num">14.4</td><td class="num">25.3</td><td class="num">41.5</td><td>RAG 45.5；T5-11B+SSM 44.7；T5-11B 37.4</td></tr>
+    <tr><td>NaturalQuestions</td><td class="num">14.6</td><td class="num">23.0</td><td class="num">29.9</td><td>RAG 44.5；T5-11B+SSM 36.6；T5-11B 34.5</td></tr>
+  </tbody>
+</table></div>
+<p><b>翻译（Table 3.4，BLEU）</b>：少样本用 64 对示例。</p>
+<div class="tbl"><table>
+  <thead><tr><th>方向</th><th class="num">0S</th><th class="num">1S</th><th class="num">FS</th><th class="num">监督 SOTA</th></tr></thead>
+  <tbody>
+    <tr><td>英译法</td><td class="num">25.2</td><td class="num">28.3</td><td class="num">32.6</td><td class="num">45.6</td></tr>
+    <tr><td>法译英</td><td class="num">21.2</td><td class="num">33.7</td><td class="num"><b>39.2</b></td><td class="num">35.0</td></tr>
+    <tr><td>英译德</td><td class="num">24.6</td><td class="num">26.2</td><td class="num">29.7</td><td class="num">41.2</td></tr>
+    <tr><td>德译英</td><td class="num">27.2</td><td class="num">30.4</td><td class="num"><b>40.6</b></td><td class="num">40.2</td></tr>
+    <tr><td>英译罗</td><td class="num">14.1</td><td class="num">20.6</td><td class="num">21.0</td><td class="num">38.5</td></tr>
+    <tr><td>罗译英</td><td class="num">19.9</td><td class="num">38.6</td><td class="num">39.5</td><td class="num">39.9</td></tr>
+  </tbody>
+</table></div>
+<p>英译法的最佳无监督结果是 37.5（MASS）。作者说不认为法译英、德译英是真正的 SOTA（对这些语对的文献不熟）；罗译英的 SOTA 用了无监督预训练、60.8 万条标注数据的监督微调和回译。德译英的测试集约 25% 被标 dirty，影响 1 到 2 BLEU，且没有匹配到成对的句子。</p>
+<p><b>常识与阅读理解（Table 3.5 到 3.7）</b>：带 * 表示污染标记。</p>
+<div class="tbl"><table>
+  <thead><tr><th>任务</th><th class="num">微调 SOTA</th><th class="num">0S</th><th class="num">1S</th><th class="num">FS</th></tr></thead>
+  <tbody>
+    <tr><td>Winograd</td><td class="num">90.1</td><td class="num">88.3*</td><td class="num">89.7*</td><td class="num">88.6*</td></tr>
+    <tr><td>Winogrande</td><td class="num">84.6</td><td class="num">70.2</td><td class="num">73.2</td><td class="num">77.7</td></tr>
+    <tr><td>PIQA</td><td class="num">79.4</td><td class="num">80.5*</td><td class="num">80.5*</td><td class="num">82.8*</td></tr>
+    <tr><td>ARC-Easy</td><td class="num">92.0</td><td class="num">68.8</td><td class="num">71.2</td><td class="num">70.1</td></tr>
+    <tr><td>ARC-Challenge</td><td class="num">78.5</td><td class="num">51.4</td><td class="num">53.2</td><td class="num">51.5</td></tr>
+    <tr><td>OpenBookQA</td><td class="num">87.2</td><td class="num">57.6</td><td class="num">58.8</td><td class="num">65.4</td></tr>
+    <tr><td>CoQA（F1）</td><td class="num">90.7</td><td class="num">81.5</td><td class="num">84.0</td><td class="num">85.0</td></tr>
+    <tr><td>DROP（F1）</td><td class="num">89.1</td><td class="num">23.6</td><td class="num">34.3</td><td class="num">36.5</td></tr>
+    <tr><td>QuAC（F1）</td><td class="num">74.4</td><td class="num">41.5</td><td class="num">43.3</td><td class="num">44.3</td></tr>
+    <tr><td>SQuADv2（F1）</td><td class="num">93.0</td><td class="num">59.5</td><td class="num">65.4</td><td class="num">69.8</td></tr>
+    <tr><td>RACE-h</td><td class="num">90.0</td><td class="num">45.5</td><td class="num">45.9</td><td class="num">46.8</td></tr>
+    <tr><td>RACE-m</td><td class="num">93.1</td><td class="num">58.4</td><td class="num">57.4</td><td class="num">58.1</td></tr>
+  </tbody>
+</table></div>
+<p>Winogrande 上，人类 94.0，微调 RoBERTa 约 79。CoQA 离人类约 3 点。QuAC 比一个 ELMo 基线低 13 F1。原文正文把 PIQA 零样本写成 81.0%，Table 3.6 是 80.5；3.9 节正文里 3 位数加法写 80.2%，Table 3.9 是 80.4。本文以表格为准。</p>
+<p><b>SuperGLUE（Table 3.8，测试集，GPT-3 少样本 K=32）</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>任务</th><th class="num">GPT-3 FS</th><th class="num">微调 BERT-Large</th><th class="num">微调 SOTA</th></tr></thead>
+  <tbody>
+    <tr><td>平均得分</td><td class="num"><b>71.8</b></td><td class="num">69.0</td><td class="num">89.0</td></tr>
+    <tr><td>BoolQ</td><td class="num">76.4</td><td class="num">77.4</td><td class="num">91.0</td></tr>
+    <tr><td>CB（acc / F1）</td><td class="num">75.6 / 52.0</td><td class="num">83.6 / 75.7</td><td class="num">96.9 / 93.9</td></tr>
+    <tr><td>COPA</td><td class="num">92.0</td><td class="num">70.6</td><td class="num">94.8</td></tr>
+    <tr><td>RTE</td><td class="num">69.0</td><td class="num">71.7</td><td class="num">92.5</td></tr>
+    <tr><td>WiC</td><td class="num">49.4</td><td class="num">69.6</td><td class="num">76.1</td></tr>
+    <tr><td>WSC</td><td class="num">80.1</td><td class="num">64.6</td><td class="num">93.8</td></tr>
+    <tr><td>MultiRC（acc / F1a）</td><td class="num">30.5 / 75.4</td><td class="num">24.1 / 70.0</td><td class="num">62.3 / 88.2</td></tr>
+    <tr><td>ReCoRD（acc / F1）</td><td class="num">90.2 / 91.1</td><td class="num">71.3 / 72.0</td><td class="num">92.5 / 93.3</td></tr>
+  </tbody>
+</table></div>
+<p>总分略超 BERT-Large；COPA、WSC、MultiRC、ReCoRD 四个任务上超过它。作者还指出，BERT-Large 与 BERT++ 之间的差距，约等于 GPT-3 上下文中 1 个与 8 个示范之间的差距。ANLI R3 开发集 1500 题，标准差约 1.2%；RTE 上只有最大的模型明显高于 56% 的随机水平。</p>
+<p><b>算术（Table 3.9，175B）</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>设定</th><th class="num">2D+</th><th class="num">2D−</th><th class="num">3D+</th><th class="num">3D−</th><th class="num">4D+</th><th class="num">4D−</th><th class="num">5D+</th><th class="num">5D−</th><th class="num">2Dx</th><th class="num">1DC</th></tr></thead>
+  <tbody>
+    <tr><td>0S</td><td class="num">76.9</td><td class="num">58.0</td><td class="num">34.2</td><td class="num">48.3</td><td class="num">4.0</td><td class="num">7.5</td><td class="num">0.7</td><td class="num">0.8</td><td class="num">19.8</td><td class="num">9.8</td></tr>
+    <tr><td>1S</td><td class="num">99.6</td><td class="num">86.4</td><td class="num">65.5</td><td class="num">78.7</td><td class="num">14.0</td><td class="num">14.0</td><td class="num">3.5</td><td class="num">3.8</td><td class="num">27.4</td><td class="num">14.3</td></tr>
+    <tr><td>FS</td><td class="num">100.0</td><td class="num">98.9</td><td class="num">80.4</td><td class="num">94.2</td><td class="num">25.5</td><td class="num">26.8</td><td class="num">9.3</td><td class="num">9.9</td><td class="num">29.2</td><td class="num">21.3</td></tr>
+  </tbody>
+</table></div>
+<p>2Dx 是 2 位乘法，1DC 是个位数的三运算复合。少样本相对零样本的绝对提升先升后降（2 位加 +23.1，3 位加 +46.2，4 位加 +21.5，5 位加 +8.6），只有按相对倍数看才随位数增大。17/2000 = 0.85%，2/2000 = 0.1%，与正文的命中比例一致。</p>
+<p><b>单词乱序（Table 3.10，175B）</b>：CL 循环字母，A1 首尾字母不动，A2 首尾各两字母不动，RI 随机插入符号，RW 反转单词。</p>
+<div class="tbl"><table>
+  <thead><tr><th>设定</th><th class="num">CL</th><th class="num">A1</th><th class="num">A2</th><th class="num">RI</th><th class="num">RW</th></tr></thead>
+  <tbody>
+    <tr><td>0S</td><td class="num">3.66</td><td class="num">2.28</td><td class="num">8.91</td><td class="num">8.26</td><td class="num">0.09</td></tr>
+    <tr><td>1S</td><td class="num">21.7</td><td class="num">8.62</td><td class="num">25.9</td><td class="num">45.4</td><td class="num">0.48</td></tr>
+    <tr><td>FS</td><td class="num">37.9</td><td class="num">15.1</td><td class="num">39.7</td><td class="num">67.2</td><td class="num">0.44</td></tr>
+  </tbody>
+</table></div>
+<p>这些是字符级操作，而 BPE token 平均约 0.7 个词，需要把 token 拆开再重排。3.9.2 节正文报的数字是 RI 66.9%、CL 38.6%、A2 40.2%、A1 15.1%（Figure 3.11 的设定，K 取更大值），与表里少样本一栏相差不到 1 个点，不是同一次设定。</p>
+<p><b>SAT 类比（374 题）</b>：少样本 65.2%，单样本 59.1%，零样本 53.7%；大学申请者平均 57%，随机 20%。</p>
+<p><b>人判新闻是否机器生成（Table 3.11，约 200 词）</b>：25 个标题，每个模型约 80 名美国参与者，提示里放三篇真实新闻作示范。</p>
+<div class="tbl"><table>
+  <thead><tr><th>模型</th><th class="num">Control</th><th class="num">Small</th><th class="num">Medium</th><th class="num">Large</th><th class="num">XL</th><th class="num">2.7B</th><th class="num">6.7B</th><th class="num">13B</th><th class="num">175B</th></tr></thead>
+  <tbody>
+    <tr><td>人判对率</td><td class="num">86%</td><td class="num">76%</td><td class="num">61%</td><td class="num">68%</td><td class="num">62%</td><td class="num">62%</td><td class="num">60%</td><td class="num">55%</td><td class="num"><b>52%</b></td></tr>
+  </tbody>
+</table></div>
+<p>Control 是故意做差的 160M 模型。更长的约 500 词文章（Table 3.12），控制组 88%，GPT-3 为 52%。作者举了两篇样例：联合卫理公会分裂，人判对率仅 12%；Joaquin Phoenix，61%，说明个别文章差异很大。新词造句和语法纠错（Figure 3.16、3.17）只做了定性展示。</p>
+</details>
+
+<details class="ext"><summary>G · 污染检查的完整发现，以及偏差与风险（原文第 4、6 节、Appendix C）</summary>
+<div class="tbl"><table>
+  <thead><tr><th>任务</th><th>发现</th><th>处理</th></tr></thead>
+  <tbody>
+    <tr><td>4 个 Wikipedia 语言建模基准、CBT、1BW</td><td>几乎全部包含在训练数据里</td><td>结果撤下，PTB 成为主要语言建模基准</td></tr>
+    <tr><td>QuAC / SQuADv2 / DROP</td><td>超过 90% 的样本被标 dirty，但只有原文片段在训练集，没有问答对</td><td>假阳性多，不判为泄漏</td></tr>
+    <tr><td>德译英</td><td>约 25% 被标</td><td>影响 1 到 2 BLEU，无成对匹配</td></tr>
+    <tr><td>反转单词、乱序</td><td>重合多为回文等平凡情况</td><td>删掉后反而更难</td></tr>
+    <tr><td>PIQA</td><td>29% 被标，clean 子集下降约 3 点（相对 4%）；小 25 倍的模型下降相近，更像统计偏差，未证明</td><td>加星号</td></tr>
+    <tr><td>Winograd</td><td>45% 被标，clean 下降 2.6%；132 个题目以另一种格式出现在训练数据</td><td>加星号</td></tr>
+    <tr><td>LAMBADA</td><td>确有污染</td><td>clean 子集和全集成绩差在 0.5% 内</td></tr>
+  </tbody>
+</table></div>
+<p>与 GPT-2（007）相比，这次检查严格得多：精确匹配，窗口更长（13 对 8），逐任务报告。对「含背景知识的数据集」（如 SQuAD 来自 Wikipedia）N-gram 检测有大量假阳性，因为源文本被见过不等于问答对被见过。</p>
+<p><b>偏差与风险（第 6 节）</b>：性别方面，388 种职业里 83% 倾向男性；职业偏差平均值（女 / 男概率之比的对数）中性提示 −1.11、「能干」提示 −2.14、「不称职」提示 −1.15；Winogender 准确率 175B 为 64.17%；女性提示更多伴随 "beautiful"、"gorgeous" 这类外貌词。种族方面，7 个模型里有 5 个对 "Black" 的情感得分最低；宗教方面，Islam 与 "terrorism" 等词共现（这是共现统计，见附录 B）。滥用方面，作者的威胁行为者分析认为，对低、中技能的行为者，威胁「不迫切，但可靠性的显著提升可能改变这一点」；对高技能、资源充足的 APT，咨询分析师后认为语言模型暂时不值得大量投入（当时的判断）。</p>
+</details>
+
+<details class="ext"><summary>H · 当时的背景、后来的发展、前后篇衔接（部分在原文之外）</summary>
+<p><b>当时的格局（原文第 1、7 节）</b>：参数从 1 亿（2018 年前后）到 3 亿、15 亿（GPT-2）、80 亿、110 亿（T5）、170 亿（Turing-NLG），每一步都带来文本任务的提升，GPT-3 是在此基础上再放大约 10 倍。范式是预训练加微调，T5 把所有任务统一成「文本到文本」，仍然微调。009 在 2020 年 1 月量化了缩放规律，GPT-3 几个月后发表，作者名单里就有 Kaplan 和 McCandlish；原文 Contributions 写到，他们预测「巨大的语言模型应当持续有收益」，Alec Radford 最早展示了「少样本学习会在语言模型里出现」。同期的 MoE 稀疏化、ALBERT 共享参数、蒸馏、元学习（RL²、MAML）都没有把「不更新参数」当作主要卖点。SuperGLUE 等基准的微调成绩已逼近「人类」，所以「假相关」的质疑才有说服力。工程上，单卡放不下 175B 参数，并行训练本身就是贡献的一部分。</p>
+<p><b>今天还活着的思想（原文之外，待核实具体时间与条款）</b>：「把任务写进输入」成为使用大模型的默认方式，提示工程、示范选择、系统提示都是它的后代；「规模 + 通用预训练 + 少量调整」成为主流路线，GPT-3 通过 API 而不是开源权重提供；污染检查成为社区常识。有人把「到某个规模才突然出现的能力」称为涌现，GPT-3 的算术曲线常被引用，也有后续研究认为这部分来自评测指标的非线性，不是能力突变，我不提供结论。少样本提示对措辞和示范顺序敏感，已被后人系统研究过（待核实）。</p>
+<p><b>继承自</b>：004 Transformer（全部结构）；005 Adam（优化器）；006 GPT-1（预训练加迁移）；007 GPT-2（几乎原封不动的结构、字节级 BPE、零样本提示、泄漏检查的思路）；009 Scaling Laws（预算花在模型大小、批大小依据噪声尺度、算力估算）；008 BERT 是对照，在 SuperGLUE 上以微调 BERT-Large 为基线。</p>
+<p><b>对 007 的推进</b>：零样本变成少样本，并系统量化了三种设定；约 113 倍参数（175000 ÷ 1542）；更严格的污染检查，不能通过的结果撤下或加星号；把偏差和能耗写进正文（第 6 节），不再放附录。</p>
+<p><b>留下的问题 → 由谁解决</b>：参数与数据怎么分 → 010；代码 → 012；知识只放参数里 → 013；微调太贵 → 014；不按意图回答、提示敏感、有害输出 → 015 到 018；单向和双向的取舍，本系列没有单独章节，回到 008 比较。</p>
+</details>
+
+<details class="ext"><summary>I · 疑点和没有核实的地方</summary>
+<ul>
+  <li><b>会议收录：</b>原文没写，NeurIPS 2020 待核实；本地 PDF 为 arXiv v4。</li>
+  <li><b>Table 2.1 的 XL、13B 两行：</b>d<sub>model</sub> ÷ 头数不等于 d<sub>head</sub>，见附录 C。</li>
+  <li><b>Table 2.2 的遍数：</b>WebText2、Books1、Wikipedia 三行按比例算对不上，见附录 D。</li>
+  <li><b>原文笔误：</b>提交测试服务器的是 175B 少样本模型，原文印成「200B few-shot results」；PIQA 和 3 位加法的正文数字与表格差一点（附录 F）。</li>
+  <li><b>稀疏注意力：</b>没有消融，不知道它对结果的影响。</li>
+  <li><b>我补充的局限：</b>原文没有给出 GPT-3 自己的微调结果，所以「上下文学习对微调」的差距，是拿 GPT-3 少样本去对别的模型的微调成绩，混合了规模和方法两个因素。K 在开发集上挑、示范随机抽，原文没有系统报告换一批示范成绩波动多大，提示敏感性也没有专门研究。多数基准没有误差条，例外是人工判别实验、ANLI 和 Figure 3.1、3.13 的拟合线。规模和能力的关系是 8 个点上的观察，「175B 才出现」是平滑还是跳变，原文没有下定论。</li>
+  <li><b>待核实的后世信息：</b>010 Chinchilla 的具体数字（「约 20 token / 参数」）、涌现之争的相关论文、API 提供的时间和条款。</li>
+</ul>
+</details>
+
+
+<footer>
+  AI 论文解读 · 011 · 原文：Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan 等. <i>Language Models are Few-Shot Learners.</i> OpenAI, 2020. arXiv 2005.14165.<br>
+  图中标「示意」的数字是为了讲清机制设定的例子，都验算过；标「估读」的是我对着原图读出的近似值；标「推算」的是我按原文规格估算的。实验数字出自原文 Table 2.1、2.2、3.2 到 3.11；原文 Figure 1.2、1.3、3.1 的图源为原文。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>

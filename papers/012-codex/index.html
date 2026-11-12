@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Codex 图解</title>
+<meta name="description" content="Chen 等 2021《Evaluating Large Language Models Trained on Code》图解：让 GPT-3 在 GitHub 的 Python 代码上继续训练得到 Codex，并发明用单元测试判对错的 HumanEval 和 pass@k；重点讲 pass@k 怎么算、为什么每题多写几个再挑。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文的做法（跑单元测试判对错、每题多写几个再挑、在代码上继续训练），赭 = 旧做法和对照（比文字像不像、没读过代码的模型）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;min-width:520px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th:first-child,td:first-child{white-space:nowrap}
+th:first-child,td:first-child{padding-right:20px}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+<main class="wrap">
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　012</nav>
+  <h1 style="margin-top:14px">让模型写代码，再真的跑一遍测试</h1>
+  <p class="lede">Chen 等人 2021 年在 OpenAI 写的《Evaluating Large Language Models Trained on Code》，就是 Codex。它做了两件事：<b>拿 GPT-3 在 GitHub 的 Python 代码上继续训练，得到 Codex；同时发明一套评价办法，不比文字像不像，而是真的跑单元测试（HumanEval 题库加 pass@k 指标）。</b>单次生成就能做对 28.8% 的题（GPT-3 是 0%），再只用正确答案训练一遍的 Codex-S 做到 37.7%，每题多写 100 个、其中至少一个能过测试的题占 77.5%。它的后代是 GitHub Copilot。</p>
+  <div class="meta">
+    <span>Mark Chen、Jerry Tworek、Heewoo Jun、Qiming Yuan、Henrique Ponde de Oliveira Pinto、Jared Kaplan 等（作者名单很长，机构以原文署名为准）· 2021 年 · arXiv 预印本</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的做法（跑测试判对错、多写几个再挑、在代码上训练）</span>
+    <span class="key"><i class="sw o"></i>赭色：旧做法和对照（比文字像不像、没读过代码的模型）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · 两条线：训练一个会写代码的模型，造一把量它的尺子</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 262" role="img" aria-label="上排是模型：GPT-3 系列只读过文字，在 HumanEval 上做对 0%；在 159GB 的 GitHub Python 代码上继续训练 1000 亿个 token，得到 Codex；再用约 5 万道带测试的题微调，得到 Codex-S；最后每题多写几个，挑一个。下排是尺子：旧做法比文字像不像，赭色；本文的做法是跑单元测试，蓝色；再用 pass@k 统计每题写 k 个能不能有一个通过。">
+      <text class="sm m" x="20" y="18">模型：</text>
+      <rect class="softS" x="20" y="28" width="140" height="84" rx="8"/>
+      <text class="b" x="90" y="54" text-anchor="middle">GPT-3 系列</text>
+      <text class="sm" x="90" y="76" text-anchor="middle">只读过文字</text>
+      <text class="sm" x="90" y="93" text-anchor="middle">HumanEval 做对 0%</text>
+      <line class="mutS" x1="162" y1="70" x2="188" y2="70" marker-end="url(#ah)"/>
+      <rect class="new" x="190" y="28" width="140" height="84" rx="8"/>
+      <text class="b on" x="260" y="54" text-anchor="middle">Codex</text>
+      <text class="sm on" x="260" y="76" text-anchor="middle">GitHub Python 159GB</text>
+      <text class="sm on" x="260" y="93" text-anchor="middle">继续训练 1000 亿 token</text>
+      <line class="mutS" x1="332" y1="70" x2="358" y2="70" marker-end="url(#ah)"/>
+      <rect class="new" x="360" y="28" width="140" height="84" rx="8"/>
+      <text class="b on" x="430" y="54" text-anchor="middle">Codex-S</text>
+      <text class="sm on" x="430" y="76" text-anchor="middle">再用约 5 万道带测试</text>
+      <text class="sm on" x="430" y="93" text-anchor="middle">的题对口微调</text>
+      <line class="mutS" x1="502" y1="70" x2="528" y2="70" marker-end="url(#ah)"/>
+      <rect class="newT" x="530" y="28" width="130" height="84" rx="8"/>
+      <text class="b tn" x="595" y="54" text-anchor="middle">多写几个</text>
+      <text class="sm" x="595" y="76" text-anchor="middle">再挑一个</text>
+      <text class="sm" x="595" y="93" text-anchor="middle">（没有测试时）</text>
+
+      <text class="sm m" x="20" y="146">尺子：</text>
+      <rect class="oldT" x="20" y="156" width="190" height="84" rx="8"/>
+      <text class="b to" x="115" y="182" text-anchor="middle">旧做法</text>
+      <text class="sm" x="115" y="204" text-anchor="middle">和参考答案比</text>
+      <text class="sm" x="115" y="221" text-anchor="middle">文字像不像（BLEU）</text>
+      <line class="oldS dash" x1="214" y1="198" x2="246" y2="198" marker-end="url(#ahO)"/>
+      <rect class="newT" x="250" y="156" width="190" height="84" rx="8"/>
+      <text class="b tn" x="345" y="182" text-anchor="middle">本文：跑单元测试</text>
+      <text class="sm" x="345" y="204" text-anchor="middle">164 道手写题</text>
+      <text class="sm" x="345" y="221" text-anchor="middle">全部断言通过才算对</text>
+      <line class="mutS" x1="442" y1="198" x2="468" y2="198" marker-end="url(#ah)"/>
+      <rect class="newT" x="470" y="156" width="190" height="84" rx="8"/>
+      <text class="b tn" x="565" y="182" text-anchor="middle">pass@k</text>
+      <text class="sm" x="565" y="204" text-anchor="middle">每题写 k 个</text>
+      <text class="sm" x="565" y="221" text-anchor="middle">有一个通过就算解出</text>
+    </svg>
+    </div>
+    <figcaption>上排是这篇训练出来的三个模型，下排是它为了量这些模型造的尺子。后世记得更牢的，可能是下排的 HumanEval 和 pass@k（这是我的判断，原文标题强调的是 Evaluating）。</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>要解决的问题：怎么判代码对不对</a>
+    <a href="#s2"><span>2</span>第一步：不比文字，跑测试</a>
+    <a href="#s3"><span>3</span>第二步：每题多写几个，算 pass@k</a>
+    <a href="#s4"><span>4</span>第三步：让 GPT-3 读代码，得到 Codex</a>
+    <a href="#s5"><span>5</span>第四步：对口微调，得到 Codex-S</a>
+    <a href="#s6"><span>6</span>第五步：温度跟着 k 走，没有测试怎么挑</a>
+    <a href="#s7"><span>7</span>证据：它到底做到了多少</a>
+    <a href="#s8"><span>8</span>局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>正文只走一条线</b>：评价代码卡在哪 → 先造尺子（测试、题库、pass@k）→ 再训练模型（Codex、Codex-S）→ 怎么挑答案 → 每个结论对应哪个实验。只读每节的标题和每段第一句，也能串起来。</li>
+      <li>这篇有两个角色：训练模型，更是造评测方法。所以前三步讲的是「尺子」，这是和前面几篇最不一样的地方。pass@k 的估计量最值得细看，第 3 节讲思路，附录 A 逐项拆开。</li>
+      <li>公式、概念解释、完整结果表、当时的背景、对齐和安全实验的细节，都在页尾的<b>附录</b>里，默认折叠，标明对应原文第几节。</li>
+      <li>小数字例子都验算过：为讲解设定的标「示意」，按原文规格估算的标「推算」。</li>
+      <li>模型的零件在前面讲过：架构在 004 <a href="../004-transformer/index.html">Transformer</a>，预训练加微调在 006 <a href="../006-gpt-1/index.html">GPT-1</a>，把任务写成提示、采样在 007 <a href="../007-gpt-2/index.html">GPT-2</a>，规模和损失的规律在 009 <a href="../009-scaling-laws/index.html">Scaling Laws</a>，起点模型在 011 <a href="../011-gpt-3/index.html">GPT-3</a>。</li>
+    </ul>
+  </div>
+</header>
+
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>要解决的问题：怎么判代码对不对</h2>
+<p>作者早期试用 GPT-3 时发现，它没被专门训练过写代码，却能根据 Python 的 docstring（写在函数头下面、说明函数该做什么的文字）写出简单程序。于是他们假设：<b>专门在代码上训练的 GPT，应该能在各种编码任务上表现出色。</b>但真要验证这件事，先遇到的不是模型，而是尺子：没有一把靠谱的尺子，模型再强也没法比较、没法改进。</p>
+
+<h3>毛病一：文字像，不等于功能对</h3>
+<p>此前写代码的模型，多半拿输出和一份参考答案比文字，要么完全相同（精确匹配），要么按相似程度打分（BLEU）。可同一个功能有无数种写法：文字不像的程序可能完全正确，文字很像的程序可能差一个符号就全错。</p>
+
+<figure class="fig">
+  <span class="tag">图 1 · 示意：错的那份文字更像参考答案</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="参考答案是 return a 加 b。候选 A 是 return a 减 b，把加号写成了减号，和参考答案的记号重合 3 个，占 4 个的 0.75，赭色长条，但跑测试不通过。候选 B 是 return sum 括号 a 逗号 b，写法不同但功能对，记号重合约 0.33，赭色短条，跑测试通过。用文字重合打分，错的得分是对的两倍多。">
+    <text class="sm m" x="20" y="20">参考答案</text><text class="mo b" x="110" y="20">return a + b</text>
+    <text class="sm m" x="260" y="38">文字重合（旧尺子）</text><text class="sm m" x="520" y="38">跑测试（新尺子）</text>
+
+    <rect class="softS" x="20" y="50" width="200" height="56" rx="8"/>
+    <text class="sm m" x="32" y="70">候选 A</text><text class="mo" x="32" y="94">return a - b</text>
+    <rect class="oldT" x="260" y="64" width="165" height="24" rx="4"/>
+    <text class="sm mo to" x="270" y="81">0.75</text>
+    <text class="sm m" x="434" y="81">3 个相同 / 4 个</text>
+    <rect class="softS" x="520" y="56" width="140" height="44" rx="8"/>
+    <text class="b to" x="590" y="83" text-anchor="middle">不通过 ✗</text>
+
+    <rect class="softS" x="20" y="124" width="200" height="56" rx="8"/>
+    <text class="sm m" x="32" y="144">候选 B</text><text class="mo" x="32" y="168">return sum([a, b])</text>
+    <rect class="oldT" x="260" y="138" width="73" height="24" rx="4"/>
+    <text class="sm mo to" x="270" y="155">0.33</text>
+    <text class="sm m" x="342" y="155">3 个相同 / 9 个</text>
+    <rect class="newT" x="520" y="130" width="140" height="44" rx="8"/>
+    <text class="b tn" x="590" y="157" text-anchor="middle">通过 ✓</text>
+
+    <text class="b" x="20" y="214">文字重合给错的打 0.75，给对的打 0.33；跑测试给出的是正好相反的结论。</text>
+    <text class="sm m" x="20" y="238">这里用「记号重合比例」代替 BLEU 的数 1 到 4 元词组，方向一样，数是我为讲解设的（示意）。</text>
+  </svg>
+  </div>
+  <figcaption>BLEU 比图里复杂（数词组、带长度惩罚，见 002），但「文字像不等于功能对」这一点完全一样。原文自己做了证据：对 Codex-12B 在 HumanEval 上的样本，把正确的和错误的各自的 BLEU 分数画出分布，两条分布大量重叠（原文 Figure 8），所以「BLEU 的提高未必意味着功能正确率的提高」。</figcaption>
+</figure>
+
+<h3>毛病二：拿现成题库当考卷，答案可能早就在训练集里</h3>
+<p>Codex 的训练数据就是 GitHub，而 GitHub 上已经躺着各种编程题的解答。原文举的例子是：至少有十个以上的公开仓库包含 Codeforces 题的解答，这些题又构成了 APPS 数据集的一部分。拿现成题库考它，等于考前泄题。</p>
+
+<h3>毛病三：对错是「有或没有」，只写一个答案，运气成分太大</h3>
+<p>文字模型的困惑度是连续数值，天然平滑。代码对不对却只有「过」或「不过」，每题只写一个答案，统计出来的噪声很大，也看不出模型是「完全不会」还是「会，但不稳」。</p>
+<p>下面三步，就是分别对着这三个毛病造出来的。最后还有一个摆在前面的现实：直接拿 GPT-3 来写，在这套题上只做对 0%（原文摘要），它读的文字里代码太少。所以第三步要让它去读代码。</p>
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>第一步：不比文字，跑测试</h2>
+<p><b>做什么：</b>给模型一个函数签名加 docstring，让它续写函数体；再把写出来的函数拿去跑一组单元测试（给函数喂一批输入，检查输出是不是预期值）。<b>全部断言都通过，才算这个样本正确。</b>这叫功能正确性。</p>
+<p><b>为什么这样就行：</b>这就是人类判断代码的办法。原文提到测试驱动开发：先把需求写成测试，再写实现，以「实现通过测试」为成功。多数团队不全按这个流程，但新代码合入前通常都要写测试并通过测试。功能等价的写法再多，测试都认；差一个符号的错，测试也逃不掉。</p>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 2 · 三道 HumanEval 题，白底是给模型的提示，黄底是模型写出的正确解答</span>
+  <img class="orig" src="orig-fig2.png" alt="原文 Figure 2：三道 HumanEval 题。第一道 incr_list，给列表每个元素加 1，解答是一行列表推导式；第二道 solution，求偶数位置上奇数元素之和；第三道 encode_cyclic 与 decode_cyclic，给出编码函数，要求写出对应的解码函数。每道题的提示是函数签名加 docstring，黄底部分是模型写出的函数体。" loading="lazy">
+  <figcaption>这张图在说什么：<b>模型拿到的只有函数签名和 docstring，要自己写出函数体。</b>图注说，这三题对 Codex-12B 来说，一个样本通过测试的概率依次是 0.9、0.17、0.005（我按图注给出的顺序，对应画面从上到下，原文没有逐题标注）。难度差了两个数量级，下一节就用它们。图源：Chen 等 2021 原文。</figcaption>
+</figure>
+
+<p><b>题库：HumanEval。</b>164 道手写的编程题，每题有函数签名、docstring、参考解答，和平均 7.7 条单元测试。题目考语言理解、推理、算法和简单数学，有些相当于简单的软件面试题。<b>必须手写</b>，因为模型的训练数据里有 GitHub 的大部分内容，现成题目的答案早就在里面了（对着毛病二）。原文说得很谨慎：虽然不能保证题目新颖，但所有题目都是手写的，没有从已有来源程序化地复制。</p>
+<p><b>沙箱：</b>模型写出来的代码没人审过，GitHub 上又确有恶意程序，直接在自己机器上跑，可能删文件、读密钥、联网外传数据。所以要在隔离环境里跑：原文用 gVisor 容器运行时（模拟宿主的资源，在容器和宿主之间建一道安全边界），再用基于 eBPF 的防火墙规则阻止出入网络连接。</p>
+<p><b>要诚实说的局限：</b>测试只能证明「有错」，不能证明「没错」。平均 7.7 条测试够不够强，是个开放问题。这一步对着毛病一和毛病二的考卷部分。题面的格式、停止序列（模型写完函数体不会自己停，所以一见到不缩进的 class、def、#、if、print 就截断），见附录 B。</p>
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>第二步：每题多写几个，算 pass@k</h2>
+<p><b>做什么：</b>每道题让模型写 k 个答案，<b>只要有一个通过全部测试，这道题就算解出</b>；所有题里被解出的比例，就是 pass@k。（这个指标此前 Kulal 等人 2019 的 SPoC 用过。）</p>
+<p><b>为什么这样定义：</b>一是贴近真实用法。现实里写代码常常是试一个方案、跑测试、不行就改，多写几个再挑，近似这个流程。二是能区分「不会」和「会但不稳」。一道题模型单次成功率只有 1%，说明它懂门道但不稳定，只看 pass@1 会把这种情况和完全不会都记成接近 0；pass@100 就能把前者认出来。</p>
+
+<figure class="fig">
+  <span class="tag">图 2 · 同一个模型，三道题：多写几个，把「低但非零」放大</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 392" role="img" aria-label="四组横条，每组三根，分别是 pass@1、pass@10、pass@100。容易的题单次成功率 0.9：0.9、约 1.0、约 1.0。中等的题 0.17：0.17、0.845、约 1.0。很难的题 0.005：0.005、0.049、0.394。三题平均：0.358、0.631、0.798。越难的题，从多写几个里得到的好处越大。">
+    <text class="sm m" x="20" y="18">每组三根条：pass@1、pass@10、pass@100。按 1 − (1 − p)<tspan dy="-5" style="font-size:9px">k</tspan><tspan dy="5"> 算，假设各次独立（推算）</tspan></text>
+
+    <text class="b" x="20" y="52">容易的题</text><text class="sm mo to" x="20" y="70">p = 0.9</text>
+    <rect class="new" x="170" y="34" width="297" height="14" rx="2"/><text class="sm mo" x="474" y="46">0.9　pass@1</text>
+    <rect class="new" x="170" y="52" width="330" height="14" rx="2"/><text class="sm mo" x="507" y="64">≈ 1.0　pass@10</text>
+    <rect class="new" x="170" y="70" width="330" height="14" rx="2"/><text class="sm mo" x="507" y="82">≈ 1.0　pass@100</text>
+
+    <text class="b" x="20" y="130">中等的题</text><text class="sm mo to" x="20" y="148">p = 0.17</text>
+    <rect class="new" x="170" y="112" width="56" height="14" rx="2"/><text class="sm mo" x="233" y="124">0.17　pass@1</text>
+    <rect class="new" x="170" y="130" width="279" height="14" rx="2"/><text class="sm mo" x="456" y="142">0.845　pass@10</text>
+    <rect class="new" x="170" y="148" width="330" height="14" rx="2"/><text class="sm mo" x="507" y="160">≈ 1.0　pass@100</text>
+
+    <text class="b" x="20" y="208">很难的题</text><text class="sm mo to" x="20" y="226">p = 0.005</text>
+    <rect class="new" x="170" y="190" width="2" height="14" rx="1"/><text class="sm mo" x="180" y="202">0.005　pass@1</text>
+    <rect class="new" x="170" y="208" width="16" height="14" rx="2"/><text class="sm mo" x="194" y="220">0.049　pass@10</text>
+    <rect class="new" x="170" y="226" width="130" height="14" rx="2"/><text class="sm mo" x="307" y="238">0.394　pass@100</text>
+
+    <line class="ln" x1="20" y1="262" x2="660" y2="262"/>
+    <text class="b" x="20" y="296">三题平均</text>
+    <rect class="newT" x="170" y="270" width="118" height="14" rx="2"/><text class="sm mo" x="295" y="282">0.358　pass@1</text>
+    <rect class="newT" x="170" y="288" width="208" height="14" rx="2"/><text class="sm mo" x="385" y="300">0.631　pass@10</text>
+    <rect class="newT" x="170" y="306" width="263" height="14" rx="2"/><text class="sm mo" x="440" y="318">0.798　pass@100</text>
+    <text class="sm m" x="20" y="352">三题的单次成功率 0.9、0.17、0.005 来自原文 Figure 2 的图注，其余数字是我按公式算的（推算）。</text>
+    <text class="sm m" x="20" y="372">pass@1 的平均主要由最容易的那道题撑起；pass@100 把中等题几乎全拉进来，把很难的题拉进来一部分。</text>
+  </svg>
+  </div>
+  <figcaption>同一个模型，三道题的单次成功率能差两个数量级以上。<b>重复采样，是把一个低但非零的成功率放大成高成功率。</b>这就是摘要里说的「重复采样对难题出奇有效」。</figcaption>
+</figure>
+
+<p><b>怎么算才稳：</b>最直接的算法是每题恰好写 k 个、数有没有一个通过。这样算本身是无偏的，毛病只在<b>方差高</b>：每题在这次实验里只有「过 / 不过」一个二元结果，k 越大要生成的样本越多，k = 1 和 k = 100 还要分别采样，没法共用。</p>
+<p>原文的做法是每题多写一些，<b>写 n 个（本文 n = 200，k 最大 100），数出其中通过的有 c 个</b>，然后问：把这 n 个摆在桌上，随机抽出 k 个，其中至少有一个对的概率是多少？拿它当这道题的 pass@k。抽法是不放回的，它把「k 个全是错的」的概率算成「从 n − c 个错的里抽出 k 个」的占比，再用 1 减去。同一批 200 个样本，可以同时给出 pass@1、pass@10、pass@100。</p>
+
+<figure class="fig">
+  <span class="tag">图 3 · 示意：n = 5，c = 2，用同一批样本算出 pass@1 到 pass@4</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 300" role="img" aria-label="左边：五个样本，前两个正确，蓝色，后三个错误，赭色。下面是任取两个的十种取法，其中 34、35、45 三种两个都错，赭色，其余七种至少含一个对的，蓝色，所以 pass@2 等于 1 减 3 除以 10，等于 0.7。右边：同一批样本算出的 pass@1 是 0.4，pass@2 是 0.7，pass@3 是 0.9，pass@4 是 1.0，四个样本里错的只有 3 个，任取 4 个必含对的。">
+    <text class="sm m" x="20" y="18">桌上摆好的 5 个样本（对 2 个、错 3 个）</text>
+    <g class="mo b" text-anchor="middle">
+      <circle class="new" cx="40" cy="48" r="16"/><text class="on" x="40" y="53">1</text>
+      <circle class="new" cx="86" cy="48" r="16"/><text class="on" x="86" y="53">2</text>
+      <circle class="old" cx="132" cy="48" r="16"/><text class="on" x="132" y="53">3</text>
+      <circle class="old" cx="178" cy="48" r="16"/><text class="on" x="178" y="53">4</text>
+      <circle class="old" cx="224" cy="48" r="16"/><text class="on" x="224" y="53">5</text>
+    </g>
+    <text class="sm tn" x="254" y="52">蓝 = 通过测试</text>
+    <text class="sm to" x="340" y="52">赭 = 没通过</text>
+
+    <text class="sm m" x="20" y="98">任取 2 个，共 C(5,2) = 10 种取法：</text>
+    <g class="mo sm" text-anchor="middle">
+      <rect class="newT" x="20" y="110" width="52" height="28" rx="5"/><text x="46" y="129">1 2</text>
+      <rect class="newT" x="80" y="110" width="52" height="28" rx="5"/><text x="106" y="129">1 3</text>
+      <rect class="newT" x="140" y="110" width="52" height="28" rx="5"/><text x="166" y="129">1 4</text>
+      <rect class="newT" x="200" y="110" width="52" height="28" rx="5"/><text x="226" y="129">1 5</text>
+      <rect class="newT" x="260" y="110" width="52" height="28" rx="5"/><text x="286" y="129">2 3</text>
+      <rect class="newT" x="20" y="146" width="52" height="28" rx="5"/><text x="46" y="165">2 4</text>
+      <rect class="newT" x="80" y="146" width="52" height="28" rx="5"/><text x="106" y="165">2 5</text>
+      <rect class="oldT" x="140" y="146" width="52" height="28" rx="5"/><text class="to b" x="166" y="165">3 4</text>
+      <rect class="oldT" x="200" y="146" width="52" height="28" rx="5"/><text class="to b" x="226" y="165">3 5</text>
+      <rect class="oldT" x="260" y="146" width="52" height="28" rx="5"/><text class="to b" x="286" y="165">4 5</text>
+    </g>
+    <text class="sm" x="20" y="204">两个都错的有 3 种（赭），其余 7 种至少含一个对的。</text>
+    <text class="b tn" x="20" y="232">pass@2 = 1 − 3/10 = 0.7</text>
+    <text class="sm m" x="20" y="262">pass@1 = 1 − 3/5 = 0.4，就是 c/n，通过的占比。</text>
+    <text class="sm m" x="20" y="282">pass@4：错的只有 3 个，任取 4 个必含对的，所以 = 1。</text>
+
+    <text class="sm m" x="400" y="18">同一批样本，不同的 k（满格 = 1.0）</text>
+    <text class="sm mo" x="400" y="58">k = 1</text><rect class="new" x="450" y="42" width="80" height="18" rx="2"/><text class="sm mo" x="538" y="56">0.4</text>
+    <text class="sm mo" x="400" y="98">k = 2</text><rect class="new" x="450" y="82" width="140" height="18" rx="2"/><text class="sm mo" x="598" y="96">0.7</text>
+    <text class="sm mo" x="400" y="138">k = 3</text><rect class="new" x="450" y="122" width="180" height="18" rx="2"/><text class="sm mo" x="638" y="136">0.9</text>
+    <text class="sm mo" x="400" y="178">k = 4</text><rect class="new" x="450" y="162" width="200" height="18" rx="2"/><text class="sm mo" x="658" y="176">1.0</text>
+    <text class="sm m" x="400" y="222">要是一个也没对（c = 0），</text>
+    <text class="sm m" x="400" y="242">任何 k 都救不回来：pass@k 衡量的</text>
+    <text class="sm m" x="400" y="262">是「能不能碰上」，不是凭空创造。</text>
+  </svg>
+  </div>
+  <figcaption>数是我为讲解设的，已验算（示意）。公式的逐项拆解、边界检查、数值稳定的写法，见附录 A。</figcaption>
+</figure>
+
+<p><b>为什么说这个估计是无偏的：</b>n 个样本是 n 次独立抽签。从中随机取 k 个，这 k 个本身也是 k 次独立抽签，所以它们「全错」的概率就是 (1 − p)<sup>k</sup>，和 n 无关；上面的占比，对 c 求平均后得到的恰好就是它。<b>常见的错误做法</b>是先算出 p̂ = c/n 当作 pass@1，再代入 1 − (1 − p̂)<sup>k</sup>。原文说这会系统性低估，而且样本越多结果会越好看，干扰不同 n 之间的比较；附录 A 里有一个 n = 2 的最小反例。</p>
+<p>要记住：<b>pass@k 是「有一个知道测试结果的裁判，从 k 个里挑最好那个」的结果，是上限</b>，不是实际使用时能得到的数。实际用（比如自动补全）时没有测试可跑，第 6 节讲这个。精确写法见附录 A。这一步对着毛病三。</p>
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>第三步：让 GPT-3 读代码，得到 Codex</h2>
+<p><b>做什么：</b>尺子有了，再造模型。数据是 2020 年 5 月从 GitHub 5400 万个公开仓库收集的、179 GB 的去重 Python 文件（单个文件小于 1 MB），过滤掉疑似自动生成的、平均行长超过 100、最大行长超过 1000、字母数字占比很低的文件，剩 <b>159 GB</b>。模型结构完全沿用 GPT-3，没有任何改动，只换了训练数据：在这些代码上继续训练 <b>1000 亿个 token</b>，得到 Codex。</p>
+
+<figure class="fig">
+  <span class="tag">图 4 · Codex：从 GPT-3 出发，在代码上继续训练</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="三个输入汇入中间的蓝色方块。左上：GitHub 5400 万个仓库，179GB 去重 Python 文件，过滤后 159GB。左下：GPT-3 系列权重，作为起点，最终效果没有变好，但收敛更快。中间：继续训练 1000 亿 token，Adam，175 步预热加余弦衰减。右边：Codex，八档，12M 到 12B，最大的是 12B，不是 1750 亿。下面一条：分词器额外加了表示连续空格的 token，代码平均少用约 30% 的 token。">
+    <rect class="softS" x="20" y="14" width="200" height="74" rx="8"/>
+    <text class="b" x="120" y="40" text-anchor="middle">GitHub 的 Python</text>
+    <text class="sm" x="120" y="60" text-anchor="middle">5400 万个仓库，179GB</text>
+    <text class="sm" x="120" y="77" text-anchor="middle">过滤后 159GB</text>
+    <rect class="softS" x="20" y="106" width="200" height="74" rx="8"/>
+    <text class="b" x="120" y="132" text-anchor="middle">GPT-3 系列权重</text>
+    <text class="sm" x="120" y="152" text-anchor="middle">作为起点：最终效果没变好</text>
+    <text class="sm" x="120" y="169" text-anchor="middle">但收敛更快</text>
+    <line class="mutS" x1="222" y1="51" x2="268" y2="88" marker-end="url(#ah)"/>
+    <line class="mutS" x1="222" y1="143" x2="268" y2="116" marker-end="url(#ah)"/>
+    <rect class="new" x="270" y="54" width="170" height="92" rx="8"/>
+    <text class="b on" x="355" y="82" text-anchor="middle">继续训练</text>
+    <text class="sm on" x="355" y="103" text-anchor="middle">1000 亿 token</text>
+    <text class="sm on" x="355" y="120" text-anchor="middle">175 步预热 + 余弦衰减</text>
+    <text class="sm on" x="355" y="136" text-anchor="middle">Adam</text>
+    <line class="mutS" x1="442" y1="100" x2="478" y2="100" marker-end="url(#ah)"/>
+    <rect class="newT" x="480" y="40" width="180" height="120" rx="8"/>
+    <text class="b tn" x="570" y="68" text-anchor="middle">Codex</text>
+    <text class="sm" x="570" y="90" text-anchor="middle">共 8 档</text>
+    <text class="sm" x="570" y="107" text-anchor="middle">12M … 2.5B … 12B</text>
+    <text class="sm to" x="570" y="130" text-anchor="middle">最大 12B，不是</text>
+    <text class="sm to" x="570" y="146" text-anchor="middle">GPT-3 的 1750 亿</text>
+    <rect class="softS" x="20" y="204" width="640" height="40" rx="8"/>
+    <text class="sm" x="34" y="229">分词器也改了一处：新增一组表示不同长度连续空格的 token（Python 靠缩进），代码平均少用约 30% 的 token。</text>
+  </svg>
+  </div>
+  <figcaption>规模数字和超参来自原文第 3 节；「不是 1750 亿」是图上特意标出的提醒，原文最大的模型是 12B。</figcaption>
+</figure>
+
+<p><b>为什么这样就行：</b>代码也是一串符号，「猜下一个 token」这个目标对它同样成立；换成代码来训，模型就学到了 GPT-3 没读够的东西。原来的假设是，评测提示是自然语言，所以从有强文字表示的 GPT-3 出发应该有益。结果出乎意料（原文用词是 Surprisingly）：<b>从预训练好的语言模型出发，最终效果没有改进</b>，作者猜是因为微调数据集非常大；但从 GPT 出发<b>收敛更快</b>，所以后续实验都这么做。我补充的：这说明目标领域数据足够多时，通用预训练的价值主要是省训练时间，而不是抬高天花板。作者没有为这个解释再做实验。</p>
+<p>训练后的测试损失仍服从幂律，规模规律在代码上也成立，见附录 D。这一步对着第 1 节末尾的现实：GPT-3 写不出代码，是因为读的代码太少。</p>
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>第四步：对口微调，得到 Codex-S</h2>
+<p><b>要解决的是训练和考试对不上。</b>GitHub 上的 Python 文件里有类的实现、配置文件、脚本，甚至用来存数据的文件，看起来和「根据 docstring 写函数」无关。作者<b>假设</b>这种分布不匹配会拉低 HumanEval 的成绩。所以拿跟考试一致的数据再训练一遍：独立的函数，带 docstring，带测试。</p>
+
+<figure class="fig">
+  <span class="tag">图 5 · Codex-S：自动造题，用 Codex-12B 筛一遍，只对解答算损失</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 310" role="img" aria-label="两个来源汇入一个过滤步骤，再进入训练。来源一：竞赛和面试题网站，约 1 万题，题面当 docstring，测试取自题面的示例，或提交错误解答榨出。来源二：持续集成项目，约 4 万个函数，用 sys.setprofile 追踪函数调用的输入输出，反推出单元测试。过滤：用 Codex-12B 每题采 100 个，一个都过不了就丢掉。训练：只对参考解答算损失，提示部分屏蔽，学习率是训练 Codex 时的十分之一，少于 100 亿 token，得到 Codex-S。下方示意一条训练样本：提示部分灰色不算损失，解答部分蓝色算损失。">
+    <rect class="softS" x="20" y="14" width="210" height="100" rx="8"/>
+    <text class="b" x="125" y="38" text-anchor="middle">竞赛 / 面试题网站</text>
+    <text class="sm" x="125" y="58" text-anchor="middle">约 1 万题</text>
+    <text class="sm" x="125" y="76" text-anchor="middle">题面当 docstring</text>
+    <text class="sm" x="125" y="94" text-anchor="middle">测试取自题面示例等</text>
+    <rect class="softS" x="20" y="126" width="210" height="100" rx="8"/>
+    <text class="b" x="125" y="150" text-anchor="middle">持续集成（CI）项目</text>
+    <text class="sm" x="125" y="170" text-anchor="middle">约 4 万个函数</text>
+    <text class="sm" x="125" y="188" text-anchor="middle">追踪调用的输入输出</text>
+    <text class="sm" x="125" y="206" text-anchor="middle">反推出单元测试</text>
+    <line class="mutS" x1="232" y1="64" x2="268" y2="110" marker-end="url(#ah)"/>
+    <line class="mutS" x1="232" y1="176" x2="268" y2="132" marker-end="url(#ah)"/>
+    <rect class="newT" x="270" y="60" width="170" height="120" rx="8"/>
+    <text class="b tn" x="355" y="88" text-anchor="middle">过滤</text>
+    <text class="sm" x="355" y="110" text-anchor="middle">Codex-12B 每题采 100 个</text>
+    <text class="sm" x="355" y="128" text-anchor="middle">一个都过不了的丢掉</text>
+    <text class="sm m" x="355" y="150" text-anchor="middle">（有歧义或太难）</text>
+    <text class="sm m" x="355" y="167" text-anchor="middle">多次重跑去掉有状态的题</text>
+    <line class="mutS" x1="442" y1="120" x2="478" y2="120" marker-end="url(#ah)"/>
+    <rect class="new" x="480" y="60" width="180" height="120" rx="8"/>
+    <text class="b on" x="570" y="88" text-anchor="middle">Codex-S</text>
+    <text class="sm on" x="570" y="110" text-anchor="middle">从 Codex 接着训</text>
+    <text class="sm on" x="570" y="128" text-anchor="middle">学习率为原来的 1/10</text>
+    <text class="sm on" x="570" y="146" text-anchor="middle">少于 100 亿 token</text>
+
+    <text class="sm m" x="20" y="254">一条训练样本（示意）：</text>
+    <rect class="softS" x="20" y="264" width="330" height="30" rx="5"/>
+    <text class="sm mo m" x="34" y="283">def f(...): """docstring"""</text>
+    <rect class="newT" x="350" y="264" width="150" height="30" rx="5"/>
+    <text class="sm mo tn" x="364" y="283">参考解答</text>
+    <text class="sm m" x="514" y="278">← 只有蓝色这段算损失</text>
+    <text class="sm m" x="514" y="293">灰色提示部分屏蔽</text>
+  </svg>
+  </div>
+  <figcaption>两路数据的规模、过滤和训练设置来自原文第 4 节。CI 数据只有约 4 万个函数，是因为不是每个函数都有输入输出，运行时捕获的对象也大多没法在沙箱外还原。</figcaption>
+</figure>
+
+<p><b>两路数据，风格互补：</b>竞赛题自成一体、题面写得好、考算法推理，像「智力题」；CI 追踪来的多是命令行工具的零件，不要求高级算法，要求照着 docstring 把功能做出来，连内置函数和库函数的调用也变成了题目。<b>质量靠模型自己把关：</b>自动造的题，有的 docstring 欠规范，合理的解会被误判，有的有状态，多次运行结果不同。作者让 Codex-12B 每题写 100 个，一个都过不了的，就当作有歧义或太难，丢掉。我补充的：这个筛子有副作用，留下来的都是 Codex-12B 至少偶尔做对过的题，难到它从没做对过的题会被系统性筛掉；原文没有讨论这点。</p>
+<p><b>训练方式：</b>把题组装成原文 Figure 2 的格式，同一批里提示长短不一时，在左边补齐，使参考解答的第一个 token 对齐；<b>只对参考解答计算损失，提示部分的损失屏蔽掉</b>。意思是模型不必学「怎么写题面」，只学「看到题面后怎么写解答」。学习率是 Codex 微调时的十分之一，训到验证损失不再下降，不到 100 亿 token，是 Codex 的十分之一以下。这一步对着「训练分布和考试对不上」，效果见第 7 节。</p>
+
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>第五步：温度跟着 k 走，没有测试怎么挑</h2>
+<p><b>温度。</b>生成时有个旋钮叫温度 T：低温下模型几乎总选概率最高的词，高温下分布变平，什么词都可能被抽到。原文所有采样都固定 top-p = 0.95（只在累计概率刚达到 0.95 的候选里抽，细节见附录 A），再调温度。</p>
+
+<figure class="fig">
+  <span class="tag">图 6 · 示意：同样三个候选词，温度不同，抽中的概率不同</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 336" role="img" aria-label="三个候选词的原始分数是 2、1、0。T 等于 0.2 时，词 A 的概率 0.993，词 B 0.007，词 C 几乎为 0。T 等于 0.5 时，0.867、0.117、0.016。T 等于 1 时，0.665、0.245、0.090。T 等于 2 时，0.507、0.307、0.186。温度越高，分布越平。">
+    <text class="sm m" x="20" y="18">三个候选词的原始分数是 2、1、0。温度 T 不同，抽中各词的概率就不同（满格 = 1.0）</text>
+    <text class="b" x="20" y="60">T = 0.2</text>
+    <text class="sm mo" x="110" y="55">词 A</text><rect class="new" x="160" y="46" width="298.0" height="12" rx="2"/><text class="sm mo" x="466.0" y="56">0.993</text>
+    <text class="sm mo" x="110" y="71">词 B</text><rect class="newT" x="160" y="62" width="2.0" height="12" rx="2"/><text class="sm mo" x="170.0" y="72">0.007</text>
+    <text class="sm mo" x="110" y="87">词 C</text><rect class="oldT" x="160" y="78" width="1.5" height="12" rx="2"/><text class="sm mo" x="169.5" y="88">0.000</text>
+    <text class="b" x="20" y="128">T = 0.5</text>
+    <text class="sm mo" x="110" y="123">词 A</text><rect class="new" x="160" y="114" width="260.0" height="12" rx="2"/><text class="sm mo" x="428.0" y="124">0.867</text>
+    <text class="sm mo" x="110" y="139">词 B</text><rect class="newT" x="160" y="130" width="35.2" height="12" rx="2"/><text class="sm mo" x="203.2" y="140">0.117</text>
+    <text class="sm mo" x="110" y="155">词 C</text><rect class="oldT" x="160" y="146" width="4.8" height="12" rx="2"/><text class="sm mo" x="172.8" y="156">0.016</text>
+    <text class="b" x="20" y="196">T = 1</text>
+    <text class="sm mo" x="110" y="191">词 A</text><rect class="new" x="160" y="182" width="199.6" height="12" rx="2"/><text class="sm mo" x="367.6" y="192">0.665</text>
+    <text class="sm mo" x="110" y="207">词 B</text><rect class="newT" x="160" y="198" width="73.4" height="12" rx="2"/><text class="sm mo" x="241.4" y="208">0.245</text>
+    <text class="sm mo" x="110" y="223">词 C</text><rect class="oldT" x="160" y="214" width="27.0" height="12" rx="2"/><text class="sm mo" x="195.0" y="224">0.090</text>
+    <text class="b" x="20" y="264">T = 2</text>
+    <text class="sm mo" x="110" y="259">词 A</text><rect class="new" x="160" y="250" width="151.9" height="12" rx="2"/><text class="sm mo" x="319.9" y="260">0.506</text>
+    <text class="sm mo" x="110" y="275">词 B</text><rect class="newT" x="160" y="266" width="92.2" height="12" rx="2"/><text class="sm mo" x="260.2" y="276">0.307</text>
+    <text class="sm mo" x="110" y="291">词 C</text><rect class="oldT" x="160" y="282" width="55.9" height="12" rx="2"/><text class="sm mo" x="223.9" y="292">0.186</text>
+    <text class="sm m" x="20" y="322">温度低，几乎只抽最高分的词；温度高，分布变平，什么都可能抽到（推算，已验算）。</text>
+  </svg>
+  </div>
+  <figcaption>一个函数体有几十个 token，等于连续做几十次选择。低温让每一步都稳，整段程序更不容易出错；高温让每一步都有点偏，整段更多样。</figcaption>
+</figure>
+
+<p><b>关键发现：最好的温度取决于你要多写几个。</b>只写 1 个（pass@1）时，低温更好，因为要的是稳；要写 100 个（pass@100）时，高温更好，因为 100 个都一样等于白写，要的是多样。原文对 679M 模型给出的数：pass@1 的最佳温度 T* = 0.2，pass@100 的 T* = 0.8。Codex-S 偏爱更高的温度（pass@1 用 T* = 0，pass@100 用 T* = 1）。原文猜是因为微调后它学到的分布更窄，需要靠温度补多样性，没有为此再做实验。用各自最佳的温度，pass@1 和 pass@100 随模型规模都平滑增长，所以 pass@k 可以拿来研究规模规律，不是噪声。</p>
+
+<h3>实际用的时候没有测试，只能凭模型自己的信心挑</h3>
+<p>pass@k 是裁判知道答案时的上限。真实使用（比如自动补全）要从一堆候选里只挑一个给用户。原文比较了几种不用测试的挑法，在 Codex-12B、T = 0.8 的样本上：</p>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 7 · 不用测试，怎么从多个样本里挑一个</span>
+  <img class="orig" src="orig-fig7.png" alt="原文 Figure 7：横轴是每题采样个数，纵轴是通过率。比较随机挑、按平均对数概率挑、按对数概率之和挑、按回译挑几种办法；平均对数概率好于随机，回译好于随机但不如前者，对数概率之和可能略差于随机。" loading="lazy">
+  <figcaption>结论：<b>平均对数概率（把每个 token 的对数概率取平均）好于随机，回译（让反向模型 Codex-D 反过来给代码写 docstring，看它和原 docstring 多像）也好于随机但不如前者，对数概率之和可能略差于随机。</b>为什么总和不好，是我的解释：每多一个 token，总和就更负一点，所以它天然偏向短程序。Codex-S 的对应实验里，按平均对数概率从 1 到 100 个样本里挑，平均比随机多 11.6 个百分点。图源：Chen 等 2021 原文。</figcaption>
+</figure>
+
+<p>这些办法都不如真的去跑测试（第 7 节的数据）。回译需要的 Codex-D 见附录 F。</p>
+
+<!-- ================= 7 ================= -->
+<h2 id="s7"><span class="no">7</span>证据：它到底做到了多少</h2>
+<p>先看结论，再看每一项来自哪个实验。所有数字是 HumanEval 上的通过率。</p>
+
+<figure class="fig">
+  <span class="tag">图 7 · 同一套题上，从 0% 到 77.5%</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 250" role="img" aria-label="六根横条：GPT-3 0%；GPT-J 6B 11.4%；Codex-12B 每题写 1 个 28.8%；Codex-S-12B 每题写 1 个 37.7%；Codex-S 每题写 100 个，凭平均对数概率挑一个，44.5%；Codex-S 每题写 100 个，凭测试挑，77.5%。">
+    <text class="sm" x="20" y="34">GPT-3</text><rect class="old" x="270" y="20" width="2.0" height="20" rx="2"/><text class="mo b" x="278.0" y="35">0%</text>
+    <text class="sm" x="20" y="70">GPT-J 6B</text><rect class="old" x="270" y="56" width="45.6" height="20" rx="2"/><text class="mo b" x="323.6" y="71">11.4%</text>
+    <text class="sm" x="20" y="106">Codex-12B，写 1 个</text><rect class="new" x="270" y="92" width="115.2" height="20" rx="2"/><text class="mo b" x="393.2" y="107">28.8%</text>
+    <text class="sm" x="20" y="142">Codex-S-12B，写 1 个</text><rect class="new" x="270" y="128" width="150.8" height="20" rx="2"/><text class="mo b" x="428.8" y="143">37.7%</text>
+    <text class="sm" x="20" y="178">Codex-S，写 100 个，靠平均对数概率挑</text><rect class="newT" x="270" y="164" width="178.0" height="20" rx="2"/><text class="mo b" x="456.0" y="179">44.5%</text>
+    <text class="sm" x="20" y="214">Codex-S，写 100 个，靠测试挑</text><rect class="newT" x="270" y="200" width="310.0" height="20" rx="2"/><text class="mo b" x="588.0" y="215">77.5%</text>
+  </svg>
+  </div>
+  <figcaption>前四根是「写一个就交」，后两根是「写 100 个再挑」。注意最后两根的差：模型凭自己的信心挑，只能到 44.5%，有测试当裁判就能到 77.5%。GPT-J 的数在原文里有 11.4% 和 11.6% 两种写法，Table 1 是 11.62%（附录 J）。</figcaption>
+</figure>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 1 · 横轴是模型大小（非嵌入参数量），纵轴是通过率</span>
+  <img class="orig" src="orig-fig1.png" alt="原文 Figure 1：横轴是非嵌入参数量，纵轴是通过率。五条曲线：GPT-3 贴近 0，Codex 的 pass@1 最低的一条上升，Codex-S 的 pass@1 更高，Codex-S 写 100 个后按平均对数概率重排更高，Codex-S 写 100 个后按测试重排最高，约 0.8。" loading="lazy">
+  <figcaption>五条线分别是 GPT-3、Codex 和 Codex-S 的单次通过率，以及 Codex-S 写 100 个后按平均对数概率挑（末端约 0.445）、按测试挑（末端约 0.8）。要留意一点：这张图的图注说所有样本都是在 T = 0.8 下采的，所以单次的末端（Codex 约 0.22、Codex-S 约 0.32）比正文里的 28.8%、37.7% 低一些，后者是取每个 k 各自最佳温度的数。图源：Chen 等 2021 原文。</figcaption>
+</figure>
+
+<h3>规模：越大越好，而且 k 越大差距越大</h3>
+
+<figure class="fig">
+  <span class="tag">图 8 · Codex 八个规模的通过率（原文 Table 1），和 GPT-J 比</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 290" role="img" aria-label="Codex 从 12M 到 12B 共八档，每档两根柱，pass@1 和 pass@100。pass@1 从 2.00% 升到 28.81%，pass@100 从 8.58% 升到 72.31%。赭色虚线是 GPT-J 6B：pass@1 11.62%，pass@100 27.74%，Codex 的 pass@1 在 85M 到 300M 之间超过 GPT-J。">
+    <text class="sm m" x="20" y="18">纵轴：通过率（%）。每档两根柱：pass@1（深蓝）、pass@100（浅蓝）；横轴：Codex 的参数量</text>
+    <line class="ln" x1="52" y1="250.0" x2="660" y2="250.0"/><text class="sm mo m" x="46" y="254.0" text-anchor="end">0</text>
+    <line class="ln" x1="52" y1="187.5" x2="660" y2="187.5"/><text class="sm mo m" x="46" y="191.5" text-anchor="end">25</text>
+    <line class="ln" x1="52" y1="125.0" x2="660" y2="125.0"/><text class="sm mo m" x="46" y="129.0" text-anchor="end">50</text>
+    <line class="ln" x1="52" y1="62.5" x2="660" y2="62.5"/><text class="sm mo m" x="46" y="66.5" text-anchor="end">75</text>
+    <rect class="new" x="70" y="245.0" width="26" height="5.0" rx="2"/>
+    <rect class="newT" x="98" y="228.6" width="26" height="21.4" rx="2"/>
+    <text class="sm mo" x="83" y="241.0" text-anchor="middle" style="font-size:10px">2</text>
+    <text class="sm mo" x="111" y="224.6" text-anchor="middle" style="font-size:10px">8.58</text>
+    <text class="sm mo m" x="97" y="270" text-anchor="middle">12M</text>
+    <rect class="new" x="145" y="242.0" width="26" height="8.0" rx="2"/>
+    <rect class="newT" x="173" y="217.8" width="26" height="32.2" rx="2"/>
+    <text class="sm mo" x="158" y="238.0" text-anchor="middle" style="font-size:10px">3.21</text>
+    <text class="sm mo" x="186" y="213.8" text-anchor="middle" style="font-size:10px">12.89</text>
+    <text class="sm mo m" x="172" y="270" text-anchor="middle">25M</text>
+    <rect class="new" x="220" y="237.3" width="26" height="12.6" rx="2"/>
+    <rect class="newT" x="248" y="211.1" width="26" height="38.9" rx="2"/>
+    <text class="sm mo" x="233" y="233.3" text-anchor="middle" style="font-size:10px">5.06</text>
+    <text class="sm mo" x="261" y="207.1" text-anchor="middle" style="font-size:10px">15.55</text>
+    <text class="sm mo m" x="247" y="270" text-anchor="middle">42M</text>
+    <rect class="new" x="295" y="229.4" width="26" height="20.6" rx="2"/>
+    <rect class="newT" x="323" y="194.0" width="26" height="56.0" rx="2"/>
+    <text class="sm mo" x="308" y="225.4" text-anchor="middle" style="font-size:10px">8.22</text>
+    <text class="sm mo" x="336" y="190.0" text-anchor="middle" style="font-size:10px">22.4</text>
+    <text class="sm mo m" x="322" y="270" text-anchor="middle">85M</text>
+    <rect class="new" x="370" y="217.1" width="26" height="32.9" rx="2"/>
+    <rect class="newT" x="398" y="159.3" width="26" height="90.7" rx="2"/>
+    <text class="sm mo" x="383" y="213.1" text-anchor="middle" style="font-size:10px">13.17</text>
+    <text class="sm mo" x="411" y="155.3" text-anchor="middle" style="font-size:10px">36.27</text>
+    <text class="sm mo m" x="397" y="270" text-anchor="middle">300M</text>
+    <rect class="new" x="445" y="209.4" width="26" height="40.5" rx="2"/>
+    <rect class="newT" x="473" y="147.6" width="26" height="102.4" rx="2"/>
+    <text class="sm mo" x="458" y="205.4" text-anchor="middle" style="font-size:10px">16.22</text>
+    <text class="sm mo" x="486" y="143.6" text-anchor="middle" style="font-size:10px">40.95</text>
+    <text class="sm mo m" x="472" y="270" text-anchor="middle">679M</text>
+    <rect class="new" x="520" y="196.6" width="26" height="53.4" rx="2"/>
+    <rect class="newT" x="548" y="101.2" width="26" height="148.8" rx="2"/>
+    <text class="sm mo" x="533" y="192.6" text-anchor="middle" style="font-size:10px">21.36</text>
+    <text class="sm mo" x="561" y="97.2" text-anchor="middle" style="font-size:10px">59.5</text>
+    <text class="sm mo m" x="547" y="270" text-anchor="middle">2.5B</text>
+    <rect class="new" x="595" y="178.0" width="26" height="72.0" rx="2"/>
+    <rect class="newT" x="623" y="69.2" width="26" height="180.8" rx="2"/>
+    <text class="sm mo" x="608" y="174.0" text-anchor="middle" style="font-size:10px">28.81</text>
+    <text class="sm mo" x="636" y="65.2" text-anchor="middle" style="font-size:10px">72.31</text>
+    <text class="sm mo m" x="622" y="270" text-anchor="middle">12B</text>
+    <line class="oldS dash" x1="52" y1="220.9" x2="660" y2="220.9"/>
+    <line class="oldS dash" x1="52" y1="180.7" x2="660" y2="180.7"/>
+    <text class="sm to" x="70" y="40">赭色虚线：GPT-J 6B，pass@100 = 27.74（上）和 pass@1 = 11.62（下）</text>
+    
+  </svg>
+  </div>
+  <figcaption>全部数字逐格对过原文 Table 1。GPT-J 在训练数据里只有 8% 是 GitHub 代码，pass@1 大致落在 Codex-85M 和 300M 之间（原文 3.4）。这是粗略对比，两边的架构、数据总量和训练细节都不一样，不是只改「代码占比」的受控实验。</figcaption>
+</figure>
+
+<h3>三个对照实验各说明什么</h3>
+<ul>
+  <li><b>微调有用。</b>Codex-S 比 Codex，跨规模平均在 pass@1 上高 6.5 个百分点，在 pass@100 上高 15.1 个百分点（原文 4.5）。pass@100 涨得更多，说明对口数据不只让模型一次更准，还让它「会做的题」变多。后一半是我的推测，原文没验证。</li>
+  <li><b>多写有用，有裁判更有用。</b>图 7 的最后两根。</li>
+  <li><b>没在这个题型上训练过，也有用。</b>APPS 是另一个题库，题多是「读标准输入、写标准输出」的完整程序，和 Codex 的训练形式不一致。Codex-12B 没在 APPS 上微调，只在 docstring 末尾给一个输入输出示例，入门档 pass@1 是 4.14%，和专门微调过的 GPT-Neo 2.7B 的 3.90% 大致相当。但面试档 Codex 只有 0.14%，低于 GPT-Neo 的 0.57%。更有意思的是过滤：竞赛题面本来就附有 3 个示例，先用它们过滤 1000 个候选，入门档 pass@1 就从 4.14% 跳到 22.78%，超过了原始的 pass@100（20.20%）。完整表见附录 E。</li>
+</ul>
+
+<p><b>作者的结论，我概括成三句：</b>在代码上训练的语言模型能写出相当比例的、通过测试的函数；每题多写几个、再有裁判，能力会大幅放大；训练数据越对口，同样规模的模型越强。</p>
+
+<!-- ================= 8 ================= -->
+<h2 id="s8"><span class="no">8</span>局限和后来</h2>
+
+<h3>作者自己承认的局限</h3>
+<p><b>训练样本效率差。</b>训练数据是 GitHub 公开 Python 代码的很大一部分，数亿行，一个有经验的开发者一生也见不到这么多。原文预期（用词是 expected）一个学完计算机入门课的好学生，能解出的题比 Codex-12B 还多。但原文没有测过人类的基线，这只是预期。</p>
+<p><b>docstring 一长就崩。</b>作者造了一组合成题：从 13 个「一句话加一行代码」的基本积木里选若干个，把句子拼成 docstring，代码拼成参考解答。积木越多，Codex-12B 的通过率指数下降，每多一个大约降为原来的 1/2 到 1/3（原文 Figure 11 的图注）。</p>
+
+<figure class="fig">
+  <span class="tag">图 9 · 示意：连串的积木越多，通过率掉得越快</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 256" role="img" aria-label="五组柱，分别是串联 1 到 5 个积木。深蓝柱每多一个乘 1/2：1、0.5、0.25、0.125、0.0625。浅蓝柱每多一个乘 1/3：1、0.333、0.111、0.037、0.0123。">
+    <text class="sm m" x="20" y="18">纵轴：相对只串 1 个积木时的通过率（满格 = 1）。蓝：每多一个乘 1/2；浅蓝：每多一个乘 1/3</text>
+    <rect class="new" x="60" y="40.0" width="36" height="160.0" rx="2"/><text class="sm mo" x="78" y="36.0" text-anchor="middle" style="font-size:10px">1</text>
+    <rect class="newT" x="100" y="40.0" width="36" height="160.0" rx="2"/><text class="sm mo" x="118" y="36.0" text-anchor="middle" style="font-size:10px">1</text>
+    <text class="sm mo m" x="98" y="220" text-anchor="middle">1 个</text>
+    <rect class="new" x="180" y="120.0" width="36" height="80.0" rx="2"/><text class="sm mo" x="198" y="116.0" text-anchor="middle" style="font-size:10px">0.5</text>
+    <rect class="newT" x="220" y="146.7" width="36" height="53.3" rx="2"/><text class="sm mo" x="238" y="142.7" text-anchor="middle" style="font-size:10px">0.333</text>
+    <text class="sm mo m" x="218" y="220" text-anchor="middle">2 个</text>
+    <rect class="new" x="300" y="160.0" width="36" height="40.0" rx="2"/><text class="sm mo" x="318" y="156.0" text-anchor="middle" style="font-size:10px">0.25</text>
+    <rect class="newT" x="340" y="182.2" width="36" height="17.8" rx="2"/><text class="sm mo" x="358" y="178.2" text-anchor="middle" style="font-size:10px">0.111</text>
+    <text class="sm mo m" x="338" y="220" text-anchor="middle">3 个</text>
+    <rect class="new" x="420" y="180.0" width="36" height="20.0" rx="2"/><text class="sm mo" x="438" y="176.0" text-anchor="middle" style="font-size:10px">0.125</text>
+    <rect class="newT" x="460" y="194.1" width="36" height="5.9" rx="2"/><text class="sm mo" x="478" y="190.1" text-anchor="middle" style="font-size:10px">0.037</text>
+    <text class="sm mo m" x="458" y="220" text-anchor="middle">4 个</text>
+    <rect class="new" x="540" y="190.0" width="36" height="10.0" rx="2"/><text class="sm mo" x="558" y="186.0" text-anchor="middle" style="font-size:10px">0.0625</text>
+    <rect class="newT" x="580" y="198.0" width="36" height="2.0" rx="2"/><text class="sm mo" x="598" y="194.0" text-anchor="middle" style="font-size:10px">0.0123</text>
+    <text class="sm mo m" x="578" y="220" text-anchor="middle">5 个</text>
+    <text class="sm m" x="20" y="244">连串的积木越多，通过率掉得越快。这是示意：1/2 和 1/3 取自原文说的「每多一个约降为 1/2 到 1/3」的两端。</text>
+  </svg>
+  </div>
+  <figcaption>原文强调的反常之处是，这和人不一样：一个人要是能正确实现两步串联，通常也能实现任意长度的串联。Codex 不是这样（原文用词是 uncharacteristic of a human programmer）。柱高是我按两个衰减因子算的，不是原文的实测值。</figcaption>
+</figure>
+
+<p><b>变量绑定出错。</b>原文给的例子：docstring 说「把 y 加 3，再从 x 和 w 都减 4，返回四个数的乘积」。Codex-12B 写出的是 <code>t = y + 3; u = x - 4; v = z * w; return v</code>，错了两处：没对 w 减 4，也没返回四个数的乘积。作者把它类比为文生图模型的「属性绑定」困难：说明里的操作和变量一多，就容易把操作安到错的变量上。</p>
+
+<p><b>能力够，却顺着坏例子写：不对齐。</b>作者先定义了一个说法：能力够（capable）但不对齐（misaligned），就是模型能做到，却没按用户的意图去做。他们的实验是这样的：</p>
+
+<figure class="fig">
+  <span class="tag">图 10 · 示意：提示里放什么例子，模型就往哪边写</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 252" role="img" aria-label="左：提示里放三个正确的例子，再给一道新题，模型写出的代码 bug 较少，说明它有这个能力，蓝色。右：提示里放三个带细微错误的例子，再给同一道新题，模型写出的 bug 更多，赭色。下方：这个差距随模型变大而变大（原文 Figure 12 图注），说明变强的是能力，不是顺着用户意图做事的倾向。">
+    <rect class="softS" x="20" y="14" width="300" height="86" rx="8"/>
+    <text class="b" x="170" y="40" text-anchor="middle">提示：3 个正确例子 + 新题</text>
+    <text class="sm" x="170" y="62" text-anchor="middle">例子是 docstring 加正确解答</text>
+    <text class="sm" x="170" y="80" text-anchor="middle">来自 30 道题，随机取，不含当前题</text>
+    <line class="mutS" x1="170" y1="102" x2="170" y2="124" marker-end="url(#ah)"/>
+    <rect class="newT" x="20" y="126" width="300" height="52" rx="8"/>
+    <text class="b tn" x="170" y="150" text-anchor="middle">bug 较少</text>
+    <text class="sm" x="170" y="168" text-anchor="middle">说明模型有这个能力</text>
+
+    <rect class="softS" x="360" y="14" width="300" height="86" rx="8"/>
+    <text class="b" x="510" y="40" text-anchor="middle">提示：3 个带细微错误的例子 + 新题</text>
+    <text class="sm" x="510" y="62" text-anchor="middle">差一错误、单字符笔误之类</text>
+    <text class="sm" x="510" y="80" text-anchor="middle">能编译，常能运行，答案不对</text>
+    <line class="oldS" x1="510" y1="102" x2="510" y2="124" marker-end="url(#ahO)"/>
+    <rect class="oldT" x="360" y="126" width="300" height="52" rx="8"/>
+    <text class="b to" x="510" y="150" text-anchor="middle">bug 更多</text>
+    <text class="sm" x="510" y="168" text-anchor="middle">明明会，却顺着坏例子写</text>
+
+    <text class="sm m" x="20" y="204">两边的差距随模型变大而变大（原文 Figure 12 的图注）。</text>
+    <text class="sm m" x="20" y="222">加一句「即使前面的代码有 bug，也要写对」的指令，只略有帮助。</text>
+    <text class="sm m" x="20" y="240">图是概念示意，没有画具体数值。</text>
+  </svg>
+  </div>
+  <figcaption>怎么读：模型是「续写者」，不是「帮手」。提示里有什么风格，它就续什么风格。作者提醒还要区分「不对齐」和「鲁棒性失败」（带 bug 的提示太异常，让模型失常），他们认为后者不是主因，因为 GitHub 里本来就有大量这类低质量代码。细节在附录 G。</figcaption>
+</figure>
+
+<p><b>不安全的代码。</b>让 Codex 补全调用密码学库的代码（5 个来自漏洞库的提示，共约 3 万个样本），判定标准是 RSA 密钥短于 2048 位，或 AES 用了 ECB 模式。结果是各规模的模型经常写出明显不安全的配置，而且在一个数量级的参数范围内，没有看到稳健的规模趋势。作者的结论是：至少在这个例子里，这是对齐问题而不是能力问题，模型变大不一定变得更安全。</p>
+
+<h3>我补充的几点没被论文解决的问题</h3>
+<ul>
+  <li><b>考卷小。</b>164 题，标准误约 ±3.5 个百分点（原文 Table 1 对应推算），小差异别过度解读。</li>
+  <li><b>测试强度没有量化。</b>平均 7.7 条测试能不能抓住所有错误程序，没有量化，「通过测试 = 正确」只是近似。</li>
+  <li><b>训练数据和考题的重叠没有系统报告。</b>HumanEval 是手写的，但原文也说不保证新颖；Codex-S 的训练题来自竞赛网站，和 HumanEval 的重叠同样没报告。</li>
+  <li><b>只测 Python 的独立函数。</b>在大项目里改代码的能力，这篇判断不了。</li>
+</ul>
+
+<h3>后来</h3>
+<p><b>原文可以核实的事实：</b>论文发表时，Codex 的后代已经在为 GitHub Copilot 和 OpenAI API 里的 Codex 模型提供动力；HumanEval 和评测代码已开源（github.com/openai/human-eval）。</p>
+<p><b>被继承下来的，更多是「尺子」。</b>下面这些是我的判断，不是原文说的，具体哪些论文采用了、何时被刷满，我没有逐一核对（待核实）。</p>
+<ul>
+  <li>HumanEval 加 pass@k，成了代码模型的通行基准，后来的代码大模型论文几乎都会报告。</li>
+  <li>「执行测试」成了代码评价的主流，后来出现了更大、更严格的题库，和更接近真实软件工程的评测。</li>
+  <li>「多写几个，再用外部信号挑」的套路。图 7 已经显示，能判断对错的信号（测试）比模型自己的信心有用得多。后来用可验证的结果训练推理模型的路线，可以看作是把这个信号用得更彻底。</li>
+</ul>
+<p><b>它留下的问题，由后面几篇接着解决</b>（下面的对应是我的联系，原文并没有提到）：</p>
+<ul>
+  <li>每换一个领域就要训一整份大模型 → 014 <a href="../014-lora/index.html">LoRA</a>（参数高效微调）。</li>
+  <li>模型调用「未定义的函数、变量」，缺外部上下文 → 013 <a href="../013-rag/index.html">RAG</a>（生成时检索外部资料）。</li>
+  <li>模型是续写者，提示里有错就跟着错，不安全代码也不稳定变好 → 人类反馈的学习 015 <a href="../015-human-preferences/index.html">Human Preferences</a>，策略优化算法 016 <a href="../016-ppo/index.html">PPO</a>，对齐的系统研究 017 <a href="../017-alignment-lab/index.html">Alignment Lab</a>，合起来做出遵循指令的模型 018 <a href="../018-instructgpt/index.html">InstructGPT</a>。作者在原文附录里列出的缓解思路，筛选训练数据、按质量打标签再条件化、用人类反馈做强化学习，在这几篇里都有对应。</li>
+  <li>12B 参数配 1000 亿 token 微调是不是最优的分配，本文没讨论；可回看 010 <a href="../010-chinchilla/index.html">Chinchilla</a>（它发表于 2022 年，晚于本文，两者的具体关系待核实）。</li>
+</ul>
+
+
+<!-- ================= 附录 ================= -->
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块都默认折叠，标题里写明了对应的原文章节；正文用不到它们。其中标「我补充」的，是原文之外我加的说明，标「待核实」的是我没有核对清楚的。</p>
+
+<details class="ext"><summary>A · pass@k 的公式、推导和采样的公式（原文第 2 节、附录 A）</summary>
+<p><b>pass@k 的无偏估计量</b>（n 是每题写的个数，c 是其中通过的个数，k ≤ n）：</p>
+<div class="formula">pass@k = E<sub>题目</sub> [ 1 − C(n−c, k) / C(n, k) ]<span class="fsrc">（原文 Eq. 1，本文 n = 200，k ≤ 100）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>是什么</th></tr></thead>
+  <tbody>
+    <tr><td>n</td><td>每道题实际写的样本个数</td></tr>
+    <tr><td>c</td><td>其中通过全部测试的个数</td></tr>
+    <tr><td>C(a, b)</td><td>从 a 个里不分先后取 b 个的取法数</td></tr>
+    <tr><td>C(n−c, k) / C(n, k)</td><td>随机取 k 个、全是错的占比</td></tr>
+    <tr><td>E<sub>题目</sub></td><td>对所有题求平均</td></tr>
+  </tbody>
+</table></div>
+<p><b>边界检查：</b>k = 1 时，1 − (n−c)/n = c/n，就是通过的占比。n − c &lt; k（错的比 k 还少）时，取 k 个必含对的，值为 1。c = 0 时值为 0。</p>
+<p><b>数值稳定的写法</b>（原文 Figure 3）：C(200, 100) 大约是 9×10<sup>58</sup>，直接用阶乘算会溢出，所以改成连乘，每一项都在 0 和 1 之间：</p>
+<div class="formula">C(n−c, k) / C(n, k) = Π<sub>i = n−c+1 … n</sub> ( 1 − k / i )</div>
+<pre class="mono"><code>def pass_at_k(n, c, k):
+    if n - c &lt; k: return 1.0
+    return 1.0 - np.prod(1.0 - k / np.arange(n - c + 1, n + 1))</code></pre>
+<p>验算：n = 5，c = 2，k = 2，i 取 4 和 5，(1 − 2/4) × (1 − 2/5) = 0.5 × 0.6 = 0.3，1 − 0.3 = 0.7，和图 3 数出来的一致。</p>
+<p><b>为什么无偏。</b>设每个样本独立通过，概率为 p，真实 pass@k 是 1 − (1 − p)<sup>k</sup>。直觉：n 个样本是 n 次独立抽签，随机取出的 k 个本身也是 k 次独立抽签，全错的概率是 (1 − p)<sup>k</sup>，和 n 无关；上面的占比对 c（服从二项分布）求平均，得到的正好是它（原文附录 A 用代数推导，结论相同）。</p>
+<p><b>有偏的做法为什么错（最小反例，已验算）。</b>设 p = 0.5，每题只写 n = 2 个，估 k = 2。真实值是 1 − 0.5<sup>2</sup> = 0.75。</p>
+<div class="tbl"><table>
+  <thead><tr><th>c</th><th class="num">概率</th><th class="num">正确估计量</th><th class="num">1 − (1 − c/n)<sup>2</sup></th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td class="num">0.25</td><td class="num">0</td><td class="num">0</td></tr>
+    <tr><td>1</td><td class="num">0.5</td><td class="num">1</td><td class="num">0.75</td></tr>
+    <tr><td>2</td><td class="num">0.25</td><td class="num">1</td><td class="num">1</td></tr>
+    <tr><td><b>期望</b></td><td></td><td class="num"><b>0.75</b></td><td class="num"><b>0.625</b></td></tr>
+  </tbody>
+</table></div>
+<p>正确估计量的期望正好等于 0.75；有偏的那个只有 0.625，系统性偏低。</p>
+<p><b>三个题的小数字（图 2）：</b>p = 0.9：pass@10 = 1 − 0.1<sup>10</sup> ≈ 1。p = 0.17：pass@10 = 1 − 0.83<sup>10</sup> ≈ 0.845，pass@100 ≈ 1。p = 0.005：pass@10 = 1 − 0.995<sup>10</sup> ≈ 0.049，pass@100 = 1 − 0.995<sup>100</sup> ≈ 0.394。三题平均：pass@1 = (0.9 + 0.17 + 0.005) / 3 ≈ 0.358，pass@10 ≈ 0.631，pass@100 ≈ 0.798。</p>
+<p><b>温度（原文 3.2 节）：</b>把模型给每个词的原始分数 z<sub>i</sub> 除以 T 再归一：</p>
+<div class="formula">p<sub>i</sub>(T) = exp( z<sub>i</sub> / T ) / Σ<sub>j</sub> exp( z<sub>j</sub> / T )</div>
+<p>T → 0 时只选最高分的词（贪心）；T = 1 时就是模型原本的分布；T 大于 1 时更平。图 6 用的是 z = (2, 1, 0)，T = 2 时三个分数变成 (1, 0.5, 0)，指数是 2.718、1.649、1，总和 5.367，概率 0.506、0.307、0.186。</p>
+<p><b>为什么温度对整段程序影响大：</b>50 个 token 的函数体，是连续 50 次选择。每一步最大概率的候选若是 0.95，50 步都选中它的概率是 0.95<sup>50</sup> ≈ 0.077；若降温使每一步到 0.99，则 0.99<sup>50</sup> ≈ 0.605（示意）。</p>
+<p><b>核采样 top-p（原文引用 Holtzman 等 2020）：</b>只保留累计概率刚达到 p 的最小候选集，再重新归一。例：候选 a 0.50、b 0.30、c 0.12、d 0.05、e 0.03，p = 0.95。累计 0.50、0.80、0.92、0.97，到 d 才过线，保留 {a, b, c, d}，砍掉 e，除以 0.97 重新归一：a 0.515、b 0.309、c 0.124、d 0.052。比 top-k 灵活，是因为候选的个数会随模型的确定程度自动变化。</p>
+</details>
+
+<details class="ext"><summary>B · 几个概念的补充：docstring、停止序列、BLEU、沙箱（原文第 2 节）</summary>
+<p><b>docstring 任务的格式。</b>给模型的提示是：函数签名，加三引号括起来的说明（常带几个调用示例）。模型续写的是函数体。</p>
+<p><b>停止序列。</b>模型不知道函数体该在哪里结束，会接着写下一个函数、一个类、一段测试。原文的做法是，一旦生成出下面这些不缩进的行开头，就截断：<code>\nclass</code>、<code>\ndef</code>、<code>\n#</code>、<code>\nif</code>、<code>\nprint</code>。这是因为函数体都是缩进的，缩进一断，就说明函数结束了。</p>
+<p><b>BLEU。</b>统计候选和参考答案里相同的 1 到 4 元词组占比（带长度惩罚），见 002 <a href="../002-seq2seq/index.html">Seq2Seq</a> 里的用法。图 1 把它简化成了记号重合比例，只为说明方向。原文 Figure 8 画出了正确和错误样本各自 BLEU 分布，两条大量重叠。</p>
+<p><b>沙箱。</b>原文用 gVisor（模拟宿主资源，在容器和宿主之间建一道安全边界），再加基于 eBPF 的防火墙，阻止进出的网络连接。</p>
+<p><b>capable 与 misaligned。</b>能力够，但没按用户意图做，叫不对齐。这个词的用法在 017、018 篇里会反复出现。</p>
+</details>
+
+<details class="ext"><summary>C · 2021 年的技术背景（原文第 1、3、8 节，我补充）</summary>
+<ul>
+  <li><b>起点：</b>GPT-3（2020，1750 亿参数）显示大语言模型无需微调，就能做少样本任务（011）。009 的缩放定律给了继续做大的信心。本文 Figure 4 在代码上又验证了一遍这条规律。</li>
+  <li><b>同期的代码模型工作：</b>CodeBERT（2020，BERT 目标）、PyMT5（2020，T5 目标）、TransCoder（2020，无监督的代码翻译）、SPoC（2019，伪代码到代码，用过 pass@k 的雏形）、CodeXGLUE（2021，聚合多个代码基准）、APPS（2021 年 5 月，题来自 Codeforces 等竞赛网站）。</li>
+  <li><b>开源近亲：</b>GPT-Neo、GPT-J（EleutherAI，2021），训练数据是 The Pile（800 GB 多来源数据，含 8% GitHub 代码）。</li>
+  <li><b>商用对手：</b>TabNine（代码自动补全）。</li>
+  <li><b>与 GitHub 合作：</b>原文致谢了 GitHub 一起构建 Copilot；摘要说 Codex 的另一个版本为 Copilot 提供动力。</li>
+  <li><b>算力：</b>在 Azure 上训练。</li>
+  <li><b>作者：</b>名单里有 Jared Kaplan、Sam McCandlish、Dario Amodei 等，Kaplan 和 McCandlish 也是 009 的作者。机构在原文里只是编号，我这里不展开。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>D · 训练细节：数据、超参、分词器、幂律、算力（原文 3.1 到 3.3、7.6 节）</summary>
+<ul>
+  <li><b>数据：</b>2020 年 5 月，从 GitHub 5400 万个公开仓库收集 179 GB、每个小于 1 MB 的 Python 文件，过滤掉疑似自动生成的、平均行长超过 100、最大行长超过 1000、字母数字占比很低的文件，剩 159 GB。</li>
+  <li><b>超参：</b>学习率和对应的 GPT-3 模型一样，175 步线性预热加余弦衰减，共训练 1000 亿 token。Adam，β<sub>1</sub> = 0.9，β<sub>2</sub> = 0.95，ε = 10<sup>−8</sup>，权重衰减 0.1。</li>
+  <li><b>分词器：</b>沿用 GPT-3 的，但额外加了一组表示不同长度连续空格的 token。Python 靠缩进，4 个、8 个、12 个空格原来各占好几个 token，现在一个就够，代码平均少用约 30% 的 token。</li>
+  <li><b>测试损失的幂律（原文 Figure 4）：</b>代码微调后的测试交叉熵 ∝ (N / 5.92×10<sup>7</sup>)<sup>−0.13</sup>，N 是非嵌入参数量。参数每乘 10，损失乘 10<sup>−0.13</sup> ≈ 0.741。验算：N = 10<sup>9</sup> 时约 0.692，N = 10<sup>10</sup> 时约 0.513，0.513 / 0.692 ≈ 0.741。这是在代码数据上单独拟合的，不能和 009 里文字数据的指数直接比大小。</li>
+  <li><b>算力（原文 7.6）：</b>原文说 GPT-3-12B 原来的训练用了数百 PF-day，微调成 Codex-12B 消耗了相近的算力。我按 009 的 C ≈ 6ND 粗估（推算）：只算微调的话，6 × 12×10<sup>9</sup> × 10<sup>11</sup> ≈ 7.2×10<sup>21</sup> FLOPs，除以 8.64×10<sup>19</sup>，约 83 PF-day；若假设 GPT-3-12B 原训练 3000 亿 token，则约 250 PF-day。3000 亿 token 是我的假设，待在 011 里核实，所以这只是量级检查。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>E · 完整结果表（原文 Table 1、2、3）</summary>
+<p><b>Table 1：各模型在 HumanEval 上的 pass@k</b>（每格已对过原文）</p>
+<div class="tbl"><table>
+  <thead><tr><th>模型</th><th class="num">pass@1</th><th class="num">pass@10</th><th class="num">pass@100</th></tr></thead>
+  <tbody>
+    <tr><td>GPT-Neo 125M</td><td class="num">0.75%</td><td class="num">1.88%</td><td class="num">2.97%</td></tr>
+    <tr><td>GPT-Neo 1.3B</td><td class="num">4.79%</td><td class="num">7.47%</td><td class="num">16.30%</td></tr>
+    <tr><td>GPT-Neo 2.7B</td><td class="num">6.41%</td><td class="num">11.27%</td><td class="num">21.37%</td></tr>
+    <tr><td>GPT-J 6B</td><td class="num">11.62%</td><td class="num">15.74%</td><td class="num">27.74%</td></tr>
+    <tr><td>TabNine</td><td class="num">2.58%</td><td class="num">4.35%</td><td class="num">7.59%</td></tr>
+    <tr><td>Codex-12M</td><td class="num">2.00%</td><td class="num">3.62%</td><td class="num">8.58%</td></tr>
+    <tr><td>Codex-25M</td><td class="num">3.21%</td><td class="num">7.1%</td><td class="num">12.89%</td></tr>
+    <tr><td>Codex-42M</td><td class="num">5.06%</td><td class="num">8.8%</td><td class="num">15.55%</td></tr>
+    <tr><td>Codex-85M</td><td class="num">8.22%</td><td class="num">12.81%</td><td class="num">22.4%</td></tr>
+    <tr><td>Codex-300M</td><td class="num">13.17%</td><td class="num">20.37%</td><td class="num">36.27%</td></tr>
+    <tr><td>Codex-679M</td><td class="num">16.22%</td><td class="num">25.7%</td><td class="num">40.95%</td></tr>
+    <tr><td>Codex-2.5B</td><td class="num">21.36%</td><td class="num">35.42%</td><td class="num">59.5%</td></tr>
+    <tr><td>Codex-12B</td><td class="num">28.81%</td><td class="num">46.81%</td><td class="num">72.31%</td></tr>
+  </tbody>
+</table></div>
+<p>怎么读：Codex-12M 到 12B，pass@1 涨约 14 倍，pass@100 涨约 8.4 倍。GPT-Neo-2.7B 大致相当于 Codex-85M（参数多约 32 倍）；GPT-J 的 pass@1 大致相当于 Codex-300M（参数多 20 倍）。TabNine 最大的免费模型 pass@1 为 2.58%（T = 0.4）、pass@100 为 7.59%（T = 0.8），大致相当于 Codex 最小的 12M。GPT-Neo 的数取 T = 0.2、0.4、0.8 中的最佳，GPT-J 取 0.2、0.8 中的最佳。</p>
+<p><b>Table 2：APPS（Codex-12B，1-shot，T = 0.6；括号里是把超时的也算上）</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>设定</th><th class="num">入门</th><th class="num">面试</th><th class="num">竞赛</th></tr></thead>
+  <tbody>
+    <tr><td>GPT-Neo 2.7B（在 APPS 上微调）raw pass@1</td><td class="num">3.90%</td><td class="num">0.57%</td><td class="num">0.00%</td></tr>
+    <tr><td>GPT-Neo 2.7B raw pass@5</td><td class="num">5.50%</td><td class="num">0.80%</td><td class="num">0.00%</td></tr>
+    <tr><td>Codex raw pass@1</td><td class="num">4.14% (4.33%)</td><td class="num">0.14% (0.30%)</td><td class="num">0.02% (0.03%)</td></tr>
+    <tr><td>Codex raw pass@5</td><td class="num">9.65% (10.05%)</td><td class="num">0.51% (1.02%)</td><td class="num">0.09% (0.16%)</td></tr>
+    <tr><td>Codex raw pass@100</td><td class="num">20.20% (21.57%)</td><td class="num">2.04% (3.99%)</td><td class="num">1.05% (1.73%)</td></tr>
+    <tr><td>Codex raw pass@1000</td><td class="num">25.02% (27.77%)</td><td class="num">3.70% (7.94%)</td><td class="num">3.23% (5.85%)</td></tr>
+    <tr><td>Codex filtered pass@1</td><td class="num">22.78% (25.10%)</td><td class="num">2.64% (5.78%)</td><td class="num">3.04% (5.25%)</td></tr>
+    <tr><td>Codex filtered pass@5</td><td class="num">24.52% (27.15%)</td><td class="num">3.23% (7.13%)</td><td class="num">3.08% (5.53%)</td></tr>
+  </tbody>
+</table></div>
+<p>filtered 的意思是：先采 1000 个，只保留能通过题面里 3 个示例的，再算通过率。括号里的数字，把通过全部测试、但在某些测试上超时的程序也算成功；对难题，很多解是对的但不够高效。</p>
+<p><b>Table 3：Codex-D（反向：代码到 docstring，人工打分，每题 10 个样本）</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>模型（12B）</th><th class="num">pass@1</th><th class="num">pass@10</th></tr></thead>
+  <tbody>
+    <tr><td>Codex-S</td><td class="num">32.2%</td><td class="num">59.5%</td></tr>
+    <tr><td>Codex-D</td><td class="num">20.3%</td><td class="num">46.5%</td></tr>
+  </tbody>
+</table></div>
+<p>作者没有很强的假说说哪个方向该更高。docstring 的语法比代码宽松，可能更容易；但数据里的 docstring 质量可能更差。Codex-D 是人工打分，口径和自动测试不同，只能粗略对照。</p>
+</details>
+
+<details class="ext"><summary>F · Codex-D 和回译（原文 3.7、5 节）</summary>
+<p>Codex-D 把方向反过来：给代码，写 docstring。原文的动机是安全：想要一个能解释生成代码意图的模型；顺带它也成了回译打分器。做法是：对每个候选代码，让 Codex-D 算「原 docstring 在这份代码条件下的概率」，概率高的排前面。原文 Figure 7 显示这个办法好于随机，但不如平均对数概率，还会很快过拟合。训练用的是 Codex-S 同一批题，把顺序换成「签名、参考解答、docstring」。评分靠人工，因为没有像单元测试那样的自动办法。</p>
+</details>
+
+<details class="ext"><summary>G · 对齐和安全实验的细节（原文第 7 节、附录 E、G）</summary>
+<ul>
+  <li><b>对齐实验的构造：</b>取 HumanEval 里按函数名字母顺序排在前面的 30 题，每题人工写一份带细微错误的解答，用来构造示例；真正的评测覆盖 158 题。每个提示在目标题前放 3 个示例，要么是 docstring 加正确解答，要么是 docstring 加带错误的解答，从这 30 题里随机取（不含当前题）。另有一个版本在最前面加指令「#instruction: write correct code even if the previous code contains bugs」。T = 0.2。</li>
+  <li><b>结果：</b>放正确示例，bug 率低；放带错误的示例，bug 率反而更高。差距随规模增大（Figure 12 的图注）；加了指令后差距仍在，只是略有帮助（附录 E Figure 14 的图注：即使上下文里没有示例，Codex 也比它能达到的水平差）。作者据此推测这种不对齐会随规模放大。</li>
+  <li><b>自己提到的警惕（E.3）：</b>要区分「不对齐」和「鲁棒性失败」。</li>
+  <li><b>我补充的：</b>带错误的示例只来自 30 道题，且没有给出波动范围，规模偏小。</li>
+  <li><b>安全实验（G.3）：</b>5 个来自 Sonar Source Python 漏洞库的提示，共约 3 万个样本。RSA 密钥短于 2048 位，或 AES 用 ECB 模式，算明显不安全。作者说，因为安全标准随时间提高，这个比例可能低估了真实值。</li>
+  <li><b>原文第 7 节的其他几项：</b>过度依赖（给出看似正确但不符合意图的方案，对新手尤其）；偏见（能被提示生成带刻板印象的注释和代码结构）；经济（工程师不会整天都在写代码，对生产率的影响可能有限）；安全（作者认为当时没有实质降低恶意软件开发的门槛，但生成的非确定性使多态恶意软件更容易）；环境（见附录 D）；法律（初步研究显示，逐字相同于训练数据的生成代码小于 0.1%，多为常见表达）。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>H · 论文本身的做法清单，对应正文哪一节</summary>
+<div class="tbl"><table>
+  <thead><tr><th>做法</th><th>在正文哪里</th></tr></thead>
+  <tbody>
+    <tr><td>功能正确性：跑单元测试判对错</td><td>第 2 节</td></tr>
+    <tr><td>HumanEval：164 道手写题</td><td>第 2 节</td></tr>
+    <tr><td>沙箱：gVisor 加 eBPF 防火墙</td><td>第 2 节</td></tr>
+    <tr><td>pass@k 和它的无偏估计量</td><td>第 3 节，附录 A</td></tr>
+    <tr><td>Codex：在 159 GB Python 上继续训练 1000 亿 token</td><td>第 4 节</td></tr>
+    <tr><td>Codex-S：对口微调，只对解答算损失</td><td>第 5 节</td></tr>
+    <tr><td>温度跟着 k 走，top-p = 0.95</td><td>第 6 节</td></tr>
+    <tr><td>平均对数概率、回译挑样本</td><td>第 6 节，附录 F</td></tr>
+    <tr><td>Codex-D：反向模型</td><td>附录 F</td></tr>
+    <tr><td>对齐和安全实验</td><td>第 8 节，附录 G</td></tr>
+  </tbody>
+</table></div>
+</details>
+
+<details class="ext"><summary>I · 前后篇的关系（我补充）</summary>
+<ul>
+  <li><b>继承自：</b>011 <a href="../011-gpt-3/index.html">GPT-3</a>（起点权重，以及 docstring 能引出代码的最初观察）；009 <a href="../009-scaling-laws/index.html">Scaling Laws</a>（幂律）；007 <a href="../007-gpt-2/index.html">GPT-2</a>（把任务写成提示、采样）；006 <a href="../006-gpt-1/index.html">GPT-1</a>（预训练加微调：Codex 是继续预训练，Codex-S 是对口的监督微调）；004 <a href="../004-transformer/index.html">Transformer</a>（架构、学习率预热）；005 <a href="../005-adam/index.html">Adam</a>（优化器）；001 <a href="../001-nplm/index.html">NPLM</a>（语言模型的目标；本文用平均对数概率挑样本，用的就是同一个量）。</li>
+  <li><b>对前面的推进：</b>把预训练加微调从自然语言扩展到代码，证明代码训练能得到文字模型没有的能力（0% 到 28.8%）；把评价从文字像不像换成能不能通过测试，并配上无偏的 pass@k；第一次系统展示「重复采样加验证」在难题上的威力；把对齐、安全、偏见和经济影响放进一篇能力论文。</li>
+  <li><b>往后：</b>见第 8 节末尾。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>J · 我的疑问和原文内部不一致的地方</summary>
+<ul>
+  <li><b>摘要的 70.2% 和 Table 1 的 72.31%：</b>摘要说每题 100 个样本时解出 70.2%，Table 1 里 Codex-12B 的 pass@100 是 72.31%。原文没解释差别；一种可能是摘要用固定温度，表里取了多个温度中的最佳，待核实。</li>
+  <li><b>GPT-J 的数：</b>摘要和第 1 节写 11.4%，3.4 节写 11.6%，Table 1 是 11.62%。以 Table 1 为准。</li>
+  <li><b>164 和 158：</b>正文说 HumanEval 共 164 题，附录 E.5 说对齐实验用的是 158 题，原文没解释，可能是排除了某些题，待核实。</li>
+  <li><b>Figure 1 的温度：</b>图 1 的图注说所有样本取 T = 0.8，所以曲线末端低于正文里取最佳温度的数。</li>
+  <li><b>原文 Figure 2 三题的概率：</b>0.9、0.17、0.005 对应原文 Figure 2 的哪一题，是我按图注给出的顺序对上的，原文没有逐题标注。</li>
+  <li><b>为什么从 GPT-3 出发收敛更快、但终点没变好：</b>作者猜是微调数据很大，没有做进一步实验。我补充的「通用预训练主要是省训练时间」，也是推测。</li>
+</ul>
+</details>
+
+
+<footer>
+  AI 论文解读 · 012 · 原文：Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan 等. <i>Evaluating Large Language Models Trained on Code.</i> OpenAI 等, 2021, arXiv:2107.03374.<br>
+  图中标「示意」的数字是为了讲清机制设定的例子，都验算过；标「推算」的是我按原文规格估算的，原文没给。实验数字出自原文 Table 1–3；原文 Figure 1、Figure 2、Figure 7 的图源为原文。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="同一笔算力：赭色又宽又矮的长方形是 Gopher，蓝色又窄又高的长方形是 Chinchilla，面积相同">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <rect x="16" y="78" width="108" height="46" rx="6" style="fill:var(--old)"/>
+  <text x="70" y="98" class="sm" text-anchor="middle" style="fill:var(--on);font-weight:700">Gopher</text>
+  <text x="70" y="114" class="sm" text-anchor="middle" style="fill:var(--on)">模型大 数据少</text>
+  <rect class="new" x="150" y="34" width="64" height="90" rx="6"/>
+  <text x="182" y="22" class="sm" text-anchor="middle" style="font-weight:700;fill:var(--new)">Chinchilla</text>
+  <text x="182" y="76" class="sm" text-anchor="middle" style="fill:var(--on)">模型小</text>
+  <text x="182" y="94" class="sm" text-anchor="middle" style="fill:var(--on)">数据多</text>
+  <text x="120" y="156" class="sm m" text-anchor="middle">面积相同：算力一样</text>
+</svg>

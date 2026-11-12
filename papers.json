@@ -11,27 +11,223 @@
     ]
   },
   "papers": [
-    {"id": "001", "slug": "001-nplm", "short": "NPLM", "title": "A Neural Probabilistic Language Model", "year": 2003, "authors": "Bengio 等", "oneliner": "给每个词一个坐标，再用平滑的函数猜下一个词。", "status": "published", "date": "2026-11-06"},
-    {"id": "002", "slug": "002-seq2seq", "short": "Seq2Seq", "title": "Sequence to Sequence Learning with Neural Networks", "year": 2014, "authors": "Sutskever 等", "oneliner": "先把整句读成一个向量，再从这个向量写出译文。", "status": "published", "date": "2026-11-07"},
-    {"id": "003", "slug": "003-bahdanau-attention", "short": "Bahdanau Attention", "title": "Neural Machine Translation by Jointly Learning to Align and Translate", "year": 2014, "authors": "Bahdanau 等", "oneliner": "写每个词时，都回头去看原文里最相关的那几个词。", "status": "published", "date": "2026-11-07"},
-    {"id": "004", "slug": "004-transformer", "short": "Transformer", "title": "Attention Is All You Need", "year": 2017, "authors": "Vaswani 等", "oneliner": "不要 RNN，让每个词直接看所有词，整句同时算完。", "status": "published", "date": "2026-11-09"},
-    {"id": "005", "slug": "005-adam", "short": "Adam", "title": "Adam: A Method for Stochastic Optimization", "year": 2014, "authors": "Kingma, Ba", "oneliner": "给每个参数各配一个步长：方向取近期梯度的平均，步子按梯度大小自动缩放。", "status": "published", "date": "2026-11-10"},
-    {"id": "006", "slug": "006-gpt-1", "short": "GPT-1", "title": "Improving Language Understanding by Generative Pre-Training", "year": 2018, "authors": "Radford 等", "oneliner": "先在大量没标注的书上练「猜下一个词」，再用很少的标注把同一个模型微调到各个任务。", "status": "published", "date": "2026-11-11"},
-    {"id": "007", "slug": "007-gpt-2", "short": "GPT-2", "title": "Language Models are Unsupervised Multitask Learners", "year": 2019, "authors": "Radford 等", "oneliner": "读够杂的网页，不教任何任务，模型就能接着前文做摘要和翻译。", "status": "published", "date": "2026-11-11"},
-    {"id": "008", "slug": "008-bert", "short": "BERT", "title": "BERT: Pre-training of Deep Bidirectional Transformers", "year": 2018, "authors": "Devlin 等", "oneliner": "", "status": "planned"},
-    {"id": "009", "slug": "009-scaling-laws", "short": "Scaling Laws", "title": "Scaling Laws for Neural Language Models", "year": 2020, "authors": "Kaplan 等", "oneliner": "", "status": "planned"},
-    {"id": "010", "slug": "010-chinchilla", "short": "Chinchilla", "title": "Training Compute-Optimal Large Language Models", "year": 2022, "authors": "Hoffmann 等", "oneliner": "", "status": "planned"},
-    {"id": "011", "slug": "011-gpt-3", "short": "GPT-3", "title": "Language Models are Few-Shot Learners", "year": 2020, "authors": "Brown 等", "oneliner": "", "status": "planned"},
-    {"id": "012", "slug": "012-codex", "short": "Codex", "title": "Evaluating Large Language Models Trained on Code", "year": 2021, "authors": "Chen 等", "oneliner": "", "status": "planned"},
-    {"id": "013", "slug": "013-rag", "short": "RAG", "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks", "year": 2020, "authors": "Lewis 等", "oneliner": "", "status": "planned"},
-    {"id": "014", "slug": "014-lora", "short": "LoRA", "title": "LoRA: Low-Rank Adaptation of Large Language Models", "year": 2021, "authors": "Hu 等", "oneliner": "", "status": "planned"},
-    {"id": "015", "slug": "015-human-preferences", "short": "RLHF 起源", "title": "Deep Reinforcement Learning from Human Preferences", "year": 2017, "authors": "Christiano 等", "oneliner": "", "status": "planned"},
-    {"id": "016", "slug": "016-ppo", "short": "PPO", "title": "Proximal Policy Optimization Algorithms", "year": 2017, "authors": "Schulman 等", "oneliner": "", "status": "planned"},
-    {"id": "017", "slug": "017-alignment-lab", "short": "Alignment Laboratory", "title": "A General Language Assistant as a Laboratory for Alignment", "year": 2021, "authors": "Askell 等", "oneliner": "", "status": "planned"},
-    {"id": "018", "slug": "018-instructgpt", "short": "InstructGPT", "title": "Training Language Models to Follow Instructions with Human Feedback", "year": 2022, "authors": "Ouyang 等", "oneliner": "", "status": "planned"}
+    {
+      "id": "001",
+      "slug": "001-nplm",
+      "short": "NPLM",
+      "title": "A Neural Probabilistic Language Model",
+      "year": 2003,
+      "authors": "Bengio 等",
+      "oneliner": "给每个词一个坐标，再用平滑的函数猜下一个词。",
+      "status": "published",
+      "date": "2026-11-06"
+    },
+    {
+      "id": "002",
+      "slug": "002-seq2seq",
+      "short": "Seq2Seq",
+      "title": "Sequence to Sequence Learning with Neural Networks",
+      "year": 2014,
+      "authors": "Sutskever 等",
+      "oneliner": "先把整句读成一个向量，再从这个向量写出译文。",
+      "status": "published",
+      "date": "2026-11-07"
+    },
+    {
+      "id": "003",
+      "slug": "003-bahdanau-attention",
+      "short": "Bahdanau Attention",
+      "title": "Neural Machine Translation by Jointly Learning to Align and Translate",
+      "year": 2014,
+      "authors": "Bahdanau 等",
+      "oneliner": "写每个词时，都回头去看原文里最相关的那几个词。",
+      "status": "published",
+      "date": "2026-11-07"
+    },
+    {
+      "id": "004",
+      "slug": "004-transformer",
+      "short": "Transformer",
+      "title": "Attention Is All You Need",
+      "year": 2017,
+      "authors": "Vaswani 等",
+      "oneliner": "不要 RNN，让每个词直接看所有词，整句同时算完。",
+      "status": "published",
+      "date": "2026-11-09"
+    },
+    {
+      "id": "005",
+      "slug": "005-adam",
+      "short": "Adam",
+      "title": "Adam: A Method for Stochastic Optimization",
+      "year": 2014,
+      "authors": "Kingma, Ba",
+      "oneliner": "给每个参数各配一个步长：方向取近期梯度的平均，步子按梯度大小自动缩放。",
+      "status": "published",
+      "date": "2026-11-10"
+    },
+    {
+      "id": "006",
+      "slug": "006-gpt-1",
+      "short": "GPT-1",
+      "title": "Improving Language Understanding by Generative Pre-Training",
+      "year": 2018,
+      "authors": "Radford 等",
+      "oneliner": "先在大量没标注的书上练「猜下一个词」，再用很少的标注把同一个模型微调到各个任务。",
+      "status": "published",
+      "date": "2026-11-11"
+    },
+    {
+      "id": "007",
+      "slug": "007-gpt-2",
+      "short": "GPT-2",
+      "title": "Language Models are Unsupervised Multitask Learners",
+      "year": 2019,
+      "authors": "Radford 等",
+      "oneliner": "读够杂的网页，不教任何任务，模型就能接着前文做摘要和翻译。",
+      "status": "published",
+      "date": "2026-11-11"
+    },
+    {
+      "id": "008",
+      "slug": "008-bert",
+      "short": "BERT",
+      "title": "BERT: Pre-training of Deep Bidirectional Transformers",
+      "year": 2018,
+      "authors": "Devlin 等",
+      "oneliner": "盖住句子里的一个词，让模型看着左右两边把它填回来。",
+      "status": "published",
+      "date": "2026-11-12"
+    },
+    {
+      "id": "009",
+      "slug": "009-scaling-laws",
+      "short": "Scaling Laws",
+      "title": "Scaling Laws for Neural Language Models",
+      "year": 2020,
+      "authors": "Kaplan 等",
+      "oneliner": "把规模和损失画在双对数图上，是一条直线，再按直线分算力。",
+      "status": "published",
+      "date": "2026-11-12"
+    },
+    {
+      "id": "010",
+      "slug": "010-chinchilla",
+      "short": "Chinchilla",
+      "title": "Training Compute-Optimal Large Language Models",
+      "year": 2022,
+      "authors": "Hoffmann 等",
+      "oneliner": "算力固定时，模型和数据该一起等比例放大：小一点的模型多读数据，反而更强。",
+      "status": "published",
+      "date": "2026-11-12"
+    },
+    {
+      "id": "011",
+      "slug": "011-gpt-3",
+      "short": "GPT-3",
+      "title": "Language Models are Few-Shot Learners",
+      "year": 2020,
+      "authors": "Brown 等",
+      "oneliner": "不改模型的任何参数，只在输入里写几个例子，模型就看懂要做什么。",
+      "status": "published",
+      "date": "2026-11-12"
+    },
+    {
+      "id": "012",
+      "slug": "012-codex",
+      "short": "Codex",
+      "title": "Evaluating Large Language Models Trained on Code",
+      "year": 2021,
+      "authors": "Chen 等",
+      "oneliner": "先让模型写代码，再真的跑一遍测试，每题多写几个，只要有一个能过就算解出。",
+      "status": "published",
+      "date": "2026-11-12"
+    },
+    {
+      "id": "013",
+      "slug": "013-rag",
+      "short": "RAG",
+      "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "year": 2020,
+      "authors": "Lewis 等",
+      "oneliner": "回答之前先翻一本能换的书，查到相关段落再写答案，查书和写答案一起学。",
+      "status": "published",
+      "date": "2026-11-12"
+    },
+    {
+      "id": "014",
+      "slug": "014-lora",
+      "short": "LoRA",
+      "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+      "year": 2021,
+      "authors": "Hu 等",
+      "oneliner": "原模型一个数都不动，只训练旁边一小块低秩的改动，训完加回去。",
+      "status": "published",
+      "date": "2026-11-12"
+    },
+    {
+      "id": "015",
+      "slug": "015-human-preferences",
+      "short": "RLHF 起源",
+      "title": "Deep Reinforcement Learning from Human Preferences",
+      "year": 2017,
+      "authors": "Christiano 等",
+      "oneliner": "不写奖励，只让人比较两段视频哪段更好，再让机器照着学出来的分数练。",
+      "status": "published",
+      "date": "2026-11-12"
+    },
+    {
+      "id": "016",
+      "slug": "016-ppo",
+      "short": "PPO",
+      "title": "Proximal Policy Optimization Algorithms",
+      "year": 2017,
+      "authors": "Schulman 等",
+      "oneliner": "同一批数据多学几轮，但谁改得太多，就不再给他加分。",
+      "status": "published",
+      "date": "2026-11-12"
+    },
+    {
+      "id": "017",
+      "slug": "017-alignment-lab",
+      "short": "Alignment Laboratory",
+      "title": "A General Language Assistant as a Laboratory for Alignment",
+      "year": 2021,
+      "authors": "Askell 等",
+      "oneliner": "先用提示词试最便宜的办法，再教模型给回答打分，用公开数据预训练还能省下人工标注。",
+      "status": "published",
+      "date": "2026-11-12"
+    },
+    {
+      "id": "018",
+      "slug": "018-instructgpt",
+      "short": "InstructGPT",
+      "title": "Training Language Models to Follow Instructions with Human Feedback",
+      "year": 2022,
+      "authors": "Ouyang 等",
+      "oneliner": "先让人写示范、再让人排序训练打分器，用分数把只会续写的模型调成听话的助手。",
+      "status": "published",
+      "date": "2026-11-12"
+    }
   ],
   "specials": [
-    {"slug": "transformer", "short": "Transformer 特辑", "covers": "跨篇 · 001–018", "title": "一个架构，撑起了后面所有的模型", "oneliner": "一层 = 开会交流 + 回工位消化。三种形态只差掩码，后面的论文几乎不再改它。", "status": "published", "date": "2026-11-10"},
-    {"slug": "benchmarks", "short": "评测特辑", "covers": "主题特辑 · 论文 + 公开资料", "title": "每张考卷都会被考穿，新卷越来越像真实工作", "oneliner": "每张考卷都会被刷满、漏题、被专门冲分；新卷越来越难，判分越来越看结果对不对。", "status": "published", "date": "2026-11-11"}
+    {
+      "slug": "transformer",
+      "short": "Transformer 特辑",
+      "covers": "跨篇 · 001–018",
+      "title": "一个架构，撑起了后面所有的模型",
+      "oneliner": "一层 = 开会交流 + 回工位消化。三种形态只差掩码，后面的论文几乎不再改它。",
+      "status": "published",
+      "date": "2026-11-10"
+    },
+    {
+      "slug": "benchmarks",
+      "short": "评测特辑",
+      "covers": "主题特辑 · 论文 + 公开资料",
+      "title": "每张考卷都会被考穿，新卷越来越像真实工作",
+      "oneliner": "每张考卷都会被刷满、漏题、被专门冲分；新卷越来越难，判分越来越看结果对不对。",
+      "status": "published",
+      "date": "2026-11-11"
+    }
   ]
 }

@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>缩放定律 图解</title>
+<meta name="description" content="Kaplan 等 2020《Scaling Laws for Neural Language Models》图解：测试损失随参数量、数据量、算力都是平滑的幂律，在双对数图里是直线；用它算一笔算力该怎么分给模型和数据。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文的做法（把规模和损失量成公式，按公式分预算），赭 = 要被替代的旧做法（凭经验拍板、训到收敛）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;min-width:520px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th:first-child,td:first-child{white-space:nowrap}
+th:first-child,td:first-child{padding-right:20px}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+<main class="wrap">
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　009</nav>
+  <h1 style="margin-top:14px">把「越大越好」量成一条直线</h1>
+  <p class="lede">Kaplan 等人 2020 年在 OpenAI 写的《Scaling Laws for Neural Language Models》。他们训练了上百个大小、数据量、训练时长各不相同的 Transformer，发现测试损失随参数量、数据量、算力都是平滑的幂律，在双对数图里是直线。<b>这条直线准到可以在花钱之前算出：一笔算力，该分多少给模型、多少给数据。</b>结论有点反直觉：算力多了，主要用来把模型做大，数据只需缓慢增加，训练也不必跑到收敛。</p>
+  <div class="meta">
+    <span>Jared Kaplan、Sam McCandlish、Tom Henighan、Tom B. Brown、Benjamin Chess、Rewon Child、Scott Gray、Alec Radford、Jeffrey Wu、Dario Amodei（OpenAI；第一作者同时挂 Johns Hopkins University）· 2020 年</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的做法（把规模和损失量成公式，按公式分预算）</span>
+    <span class="key"><i class="sw o"></i>赭色：要被替代的旧做法（凭经验拍板、训到收敛）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · 全篇一张图：测出三条直线，再算出钱怎么分</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 236" role="img" aria-label="四列依次连接。第一列三个方框：参数量 N，768 到 15 亿；数据量 D，2200 万到 230 亿 token；算力 C 约等于 6ND。第二列：训练上百个模型，每次只让一个量当瓶颈，测测试损失 L。第三列：三条直线，在双对数坐标里，跨 6 到 7 个数量级。第四列：算力乘 10，模型约乘 5，数据约乘 2，串行步数几乎不变。底部一条赭色横幅：旧做法是模型多大、数据多少、训多久都凭经验，默认训到收敛。">
+      <rect class="softS" x="20" y="14" width="140" height="46" rx="8"/>
+      <text class="b" x="90" y="34" text-anchor="middle">参数量 N</text><text class="sm m" x="90" y="51" text-anchor="middle">768 ~ 15 亿</text>
+      <rect class="softS" x="20" y="72" width="140" height="46" rx="8"/>
+      <text class="b" x="90" y="92" text-anchor="middle">数据量 D</text><text class="sm m" x="90" y="109" text-anchor="middle">2200 万 ~ 230 亿 token</text>
+      <rect class="softS" x="20" y="130" width="140" height="46" rx="8"/>
+      <text class="b" x="90" y="150" text-anchor="middle">算力 C</text><text class="sm m mo" x="90" y="167" text-anchor="middle">C ≈ 6 N D</text>
+      <path class="ln" d="M160 37 H172 M160 95 H172 M160 153 H172 M172 37 V153"/>
+      <line class="mutS" x1="172" y1="95" x2="198" y2="95" marker-end="url(#ah)"/>
+      <rect class="newT" x="200" y="40" width="140" height="110" rx="8"/>
+      <text class="b tn" x="270" y="70" text-anchor="middle">上百个模型</text>
+      <text class="sm" x="270" y="92" text-anchor="middle">每次只让一个量</text>
+      <text class="sm" x="270" y="110" text-anchor="middle">当瓶颈</text>
+      <text class="sm" x="270" y="132" text-anchor="middle">测测试损失 L</text>
+      <line class="mutS" x1="342" y1="95" x2="368" y2="95" marker-end="url(#ah)"/>
+      <rect class="new" x="370" y="40" width="140" height="110" rx="8"/>
+      <text class="b on" x="440" y="70" text-anchor="middle">三条直线</text>
+      <text class="sm on" x="440" y="92" text-anchor="middle">双对数坐标里</text>
+      <text class="sm on" x="440" y="110" text-anchor="middle">L 对 N、D、C</text>
+      <text class="sm on" x="440" y="132" text-anchor="middle">跨 6 ~ 7 个数量级</text>
+      <line class="mutS" x1="512" y1="95" x2="538" y2="95" marker-end="url(#ah)"/>
+      <rect class="newT" x="540" y="22" width="124" height="146" rx="8"/>
+      <text class="b tn" x="602" y="48" text-anchor="middle">算力 ×10</text>
+      <text class="sm" x="602" y="76" text-anchor="middle">模型约 ×5</text>
+      <text class="sm" x="602" y="98" text-anchor="middle">数据约 ×2</text>
+      <text class="sm" x="602" y="120" text-anchor="middle">串行步数</text>
+      <text class="sm" x="602" y="138" text-anchor="middle">几乎不变</text>
+      <text class="sm m" x="602" y="158" text-anchor="middle">（训练远未收敛）</text>
+      <rect class="oldT" x="20" y="190" width="644" height="34" rx="8"/>
+      <text class="to" x="34" y="212">旧做法：模型多大、数据多少、训多久，都凭经验；默认训到收敛。</text>
+    </svg>
+    </div>
+    <figcaption>左边三个量由 C ≈ 6ND 绑在一起；中间是实验与拟合，右边是从拟合推出的分配。范围数字出自原文第 3 节，分配的指数出自原文第 6 节。</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>要解决的问题</a>
+    <a href="#s2"><span>2</span>做法：一次只让一个量当瓶颈</a>
+    <a href="#s3"><span>3</span>第一步：先把干扰剥掉</a>
+    <a href="#s4"><span>4</span>第二步：损失对规模是三条直线</a>
+    <a href="#s5"><span>5</span>第三步：模型和数据怎么配套</a>
+    <a href="#s6"><span>6</span>第四步：训练多久</a>
+    <a href="#s7"><span>7</span>第五步：一笔算力怎么分</a>
+    <a href="#s8"><span>8</span>证据：这些结论有多牢</a>
+    <a href="#s9"><span>9</span>局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>正文只走一条线</b>：花钱之前说不清怎么分 → 怎么测 → 剥掉干扰 → 三条直线 → 模型和数据配套 → 训练多久 → 算力怎么分 → 证据 → 局限。这篇没有「和别人比分数」的结果表，结果就是图和拟合出来的公式，所以每一步的证据直接跟在那一步后面。</li>
+      <li>公式、符号表、概念注解（幂律、非嵌入参数、C ≈ 6ND、临界批量等）、完整数字表、相关工作和当时背景，都在页尾<b>附录</b>里，默认折叠，标明对应原文第几节。</li>
+      <li>小数字例子都验算过：为讲解设定的标「示意」，我按原文参数代入算的标「推算」。</li>
+      <li>这一篇不发明新模型，研究对象是 004 <a href="../004-transformer/index.html">Transformer</a>（只用解码器那半，GPT 路线见 006 <a href="../006-gpt-1/index.html">GPT-1</a>、007 <a href="../007-gpt-2/index.html">GPT-2</a>）。损失是交叉熵，001 <a href="../001-nplm/index.html">NPLM</a> 讲过；训练用 005 <a href="../005-adam/index.html">Adam</a>。后来的发展见 010 <a href="../010-chinchilla/index.html">Chinchilla</a>、011 <a href="../011-gpt-3/index.html">GPT-3</a>。</li>
+    </ul>
+  </div>
+</header>
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>要解决的问题：花钱之前，没人说得清怎么分</h2>
+<p>到 2019 年，语言模型一个比一个大：GPT-1、BERT、GPT-2（15 亿参数）。但每次放大，都要先拍几个板：模型多宽多深，用多少数据，训多久，批量和学习率多大。每个都靠经验，各篇论文各说各话。</p>
+<p>这几件事还互相牵制。训练的总算力约等于 6 × 参数量 N × 数据量 D（C ≈ 6ND，推导见附录 B）。预算固定时，模型取大，数据就只能少；反过来也一样。</p>
+<figure class="fig">
+  <span class="tag">图 1 · 同一笔算力，只能在模型和数据之间换</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 250" role="img" aria-label="三个面积相同的长方形。高度代表模型参数量 N，宽度代表数据量 D，面积代表算力。第一个又高又窄：模型大、数据少。第二个居中：折中。第三个又矮又宽：模型小、数据多。">
+    <text class="sm m" x="20" y="20">面积 = 算力（C ≈ 6ND）：三个长方形面积相同，是同一笔钱的三种花法（示意）</text>
+    <path class="ln" d="M20 200 H660 M20 200 V32"/>
+    <text class="sm m" x="26" y="42">N ↑</text><text class="sm m" x="640" y="194">D →</text>
+    <rect class="oldT" x="50" y="50" width="60" height="150" rx="3"/>
+    <rect class="newT" x="230" y="110" width="100" height="90" rx="3"/>
+    <rect class="oldT" x="420" y="150" width="180" height="50" rx="3"/>
+    <text class="b" x="80" y="220" text-anchor="middle">模型大，数据少</text>
+    <text class="sm m" x="80" y="238" text-anchor="middle">容量够，但看得少</text>
+    <text class="b tn" x="280" y="220" text-anchor="middle">折中</text>
+    <text class="sm m" x="280" y="238" text-anchor="middle">本文要找的就是这一类</text>
+    <text class="b" x="510" y="220" text-anchor="middle">模型小，数据多</text>
+    <text class="sm m" x="510" y="238" text-anchor="middle">看得多，但容量有限</text>
+  </svg>
+  </div>
+  <figcaption>三个长方形的边长是我为讲解设定的（60×150、100×90、180×50，面积都是 9000），不是原文的数。</figcaption>
+</figure>
+<h3>直接的办法，为什么都不行</h3>
+<div class="tbl"><table>
+  <thead><tr><th>直接做法</th><th>行不通的原因</th></tr></thead>
+  <tbody>
+    <tr><td>把候选方案都训一遍</td><td>大模型太贵，试不起；而且想知道的恰恰是还没训的大模型会怎样。</td></tr>
+    <tr><td>只说「越大越好」</td><td>没有数量，没法做预算。大多少值得？线性、对数、还是很快饱和？004 的 Table 3 C 组每个维度只有 2 到 3 个点，看不出曲线形状。</td></tr>
+    <tr><td>每个模型都训到收敛</td><td>当时的默认做法。要发现它浪费算力，必须把训练步数也当变量去测。</td></tr>
+    <tr><td>模型大了，数据按比例加</td><td>要加多少？之前的工作（Hestness 等 2017）说要超线性增长，本文发现只需亚线性。不测就不知道。</td></tr>
+    <tr><td>小模型调好，凭经验放大</td><td>没有公式，放大多少倍、得到多少收益全靠感觉。小模型上调好的批量、学习率放大后也未必还最优。</td></tr>
+  </tbody>
+</table></div>
+<p>训练里还混着干扰：数不数嵌入层的参数，结果就不一样；批量不合适，曲线会偏；没训到收敛的和训到收敛的没法直接比。</p>
+<p>所以需要的是一套<b>从便宜的小实验预测昂贵的大训练</b>的定量规律。它要满足三条：把干扰剥掉；范围足够大，才看得出是不是幂律；几条规律能互相推出，才能回答「怎么分」。后面几步依次做到。</p>
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>做法：一次只让一个量当瓶颈</h2>
+<p>作者没有发明新模型，用的就是只有解码器的 Transformer。他们做的是测量：结构固定，系统地改规模，量出一条曲线。</p>
+<p>固定的是：WebText2 数据集（WebText 的扩充版，多收了 2018 年的 Reddit 外链）、50257 的 BPE 词表、1024 个 token 的上下文。变的是：参数量 N（不含嵌入，768 到 15 亿）、数据量 D（2200 万到 230 亿 token）、形状（层数、宽度、头数、FFN 宽度）、训练步数和批量。测的是测试集上每个 token 的交叉熵损失 L（单位 nat，越低越好）。</p>
+<p>核心做法是<b>一次只让一个量当瓶颈</b>：测 L(N) 时，数据给足、训练到近收敛，排除 D 的影响；测 L(D) 时，模型给足，排除 N 的影响。瓶颈只有一个时，损失就由它单独决定，而且是干净的幂律。</p>
+<figure class="fig">
+  <span class="tag">图 2 · 一次只让一个量当瓶颈，另外两个给足</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 206" role="img" aria-label="三行实验设置。测损失对参数量的关系：参数量变，数据给足，训练到近收敛，得到指数约 0.076。测损失对数据量：模型给足为 36 层宽 1280，数据量变，早停，得到指数约 0.095。测损失对算力：模型取最优大小，数据给足，批量足够小，得到指数约 0.050。蓝色格是这一行里变化的量。">
+<text class="sm m" x="150" y="24" text-anchor="middle">参数量 N</text><text class="sm m" x="298" y="24" text-anchor="middle">数据量 D</text><text class="sm m" x="446" y="24" text-anchor="middle">训练</text><text class="sm m" x="590" y="24" text-anchor="middle">得到的指数</text><text class="b" x="20" y="59">测 L(N)</text><rect class="newT" x="90" y="36" width="120" height="36" rx="6"/><text x="150.0" y="59" text-anchor="middle" class="sm">变</text><rect class="softS" x="238" y="36" width="120" height="36" rx="6"/><text x="298.0" y="59" text-anchor="middle" class="sm">给足</text><rect class="softS" x="386" y="36" width="120" height="36" rx="6"/><text x="446.0" y="59" text-anchor="middle" class="sm">训到近收敛</text><line class="mutS" x1="510" y1="54" x2="534" y2="54" marker-end="url(#ah)"/><text class="mo tn b" x="545" y="59">α<tspan dy="3" style="font-size:9px">N</tspan><tspan dy="-3"> ≈ 0.076</tspan></text><text class="b" x="20" y="111">测 L(D)</text><rect class="softS" x="90" y="88" width="120" height="36" rx="6"/><text x="150.0" y="111" text-anchor="middle" class="sm">给足（36 层，d=1280）</text><rect class="newT" x="238" y="88" width="120" height="36" rx="6"/><text x="298.0" y="111" text-anchor="middle" class="sm">变</text><rect class="softS" x="386" y="88" width="120" height="36" rx="6"/><text x="446.0" y="111" text-anchor="middle" class="sm">早停</text><line class="mutS" x1="510" y1="106" x2="534" y2="106" marker-end="url(#ah)"/><text class="mo tn b" x="545" y="111">α<tspan dy="3" style="font-size:9px">D</tspan><tspan dy="-3"> ≈ 0.095</tspan></text><text class="b" x="20" y="163">测 L(C)</text><rect class="softS" x="90" y="140" width="120" height="36" rx="6"/><text x="150.0" y="163" text-anchor="middle" class="sm">取最优大小</text><rect class="softS" x="238" y="140" width="120" height="36" rx="6"/><text x="298.0" y="163" text-anchor="middle" class="sm">给足</text><rect class="softS" x="386" y="140" width="120" height="36" rx="6"/><text x="446.0" y="163" text-anchor="middle" class="sm">批量足够小</text><line class="mutS" x1="510" y1="158" x2="534" y2="158" marker-end="url(#ah)"/><text class="mo tn b" x="545" y="163">α<tspan dy="3" style="font-size:9px">C</tspan><tspan dy="-3"> ≈ 0.050</tspan></text>
+    <text class="sm m" x="20" y="198">蓝色格 = 这一行里变化的量；其余格是「不当瓶颈」的设置（原文 3.2、3.3 节与 1.2 节）</text>
+  </svg>
+  </div>
+  <figcaption>每一行只让一个量成为瓶颈，损失就由它单独决定。这三个指数不是同一次实验里同时看到的。</figcaption>
+</figure>
+<p>读这篇要记一件事：公式里的常数（N<sub>c</sub>、D<sub>c</sub>、C<sub>c</sub>）依赖词表和分词，没有物理意义，损失的绝对值也不能跨分词器、跨数据集比。有意义的是<b>指数 α</b>，它决定「多一点规模，损失降多少」。</p>
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>第一步：先把干扰剥掉</h2>
+<h3>只数「非嵌入参数」</h3>
+<p>如果把词向量表（嵌入层）也算进模型大小，小模型里它占比很大，大模型里占比很小，参数量就不能代表模型的计算能力。图 3 是一个小例子。</p>
+<figure class="fig">
+  <span class="tag">图 3 · 小模型里，词向量表比所有层加起来还大</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 150" role="img" aria-label="两根横条。上面的灰条是词向量表，50257 乘 128，约 640 万参数。下面的蓝条是 2 层、宽度 128 的 Transformer 的层，约 39 万参数，条长约为上面的十六分之一。">
+    <text class="sm m" x="20" y="20">2 层、宽度 d_model = 128 的小模型（推算）</text>
+    <text class="sm" x="20" y="56">词向量表</text>
+    <rect class="softS" x="130" y="40" width="520" height="24" rx="4"/>
+    <text class="sm mo" x="140" y="57">50257 × 128 ≈ 640 万</text>
+    <text class="sm" x="20" y="106">各层合计</text>
+    <rect class="new" x="130" y="90" width="31.8" height="24" rx="4"/>
+    <text class="sm mo tn" x="172" y="107">12 × 2 × 128² ≈ 39 万</text>
+    <text class="b" x="20" y="140">词向量表是各层的约 16 倍：把它算进 N，N 就不再代表模型的计算能力。</text>
+  </svg>
+  </div>
+  <figcaption>条长按参数量等比画（640 万对 39 万）。每层约 12·d_model² 的数法见附录 B。</figcaption>
+</figure>
+<p>所以作者定义 N = 不含词向量表和位置编码的参数。每层约 12·d_model² 个参数，合计 N ≈ 12·n_layer·d_model²（数法见附录 B，精确写法见附录 A 式 2.1）。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 6 · 算不算嵌入参数，曲线差很多</span>
+  <img class="orig" src="orig-fig6.png" alt="原文 Figure 6：两张双对数图，横轴是参数量，纵轴是测试损失，不同颜色是不同层数的模型。左图把嵌入参数算进去，不同层数的模型各走各的曲线，0 层、1 层的曲线明显偏高。右图只数非嵌入参数，1 层以上各种深度的模型汇到几乎同一条下降的曲线上。" loading="lazy">
+  <figcaption>这张图在说什么：<b>只数非嵌入参数，不同深度的模型汇成同一条曲线</b>。怎么看：左图横轴含嵌入参数，层数不同的点各走各的线；右图横轴是 N，除了少于 2 层的模型，其余几乎重合。图源：Kaplan 等 2020 原文 Figure 6。</figcaption>
+</figure>
+<p>这也说明嵌入矩阵可以做得更小而不明显影响性能（作者引用了同期工作）。真正在做计算的是 Transformer 的层，不是查词表。</p>
+
+<h3>模型的形状几乎无关</h3>
+<p>固定 N，改变形状：深而窄还是浅而宽，头数多少，FFN 宽度比例。结果是：<b>宽高比 d_model/n_layer 变 40 倍，损失只变几个百分点</b>（原文 Figure 5 说明）。(n_layer, d_model) = (6, 4288) 和 (48, 1600) 参数量相近，损失相差在 3% 以内。原文还标了一句：多花 22% 的算力，可以补偿 1% 的损失上升，也就是形状选得不好，代价很小，算力一补就回来。</p>
+<figure class="fig">
+  <span class="tag">图 4 · 又高又窄，和又矮又宽，损失差不到 3%</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 250" role="img" aria-label="左边一个又高又窄的蓝色长方形：48 层，宽度 1600，非嵌入参数约 14.7 亿。右边一个又矮又宽的赭色长方形：6 层，宽度 4288，约 13.2 亿。中间标注两者测试损失相差在 3% 以内。">
+    <text class="sm m" x="20" y="20">两种形状，参数量几乎一样（高 = 层数，宽 = 隐藏宽度；示意，不按比例）</text>
+    <rect class="newT" x="110" y="40" width="60" height="150" rx="3"/>
+    <text class="b tn" x="140" y="212" text-anchor="middle">48 层 × 宽 1600</text>
+    <text class="sm m" x="140" y="230" text-anchor="middle">N ≈ 14.7 亿</text>
+    <rect class="oldT" x="440" y="140" width="170" height="50" rx="3"/>
+    <text class="b to" x="525" y="212" text-anchor="middle">6 层 × 宽 4288</text>
+    <text class="sm m" x="525" y="230" text-anchor="middle">N ≈ 13.2 亿</text>
+    <text class="lg" x="305" y="110" text-anchor="middle">损失相差</text>
+    <text class="lg tn" x="305" y="136" text-anchor="middle">3% 以内</text>
+    <line class="mutS dash" x1="195" y1="118" x2="232" y2="118"/><line class="mutS dash" x1="378" y1="118" x2="415" y2="118"/>
+  </svg>
+  </div>
+  <figcaption>形状来自原文 Figure 5 的说明（(6, 4288) 与 (48, 1600) 的比较），参数量按 N ≈ 12·n_layer·d_model² 推算。宽高比 d_model/n_layer 分别约 715 和 33，我算差约 21 倍；原文说整个实验里宽高比可以变 40 倍。</figcaption>
+</figure>
+<p>为什么会这样？原文只给了一个猜测：如果更深的 Transformer 相当于更浅模型的集成，就能解释与层数无关，并引用了对 ResNet 的类似说法。这是<b>作者的假说，本文没有验证</b>。</p>
+<p>含义是：只要不是太浅（少于 2 层）、形状不极端，<b>规模 N 是主要变量，形状是次要变量</b>。这是后面的公式里只出现 N、不出现 n_layer 和 d_model 的前提。</p>
+<p>这一步对着第 1 节说的「混杂因素」：剥掉嵌入表、忽略形状之后，一个数 N 就能描述模型。</p>
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>第二步：损失对规模是三条直线</h2>
+<p>在另外两个量不当瓶颈时，分别测损失对 N、D、C 的关系，得到三条幂律（精确写法见附录 A 式 1.1 到 1.3，拟合值见附录 E）：</p>
+<div class="tbl"><table>
+  <thead><tr><th>谁是瓶颈</th><th>实验设置</th><th>公式</th><th>指数 α</th><th>常数</th></tr></thead>
+  <tbody>
+    <tr><td>参数量 N</td><td>数据足够，训到近收敛</td><td class="mono">L(N) = (N<sub>c</sub>/N)<sup>α_N</sup></td><td class="num">0.076</td><td class="num">N<sub>c</sub> ≈ 8.8×10¹³</td></tr>
+    <tr><td>数据量 D</td><td>大模型（36 层，d=1280），早停</td><td class="mono">L(D) = (D<sub>c</sub>/D)<sup>α_D</sup></td><td class="num">0.095</td><td class="num">D<sub>c</sub> ≈ 5.4×10¹³ token</td></tr>
+    <tr><td>算力 C<sub>min</sub></td><td>数据足够，模型取最优大小，批量足够小</td><td class="mono">L(C<sub>min</sub>) = (C<sub>c</sub><sup>min</sup>/C<sub>min</sub>)<sup>α_C</sup></td><td class="num">0.050</td><td class="num">C<sub>c</sub><sup>min</sup> ≈ 3.1×10⁸ PF-day</td></tr>
+  </tbody>
+</table></div>
+<p>作图后，三条都是直线：</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 1 · 损失随算力、数据量、参数量平滑下降</span>
+  <img class="orig" src="orig-fig1.png" alt="原文 Figure 1：三张并排的双对数图，纵轴都是测试损失。左图横轴是算力（PF-day，不含嵌入），许多浅蓝色学习曲线的下包络是一条黑线，虚线拟合 L = (Cmin/2.3×10^8)^-0.050。中图横轴是数据量（token），蓝点几乎落在灰色直线 L = (D/5.4×10^13)^-0.095 上。右图横轴是参数量（不含嵌入），蓝点落在灰线 L = (N/8.8×10^13)^-0.076 上。" loading="lazy">
+  <figcaption>这张图在说什么：<b>三个量各自的损失都是直线</b>。怎么看：纵横轴都取对数，直线 = 幂律，斜率 = −α。左图的浅蓝线是不同大小的模型各自的学习曲线，黑线是它们的下包络，也就是每个算力预算下最好的那个。图源：Kaplan 等 2020 原文 Figure 1。这张图里的拟合常数写 2.3×10⁸，正文和 Table 5 写 3.1×10⁸，见附录 J。</figcaption>
+</figure>
+<p>横轴跨 6 个数量级以上，仍然是直线。原文摘要写「部分趋势超过七个数量级」，1.2 节写算力跨 8 个、N 跨 6 个、D 跨 2 个数量级，各处说的是不同的量。作者说：没看到上端偏离趋势的迹象，虽然性能最终必须变平，不可能降到 0。</p>
+<h3>这条直线的意思</h3>
+<p>以 N 为例，α<sub>N</sub> = 0.076。N 乘 2，损失乘 2<sup>−0.076</sup> = 0.949，降 5.1%；N 乘 10，损失乘 0.84，降 16%。从 100 万翻倍还是从 10 亿翻倍，比例都一样，这就是幂律「不随你站的位置变」。</p>
+<figure class="fig">
+  <span class="tag">图 5 · 把「N 乘 10，损失乘 0.84」画出来：双对数里是一条直线</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 232" role="img" aria-label="横轴是非嵌入参数量，从 10 的 6 次方到 10 的 11 次方，对数刻度；纵轴是损失，对数刻度。六个蓝点落在一条直线上，损失依次为 4.02、3.37、2.83、2.38、1.99、1.67。每向右一格，损失乘 0.84，降 16%。">
+    <path class="ln" d="M60 160 H640 M60 160 V20"/>
+    <line class="newS" x1="100" y1="38.1" x2="600" y2="149.7"/>
+    <circle class="new" cx="100" cy="38.1" r="5"/><text class="sm mo" x="100" y="26.1" text-anchor="middle">4.02</text><circle class="new" cx="200" cy="60.4" r="5"/><text class="sm mo" x="200" y="48.4" text-anchor="middle">3.37</text><circle class="new" cx="300" cy="82.8" r="5"/><text class="sm mo" x="300" y="70.8" text-anchor="middle">2.83</text><circle class="new" cx="400" cy="105.1" r="5"/><text class="sm mo" x="400" y="93.1" text-anchor="middle">2.38</text><circle class="new" cx="500" cy="127.4" r="5"/><text class="sm mo" x="500" y="115.4" text-anchor="middle">1.99</text><circle class="new" cx="600" cy="149.7" r="5"/><text class="sm mo" x="600" y="137.7" text-anchor="middle">1.67</text>
+    <text class="sm m" x="100" y="186" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">6</tspan></text><text class="sm m" x="200" y="186" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">7</tspan></text><text class="sm m" x="300" y="186" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">8</tspan></text><text class="sm m" x="400" y="186" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">9</tspan></text><text class="sm m" x="500" y="186" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">10</tspan></text><text class="sm m" x="600" y="186" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">11</tspan></text>
+    <text class="sm m" x="340" y="208" text-anchor="middle">非嵌入参数量 N（对数轴）</text>
+    <text class="sm m" x="66" y="10">损失 L（对数轴）</text>
+    <text class="b tn" x="330" y="46">每向右一格（N ×10）：L ×0.84，降 16%</text>
+    <text class="sm m" x="330" y="64">斜率 = −α_N = −0.076</text>
+  </svg>
+  </div>
+  <figcaption>点的数值是我按式 1.1（N<sub>c</sub> = 8.8×10¹³，α<sub>N</sub> = 0.076）代入算的示意，不是原文的实测点；实测点在上面的原文 Figure 1 右图。</figcaption>
+</figure>
+<p>这有两面。<b>稳定地变好</b>：每多一个数量级，收益固定，不会突然没用。<b>越来越贵</b>：绝对降幅在缩小（4.02 到 3.37 降 0.65，2.38 到 1.99 降 0.39，1.99 到 1.67 降 0.32），而每一步要多花 10 倍的参数。想让损失减半，只靠加参数要 2<sup>1/0.076</sup> ≈ 9100 倍。指数小意味着规模换性能是一条很陡、很贵的路，但它<b>可预测</b>。</p>
+<p>三个指数的比较（我的验算）：N 或 D 或 C 每乘 10，损失分别降 16%、20%、11%。但它们不是三个独立的旋钮：C ≈ 6ND，算力涨时收益要分给 N、批量、步数几处，所以 α<sub>C</sub> 比任何一个都小（关系式在附录 A 式 1.8）。还要注意，三条线是在「另外两个不当瓶颈」时分别测的，不是同一次实验里同时看到的。</p>
+<p>这一步对着「越大越好没有数量」：现在有了数量。</p>
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>第三步：模型和数据怎么配套</h2>
+<p>L(N) 假设数据无限，L(D) 假设模型无限。真实情况是两个都有限。作者用一个联合公式 L(N, D) 同时描述（写法见附录 A 式 1.5）。它满足两个极限：D 趋于无穷时还原成 L(N)，N 趋于无穷时还原成 L(D)。这个形式是<b>拟合驱动选出来的，不是推导出来的</b>，三条选择原则见附录 C。</p>
+<figure class="fig">
+  <span class="tag">图 6 · 模型涨了，数据不涨：增益被过拟合吃掉</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 240" role="img" aria-label="五行点图，横轴是损失。每行灰色空心点是数据无限时的损失，蓝点是实际数据量下的损失，赭线是两者之差，即过拟合的代价。上三行数据 220 亿 token：参数 10 的 8 次方，蓝点 2.84，几乎贴着灰点；10 的 9 次方，2.43；10 的 10 次方，2.19，离灰点 1.99 较远。下两行数据 10 亿 token：10 的 9 次方参数 2.86；10 的 10 次方参数 2.82，几乎没有改善。">
+    <path class="ln" d="M270 206 H660"/>
+    <text class="sm" x="20" y="48">10<tspan dy="-5" style="font-size:9px">8</tspan><tspan dy="5"> 参数，220 亿 token</tspan></text><line class="oldS" x1="591.3" y1="44" x2="595.2" y2="44"/><circle class="softS" cx="591.3" cy="44" r="6"/><circle class="new" cx="595.2" cy="44" r="6"/><text class="sm mo tn" x="607.2" y="48">2.84</text><text class="sm" x="20" y="82">10<tspan dy="-5" style="font-size:9px">9</tspan><tspan dy="5"> 参数，220 亿 token</tspan></text><line class="oldS" x1="434.3" y1="78" x2="453.3" y2="78"/><circle class="softS" cx="434.3" cy="78" r="6"/><circle class="new" cx="453.3" cy="78" r="6"/><text class="sm mo tn" x="465.3" y="82">2.43</text><text class="sm" x="20" y="116">10<tspan dy="-5" style="font-size:9px">10</tspan><tspan dy="5"> 参数，220 亿 token</tspan></text><line class="oldS" x1="302.6" y1="112" x2="371.1" y2="112"/><circle class="softS" cx="302.6" cy="112" r="6"/><circle class="new" cx="371.1" cy="112" r="6"/><text class="sm mo tn" x="383.1" y="116">2.19</text><text class="sm" x="20" y="164">10<tspan dy="-5" style="font-size:9px">9</tspan><tspan dy="5"> 参数，10 亿 token</tspan></text><line class="oldS" x1="434.3" y1="160" x2="600.7" y2="160"/><circle class="softS" cx="434.3" cy="160" r="6"/><circle class="new" cx="600.7" cy="160" r="6"/><text class="sm mo tn" x="612.7" y="164">2.86</text><text class="sm" x="20" y="198">10<tspan dy="-5" style="font-size:9px">10</tspan><tspan dy="5"> 参数，10 亿 token</tspan></text><line class="oldS" x1="302.6" y1="194" x2="588.7" y2="194"/><circle class="softS" cx="302.6" cy="194" r="6"/><circle class="new" cx="588.7" cy="194" r="6"/><text class="sm mo tn" x="600.7" y="198">2.82</text>
+    <text class="sm m" x="304.5" y="226" text-anchor="middle">2.0</text><text class="sm m" x="477.3" y="226" text-anchor="middle">2.5</text><text class="sm m" x="650.0" y="226" text-anchor="middle">3.0</text>
+    <text class="sm m" x="20" y="12">损失 L（越靠左越好）</text><text class="sm m" x="270" y="26">空心点 = L(N)，蓝点 = L(N, D)，赭线 = 过拟合代价</text>
+    
+  </svg>
+  </div>
+  <figcaption>数值是我按 1.2 节的单变量参数（α<sub>N</sub> = 0.076，α<sub>D</sub> = 0.095，N<sub>c</sub> = 8.8×10¹³，D<sub>c</sub> = 5.4×10¹³）代入 L(N, D) 算的示意；Table 2 的联合拟合参数略有不同。下两行：同样 10 亿 token，模型大 10 倍，损失只从 2.86 变到 2.82。</figcaption>
+</figure>
+<p>怎么读：</p>
+<ul>
+  <li><b>数据是瓶颈时，模型涨了几乎没用。</b>同样 10 亿 token，10 亿参数的模型得 2.86，100 亿参数的得 2.82。</li>
+  <li><b>数据充足时，模型涨了收益大。</b>220 亿 token 下，10<sup>8</sup> 到 10<sup>9</sup> 参数，损失从 2.84 降到 2.43。</li>
+  <li><b>过拟合有代价。</b>N = 100 亿、D = 220 亿时 L = 2.19，比无限数据的 1.99 高约 10%。</li>
+</ul>
+<p>作者把过拟合的代价 δL = L(N, D)/L(N, ∞) − 1 量化出来（附录 A 式 4.2、4.3），发现它只取决于<b>一个组合 N<sup>0.74</sup>/D</b>。所以每次模型增大 8 倍，数据只需增加约 5 倍就能避免惩罚（8<sup>0.74</sup> = 4.66）。避免过拟合需要的数据是 D ≳ 5×10<sup>3</sup>·N<sup>0.74</sup>（式 4.4，阈值取随机种子造成的约 0.02 的损失波动）。N = 10<sup>9</sup> 时约 2.3×10<sup>10</sup> token，恰好和 WebText2 全量相当。这就是原文说的：小于 10<sup>9</sup> 参数的模型在 WebText2 上几乎没有过拟合，最大的模型会轻度过拟合。</p>
+<p>联合拟合的参数略异于单变量的，最小的数据集（缩小 1024 倍，约 2×10<sup>7</sup> token）拟合不好，作者推测它可能属于语言建模的另一个机制，见附录 E。</p>
+<p>这一步对着「模型大了数据按比例加」：数据只需随模型亚线性增长（N<sup>0.74</sup>），不用等比例。精确写法见附录 A 式 4.1 到 4.4。</p>
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>第四步：训练多久</h2>
+<p>前面的 L(N) 是训到收敛的值。要回答「不训到收敛划不划算」，得知道训到某一步时的损失。作者给出的形式是两项相加：</p>
+<div class="formula">L(N, S<sub>min</sub>) = (N<sub>c</sub>/N)<sup>α_N</sup> + (S<sub>c</sub>/S<sub>min</sub>)<sup>α_S</sup><span class="fsrc">（原文式 1.6 / 5.6，拟合值 α_S = 0.76，见附录 E）</span></div>
+<p>第一项是模型大小的限制，训到无限久也越不过去；第二项是训练不够久的残差，步数越多越小。总损失 = 收敛后能到的值 + 还没收敛的残差。</p>
+<p>公式里用的是 S<sub>min</sub>，不是实际步数 S。原因是批量：批量越大，每步的梯度越准，需要的步数越少；但批量大到一定程度，多出来的样本对梯度改善有限，只是浪费。这个拐点叫<b>临界批量 B<sub>crit</sub></b>（图 7）。它只取决于当前的损失，不取决于模型大小：损失每降 13%，B<sub>crit</sub> 约翻一倍。作者把实际步数换算成「批量恰当时的最少步数」S<sub>min</sub>，不同批量的曲线才能放在同一个坐标里（换算式见附录 A，验算见附录 B）。</p>
+<figure class="fig">
+  <span class="tag">图 7 · 批量越大，步数越少，但多出的数据不一定有用</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="横轴是处理的样本数除以最少样本数，纵轴是步数除以最少步数。一条双曲线，满足两者各减 1 之积等于 1。一条虚线对角线表示批量等于临界批量。两线交于 (2, 2)：以临界批量训练，步数和样本数都是各自最小值的 2 倍。曲线左上是批量小，省数据但步数多；右下是批量大，步数少但样本浪费。">
+    <path class="ln" d="M80 190 H560 M80 190 V30"/>
+    <polyline class="newS" fill="none" points="130.0,40.0 137.5,59.6 145.0,74.6 152.5,86.6 160.0,96.2 167.5,104.3 175.0,111.1 182.5,116.8 190.0,121.8 197.5,126.2 205.0,130.0 212.5,133.4 220.0,136.4 227.5,139.2 235.0,141.6 242.5,143.8 250.0,145.9 257.5,147.7 265.0,149.5 272.5,151.0 280.0,152.5 287.5,153.9 295.0,155.1 302.5,156.3 310.0,157.4 317.5,158.4 325.0,159.4 332.5,160.3 340.0,161.2 347.5,162.0 355.0,162.7 362.5,163.5 370.0,164.1 377.5,164.8 385.0,165.4 392.5,166.0 400.0,166.6 407.5,167.1 415.0,167.6 422.5,168.1 430.0,168.6 437.5,169.0 445.0,169.5 452.5,169.9 460.0,170.3 467.5,170.6 475.0,171.0 482.5,171.4 490.0,171.7 497.5,172.0 505.0,172.4 512.5,172.7 520.0,173.0 527.5,173.2"/>
+    <line class="mutS dash" x1="80" y1="190" x2="470.0" y2="60.0"/>
+    <circle class="new ring" cx="230" cy="140" r="6"/>
+    <line class="mutS dash" x1="238" y1="138" x2="325" y2="120"/><text class="b tn" x="330" y="122">B = B_crit</text><text class="sm" x="330" y="142">步数、样本数都是最小值的 2 倍</text>
+    <text class="sm" x="165" y="36">批量小：省数据，步数多</text>
+    <text class="sm" x="560" y="210" text-anchor="end">批量大：步数少，样本浪费</text>
+    <text class="sm m" x="200" y="214" text-anchor="middle">样本数 E / E_min</text>
+    <text class="sm m" x="88" y="24">步数 S / S_min</text>
+    <text class="sm m" x="470" y="48" text-anchor="end">虚线：B = E/S 恰为 B_crit</text>
+  </svg>
+  </div>
+  <figcaption>曲线按原文式 5.1 画：(S/S<sub>min</sub> − 1)(E/E<sub>min</sub> − 1) = 1，坐标已除以各自的最小值（示意的是形状，不是实测点）。</figcaption>
+</figure>
+<p>作者说这个拟合不完美，但考虑到公式的简单，相当有说服力；小 S 时拟合一般，因为幂律形式的学习曲线在训练很早期就不适用。还有一个实用结论：训练曲线的形状大致与模型大小无关，所以可以用训练初期的曲线外推很久之后的损失。</p>
+<p>这一步对着「训练多久」：它把「没训到收敛」变成了公式里可以算的一项。</p>
+
+<!-- ================= 7 ================= -->
+<h2 id="s7"><span class="no">7</span>第五步：一笔算力怎么分</h2>
+<p>这是全文最重要的结论。把上面两项看成互相拉扯：算力 C 固定时，模型取大，第一项变小，但每步更贵、步数更少，第二项变大；模型取小则相反。最优在两项平衡处。</p>
+<p>对 N 求导令其为 0（附录 B.1 到 B.2），最优时第二项 = (α<sub>N</sub>/α<sub>S</sub>) × 第一项 ≈ 0.1 × 第一项，所以总损失约为收敛损失的 1.1 倍。人话：<b>计算最优的做法，是让训练停在比收敛损失高约 10% 的地方。</b></p>
+<figure class="fig">
+  <span class="tag">图 8 · 总损失 = 收敛后能到的值 + 还没跑完的残差</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 232" role="img" aria-label="三根横条。每根的蓝段是模型训到收敛能到的损失，归一化为 1。赭段是还没收敛的残差。训到收敛：残差 0。常见做法，离收敛 2% 以内：残差 0.02。计算最优：残差等于蓝段的 α_N 除以 α_S，约 0.1，总损失约为 1.1 倍。">
+    <text class="sm m" x="20" y="20">以「这个模型训到收敛的损失」为 1（示意）</text>
+    <text class="sm" x="20" y="62">训到收敛</text>
+    <rect class="new" x="170" y="46" width="400" height="26" rx="3"/>
+    <text class="sm on" x="180" y="64">1.00</text>
+    <text class="sm" x="20" y="116">常见做法</text><text class="sm m" x="20" y="132">离收敛 2% 以内</text>
+    <rect class="new" x="170" y="100" width="400" height="26" rx="3"/>
+    <rect class="old" x="570" y="100" width="8" height="26" rx="2"/>
+    <text class="sm on" x="180" y="118">1.00</text><text class="sm to" x="590" y="118">+0.02</text>
+    <text class="b tn" x="20" y="176">计算最优</text><text class="sm m" x="20" y="192">停在高约 10% 处</text>
+    <rect class="new" x="170" y="160" width="400" height="26" rx="3"/>
+    <rect class="old" x="570" y="160" width="40" height="26" rx="2"/>
+    <text class="sm on" x="180" y="178">1.00</text><text class="sm to b" x="620" y="178">+0.10</text>
+    <text class="sm m" x="170" y="218">最优时赭段 = (α_N / α_S) × 蓝段 = 0.076 / 0.76 = 0.1，总损失约 1.1 倍（式 B.5）</text>
+  </svg>
+  </div>
+  <figcaption>蓝段 = L(N) 这一项，赭段 = (S<sub>c</sub>/S<sub>min</sub>)<sup>α_S</sup> 这一项。条长按比例，但 0.02 和 0.10 都是相对于各自模型的收敛损失，不是同一个模型上的前后比较。</figcaption>
+</figure>
+<p>原文附录 B.3 把它和「训到离收敛 2% 以内」的常见做法对比，在达到同一损失时：</p>
+<div class="tbl"><table>
+  <thead><tr><th>对比量</th><th>计算最优（偏离 10%）相对常见做法（偏离 2%）</th></tr></thead>
+  <tbody>
+    <tr><td>参数量</td><td class="num">多 2.7 倍</td></tr>
+    <tr><td>参数更新步数</td><td class="num">少 7.7 倍（约 0.13 倍）</td></tr>
+    <tr><td>总算力</td><td class="num">少 65%（约 0.35 倍）</td></tr>
+  </tbody>
+</table></div>
+<p>我验算了第一行：(1.10/1.02)<sup>1/0.076</sup> ≈ 2.70。</p>
+<p>把最优条件展开，就是各个量随算力增长的幂律：</p>
+<figure class="fig">
+  <span class="tag">图 9 · 算力乘 10，各量该乘几</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 220" role="img" aria-label="四根横条，长度正比于最优分配的指数。模型大小 N，指数 0.73，算力乘 10 时约乘 5.4。数据量 D，指数 0.27，约乘 1.9。其中批量 B，指数 0.24，约乘 1.7。串行步数 S，指数 0.03，约乘 1.07，几乎不变。0.73 加 0.27 等于 1，0.24 加 0.03 等于 0.27。">
+    <text class="sm m" x="20" y="20">条长正比于指数（算力每乘 10，各量乘 10 的指数次方）</text>
+    <text class="sm" x="20" y="53">模型 N</text><rect class="new" x="200" y="36" width="255" height="24" rx="3"/><text class="sm mo b" x="465" y="53">指数 0.73　×5.4</text><text class="sm" x="20" y="93">数据 D = B·S</text><rect class="new" x="200" y="76" width="95" height="24" rx="3"/><text class="sm mo b" x="305" y="93">指数 0.27　×1.9</text><text class="sm" x="42" y="133">其中批量 B</text><rect class="newT" x="200" y="116" width="84" height="24" rx="3"/><text class="sm mo b" x="294" y="133">指数 0.24　×1.7</text><text class="sm" x="42" y="173">其中串行步数 S</text><rect class="newT" x="200" y="156" width="10" height="24" rx="3"/><text class="sm mo b" x="220" y="173">指数 0.03　×1.07</text>
+    <text class="sm m" x="20" y="204">0.73 + 0.27 = 1（C = 6ND）；0.24 + 0.03 = 0.27（D = B·S）</text>
+  </svg>
+  </div>
+  <figcaption>指数出自原文 Table 6 与式 6.1、6.2；乘数是我按 10 的指数次方算的。数据增加的大部分被用来加大批量（并行度），串行步数几乎不变。</figcaption>
+</figure>
+<div class="tbl"><table>
+  <thead><tr><th>量</th><th>指数</th><th>来源</th><th>含义</th></tr></thead>
+  <tbody>
+    <tr><td>最优模型大小 N</td><td class="num">0.73</td><td>直接拟合（式 6.1，Figure 14 左）</td><td>算力 ×10，N 约 ×5.4</td></tr>
+    <tr><td>最优批量 B</td><td class="num">0.24</td><td>推导：由 B ∝ L<sup>−4.8</sup>、L ∝ C<sup>−0.05</sup> 得出</td><td>算力 ×10，批量约 ×1.7</td></tr>
+    <tr><td>最优串行步数 S</td><td class="num">0.03</td><td>推导（式 6.2），与 Figure 14 右的实测吻合</td><td>几乎不变，原文说甚至可能与指数 0 一致</td></tr>
+    <tr><td>数据量 D = B·S</td><td class="num">0.27</td><td>原文 Table 6 / 1.1 节</td><td>算力 ×10，数据约 ×1.9</td></tr>
+  </tbody>
+</table></div>
+<figure class="fig">
+  <span class="tag">原文 Figure 14 · 最优模型大小随算力增长；步数几乎不增长</span>
+  <img class="orig" src="orig-fig14.png" alt="原文 Figure 14：左图双对数，横轴算力（PF-day，不含嵌入），纵轴非嵌入参数量。蓝点和蓝色虚线是按临界批量校正后的最优模型大小，N = (1.3×10^9)·Cmin^0.73；浅橙色点和虚线是不校正的固定批量，N = (1.6×10^9)·C^0.88。右图横轴同样是算力，纵轴是步数：蓝线 Smin 校正后几乎水平，虚线拟合 Smin = (5.4×10^3)·Cmin^0.03；橙线固定批量的步数随算力迅速上升。" loading="lazy">
+  <figcaption>这张图在说什么：<b>算力每增 10 倍，最优模型约增 5 倍；校正批量后，需要的串行步数几乎不增</b>。怎么看：左图蓝点落在斜率 0.73 的直线上（浅橙是固定批量的对照）；右图蓝线是按最优批量算的最少步数，几乎是平的，橙线是固定批量下实际要的步数，越来越多。图源：Kaplan 等 2020 原文 Figure 14。</figcaption>
+</figure>
+<p>原文的直观说法：算力每增 10 倍，最优模型约增 5 倍，数据处理量约增 2 倍；数据量增长的大部分被用来增大批量（并行度），串行步数几乎不增加。原文 Figure 3 画的是极端情形：算力增加十亿倍，模型应增加 100 万倍以上，批量增加约 100 倍，串行步数增加不到 10 倍。</p>
+<p>用 Table 6 的幂律代入（N = 1.3×10<sup>9</sup>·C<sup>0.73</sup>，D = 2×10<sup>10</sup>·C<sup>0.27</sup>，S = 5.4×10<sup>3</sup>·C<sup>0.03</sup>，L = (3.1×10<sup>8</sup>/C<sub>min</sub>)<sup>0.050</sup>，C 以 PF-day 计），我算了几个点：</p>
+<div class="tbl"><table>
+  <thead><tr><th>C<sub>min</sub>（PF-day）</th><th>最优 N</th><th>最优 D</th><th>最优串行步数</th><th>预测损失</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td class="num">1.3×10⁹（13 亿）</td><td class="num">2×10¹⁰（200 亿）</td><td class="num">约 5400</td><td class="num">2.66</td></tr>
+    <tr><td>100</td><td class="num">3.7×10¹⁰（370 亿）</td><td class="num">6.9×10¹⁰（690 亿）</td><td class="num">约 6200</td><td class="num">2.11</td></tr>
+    <tr><td>1000</td><td class="num">2.0×10¹¹（2000 亿）</td><td class="num">1.3×10¹¹（1300 亿）</td><td class="num">约 6600</td><td class="num">1.88</td></tr>
+  </tbody>
+</table></div>
+<p>这是<b>外推</b>：原文实验的最大 N 只有 15 亿，表中大部分行远超实验范围，只是把公式往外延伸，原文自己也指出公式在更大尺度会自相矛盾（第 9 节）。</p>
+<p>为什么「大模型少看点数据」反而划算？因为大模型的样本效率更高：同样看这些数据，它学到更多（原文 Figure 2、19）。所以用大模型、少看点、早点停，比用小模型训到收敛更省算力。这和之前「把一个模型训到收敛」的默认做法相反。</p>
+<p>这一步对着「训到收敛」：它在算力上是浪费的。精确推导见附录 A 式 B.5、1.7、1.8。</p>
+
+<!-- ================= 8 ================= -->
+<h2 id="s8"><span class="no">8</span>证据：这些结论有多牢</h2>
+<p>各步的实验已经跟在各步后面。这里补三条旁证，都在检查「这套规律是不是只在一个角落成立」。</p>
+<ul>
+  <li><b>Transformer 比 LSTM 好在哪（原文 Figure 7）。</b>在上下文靠前的 token 上，LSTM 与 Transformer 一样好；在靠后的 token 上，LSTM 约 100 个 token 之后基本不再改善，Transformer 一直到整个上下文都在改善。按参数量比较，Transformer 渐近地胜出，原文的解释是它更好地利用了长上下文。这给 RNN 到注意力的路线补了一个数量上的证据。</li>
+  <li><b>跨数据集泛化（原文 Figure 8）。</b>只在 WebText2 上训练的模型，在 Books、Wikipedia、Common Crawl 等其他文本上的损失，也随模型大小按平滑幂律下降，和 WebText2 的损失之间只差一个几乎恒定的偏移。右图显示泛化只取决于训练分布上的损失，与训到了哪一阶段、模型深度都无关。所以降低 WebText2 的损失，不是在过拟合这个数据集。我补充的：这只在几种英文文本上验证过，不等于所有任务或语言。</li>
+  <li><b>两条独立途径得到同一个分配（原文 6.1、6.2 节）。</b>一条是直接拟合实验点：N ∝ C<sup>0.73</sup>、L ∝ C<sub>min</sub><sup>−0.050</sup>；另一条是从 L(N, S<sub>min</sub>) 推导：α<sub>C</sub><sup>min</sup> 约 0.054、N ∝ C<sup>0.71</sup>。原文说前者「excellent agreement」，后者与 0.73「within a few percent」。<b>我核算时发现，推导用的 0.054 用原文自己的参数算不出来，自洽的值是 0.052，对应 N 指数约 0.68，与实测 0.73 差约 7%</b>，吻合程度可能不如原文说的好，见附录 J。这不推翻「N 主要随算力增长」的结论。</li>
+</ul>
+<p>原文把结论收在这几句：语言模型的表现随模型大小、数据、算力平稳可预测地提升；大模型更省样本；算力一定时，最优做法是训练很大的模型、在远未收敛时就停下。他们预期更大的模型会更好、更省样本，并写下「大模型可能比大数据更重要」。</p>
+
+<!-- ================= 9 ================= -->
+<h2 id="s9"><span class="no">9</span>局限和后来</h2>
+<h3>作者自己做的压力测试</h3>
+<p>作者没有止步于外推，发现自己的两组公式在很大规模下会打架：避免过拟合所需的数据按 D ∝ C<sup>0.54</sup> 增长，而算力最优训练实际用的数据只按 D ∝ C<sup>0.27</sup> 增长，慢得多。一旦被数据卡住，损失按 L(D) 下降，换算成对算力的依赖更平缓。两条曲线终会相交（图 10）：C* ∼ 10<sup>4</sup> PF-day，N* ∼ 10<sup>12</sup> 参数，D* ∼ 10<sup>12</sup> token，L* ∼ 1.7 nats/token（式 6.8，作者强调数值高度不确定，指数稍有不同就差一个数量级）。</p>
+<figure class="fig">
+  <span class="tag">图 10 · 作者自己发现的矛盾：两条预测线会相交</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="横轴是算力 C，从 1 到 10 的 6 次方 PF-day，对数刻度；纵轴是损失，对数刻度。蓝线是按算力最优训练能到的损失，斜率约负 0.050。赭线是数据只够看一遍时损失的下限，斜率约负 0.03，更平。两线在约 10 的 4 次方 PF-day、损失约 1.7 处相交；交点右边蓝线跑到赭线下面，等于损失低于数据所能支持的下限，自相矛盾。">
+    <path class="ln" d="M90 170 H600 M90 170 V20"/>
+    <polyline class="newS" fill="none" points="90.0,40.8 170.0,64.8 250.0,88.8 330.0,112.8 410.0,136.8 490.0,160.7 570.0,184.7"/>
+    <polyline class="oldS" fill="none" points="90.0,76.4 170.0,90.8 250.0,105.2 330.0,119.5 410.0,133.9 490.0,148.3 570.0,162.7"/>
+    <circle class="ring inkF" cx="410" cy="133.9" r="5"/>
+    <text class="b" x="402" y="160" text-anchor="end">交点 ≈ 10<tspan dy="-5" style="font-size:9px">4</tspan><tspan dy="5"> PF-day，L ≈ 1.7（高度不确定）</tspan></text>
+    <text class="sm tn" x="96" y="33">算力最优训练的 L(C<tspan dy="3" style="font-size:9px">min</tspan><tspan dy="-3">)，斜率 −0.050</tspan></text>
+    <text class="sm to" x="96" y="98">数据只够看一遍时的下限，斜率约 −0.03</text>
+    <text class="sm m" x="530.0" y="207" text-anchor="middle">蓝线在此之后低于下限：矛盾</text>
+    <text class="sm m" x="90" y="188" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">0</tspan></text><text class="sm m" x="170" y="188" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">1</tspan></text><text class="sm m" x="250" y="188" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">2</tspan></text><text class="sm m" x="330" y="188" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">3</tspan></text><text class="sm m" x="410" y="188" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">4</tspan></text><text class="sm m" x="490" y="188" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">5</tspan></text><text class="sm m" x="570" y="188" text-anchor="middle">10<tspan dy="-5" style="font-size:9px">6</tspan></text>
+    <text class="sm m" x="345" y="216" text-anchor="middle">算力 C（PF-day，对数轴）</text>
+  </svg>
+  </div>
+  <figcaption>示意：按原文 6.3 节的指数画两条直线，交点取原文式 6.8 的 C* ∼ 10⁴ PF-day、L* ∼ 1.7；原文强调指数拟合值稍有不同，交点就会变一个数量级。</figcaption>
+</figure>
+<p>作者给了两层解读。保守的一层：缩放定律在这个点之前就会失效。<b>作者的猜想</b>（原文用 conjecture）：这个交点可能意味着自然语言里可靠的信息被榨干了，L* 可能是自然语言每个 token 的熵的粗略估计。这很容易被误读成「本文预测 10<sup>12</sup> 参数就到头了」，原文的口径是一个高度不确定的推测，而且是从<b>本文预测的数据需求</b>推出来的。</p>
+<h3>其他局限</h3>
+<ul>
+  <li>所有实验在 ≤ 15 亿非嵌入参数、一个数据集（WebText2）、一种架构上。之后的实际训练比这大 100 倍以上，外推是否成立是后来才被检验的。</li>
+  <li>没有理论解释。作者承认对任何提出的缩放定律都没有扎实的理论理解，所以指数 0.076、0.095 由什么决定，本文给不出答案。</li>
+  <li>指标是损失，不是任务表现。平滑的损失下降会换来多少具体能力，没测（原文第 8 节说平滑的量变可能掩盖质变，「more is different」）。</li>
+  <li>所有主实验用同一个 25 万步的学习率调度，训练长度和调度绑在一起。</li>
+</ul>
+<h3>后来</h3>
+<p><b>被继承。</b>「先在小规模拟合曲线，再外推到大规模」成了大模型研发的常规办法；011 <a href="../011-gpt-3/index.html">GPT-3</a>（1750 亿参数、约 3000 亿 token）的方向和「算力多了主要放大模型」一致（作者群的大部分成员参与了 GPT-3，GPT-3 是否引用本文作为设计依据，待核实）。</p>
+<p><b>被修正。</b>本文最重要的分配结论 N ∝ C<sup>0.73</sup>、D ∝ C<sup>0.27</sup>，被 2022 年 DeepMind 的 010 <a href="../010-chinchilla/index.html">Chinchilla</a> 重新测定：模型和数据应当大致等比例增长（指数都接近 0.5），按这个标准，GPT-3 一类模型是「训练不足」的（具体数字以 010 为准，这里待核实）。本文自己没有解释为什么得出不同结论。后世的看法之一是本文对不同长度的训练用了同一个固定的学习率调度，使中途停下的模型没处于最佳状态，数据量被低估（待核实）。</p>
+<p>我补充的：这提示读这类论文的一条原则，<b>幂律拟合出的指数会随实验设置变</b>（调度、规模范围、是否计入嵌入参数），不能把 0.73 当成自然常数。不过本文的主体没被推翻：「损失对规模是幂律」这个结构、「N、D、C 要一起考虑」、「计算最优不等于训到收敛」，后来的研究都延续了，变的是最优分配的比例。</p>
+<p>作者用理想气体定律作比：这些规律像不依赖微观细节（结构、形状）的宏观关系，他们希望将来有一个「统计力学」来解释现在看到的「热力学」。截至本文，没有这个理论。</p>
+
+<!-- ================= 附录 ================= -->
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块都默认折叠，标题里写明了对应的原文章节；正文用不到它们。标「我补充」的，是原文之外我加的说明；标「待核实」的，是我没有核对清楚的。</p>
+
+<details class="ext"><summary>A · 公式和符号表（原文第 1、2、4、5、6 节与附录 B）</summary>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>是什么</th></tr></thead>
+  <tbody>
+    <tr><td>L</td><td>测试集上每个 token 的交叉熵损失，单位 nat；exp(L) 是困惑度</td></tr>
+    <tr><td>N</td><td>非嵌入参数量（不含词向量表和位置编码）</td></tr>
+    <tr><td>D</td><td>训练数据量（token 数）</td></tr>
+    <tr><td>C、C<sub>min</sub></td><td>训练算力（PF-day，不含嵌入）；C<sub>min</sub> 是「每步都用最合适批量时」达到同一损失所需的最少算力</td></tr>
+    <tr><td>B、B<sub>crit</sub></td><td>批量（token 数）；临界批量</td></tr>
+    <tr><td>S、S<sub>min</sub></td><td>实际参数更新步数；批量足够大时所需的最少步数</td></tr>
+    <tr><td>E</td><td>处理的样本数，E = B·S</td></tr>
+    <tr><td>α<sub>N</sub>、α<sub>D</sub>、α<sub>C</sub>、α<sub>S</sub>、α<sub>B</sub></td><td>各幂律的指数，是真正有意义的量</td></tr>
+    <tr><td>N<sub>c</sub>、D<sub>c</sub>、C<sub>c</sub>、S<sub>c</sub>、B*</td><td>各幂律的常数，依赖词表和分词，没有物理意义</td></tr>
+  </tbody>
+</table></div>
+<p><b>三条单变量幂律</b>（原文 1.2 节）：</p>
+<div class="formula">L(N) = (N<sub>c</sub> / N)<sup>α_N</sup>，α<sub>N</sub> ≈ 0.076<span class="fsrc">（式 1.1）</span></div>
+<div class="formula">L(D) = (D<sub>c</sub> / D)<sup>α_D</sup>，α<sub>D</sub> ≈ 0.095<span class="fsrc">（式 1.2）</span></div>
+<div class="formula">L(C<sub>min</sub>) = (C<sub>c</sub><sup>min</sup> / C<sub>min</sub>)<sup>α_C^min</sup>，α<sub>C</sub><sup>min</sup> ≈ 0.050<span class="fsrc">（式 1.3）</span></div>
+<p><b>联合公式与过拟合</b>（原文第 4 节）：</p>
+<div class="formula">L(N, D) = [ (N<sub>c</sub>/N)<sup>α_N/α_D</sup> + D<sub>c</sub>/D ]<sup>α_D</sup><span class="fsrc">（式 1.5 / 4.1）</span></div>
+<div class="formula">δL ≡ L(N, D)/L(N, ∞) − 1 ≈ ( 1 + (N/N<sub>c</sub>)<sup>α_N/α_D</sup> · D<sub>c</sub>/D )<sup>α_D</sup> − 1<span class="fsrc">（式 4.2、4.3）</span></div>
+<div class="formula">D ≳ (5×10³) · N<sup>0.74</sup><span class="fsrc">（式 4.4：避免过拟合所需的数据）</span></div>
+<p><b>训练时长与临界批量</b>（原文第 5 节）：</p>
+<div class="formula">L(N, S<sub>min</sub>) = (N<sub>c</sub>/N)<sup>α_N</sup> + (S<sub>c</sub>/S<sub>min</sub>)<sup>α_S</sup><span class="fsrc">（式 1.6 / 5.6）</span></div>
+<div class="formula">(S/S<sub>min</sub> − 1) · (E/E<sub>min</sub> − 1) = 1，B<sub>crit</sub>(L) ≡ E<sub>min</sub>/S<sub>min</sub><span class="fsrc">（式 5.1、5.2）</span></div>
+<div class="formula">B<sub>crit</sub>(L) ≈ B* / L<sup>1/α_B</sup>，B* ≈ 2.1×10⁸ token，α<sub>B</sub> ≈ 0.21<span class="fsrc">（式 5.3）</span></div>
+<div class="formula">S<sub>min</sub>(S) = S / (1 + B<sub>crit</sub>(L)/B)　　C<sub>min</sub>(C) = C / (1 + B/B<sub>crit</sub>(L))<span class="fsrc">（式 5.4、5.5）</span></div>
+<p><b>参数量与算力的账</b>（原文 2.1 节）：</p>
+<div class="formula">N ≈ 12 · n<sub>layer</sub> · d<sub>model</sub>²<span class="fsrc">（式 2.1，完整写法 2·d<sub>model</sub>·n<sub>layer</sub>·(2·d<sub>attn</sub> + d<sub>ff</sub>)，代入 d<sub>attn</sub> = d<sub>model</sub>、d<sub>ff</sub> = 4·d<sub>model</sub>）</span></div>
+<div class="formula">C ≈ 6 · N · B · S = 6 · N · D<span class="fsrc">（式 1.7 前后；前向 2N + 反向 4N 次运算每 token）</span></div>
+<p><b>计算最优分配</b>（原文附录 B、第 6 节）：</p>
+<div class="formula">L(N<sub>eff</sub>(C), C) = (1 + α<sub>N</sub>/α<sub>S</sub>) · L(N<sub>eff</sub>, ∞) ≈ 1.1 · L(N<sub>eff</sub>, ∞)<span class="fsrc">（式 B.5）</span></div>
+<div class="formula">N ∝ C<sup>α_C/α_N</sup>　B ∝ C<sup>α_C/α_B</sup>　S ∝ C<sup>α_C/α_S</sup>　D = B·S　　α<sub>C</sub> = 1 / (1/α<sub>S</sub> + 1/α<sub>B</sub> + 1/α<sub>N</sub>)<span class="fsrc">（式 1.7、1.8）</span></div>
+<p>最后一式类似电阻并联：算力要同时花在 N、B、S 三处，三处指数的倒数相加，总指数比任何一个单项都小。</p>
+</details>
+
+<details class="ext"><summary>B · 概念注解：幂律、对数坐标、非嵌入参数、C ≈ 6ND、过拟合、临界批量、nat（原文第 1、2 节、5.1 节、附录 B）</summary>
+<h4>幂律与对数坐标</h4>
+<div class="tbl"><table>
+  <thead><tr><th>类型</th><th>形状</th><th>规模翻倍时</th></tr></thead>
+  <tbody>
+    <tr><td>线性</td><td class="mono">y = a·x</td><td>结果翻倍</td></tr>
+    <tr><td>指数</td><td class="mono">y = a·b<sup>x</sup></td><td>x 每加一个固定量，y 乘固定倍数；越来越陡</td></tr>
+    <tr><td>幂律</td><td class="mono">y = a·x<sup>k</sup></td><td>结果乘一个固定比例，与你站在哪个规模无关</td></tr>
+  </tbody>
+</table></div>
+<p>L = (N<sub>c</sub>/N)<sup>α</sup> 两边取对数：log L = α·log N<sub>c</sub> − α·log N，是 log L 对 log N 的直线，斜率 −α。所以双对数图里直线 = 幂律在这个范围内成立，弯了 = 规律失效，越陡 = 加规模越划算。坐标轴的一格是「×10」，不是「+1」。差 10 倍是一个数量级；本文参数量从 768 到 15 亿，差 6 个多数量级。</p>
+<p><b>外推</b>：测过 10³ 到 10⁹ 参数，如果这条直线真是定律，就可以延长它预测 10¹¹ 参数。这是本文最大的价值（用便宜的小模型预测昂贵的大模型），风险也在这里：延长到范围外，是押注规律不变。作者承认没有理论解释这些幂律，所以什么时候能信任外推是不确定的。</p>
+<h4>「非嵌入参数」怎么数</h4>
+<p>每层：注意力有 Q、K、V、输出 4 个 d_model×d_model 矩阵，共 4·d_model²；FFN 两个矩阵 d_model×d_ff、d_ff×d_model，d_ff = 4·d_model 时共 8·d_model²；合计约 12·d_model²。忽略偏置和层归一化。</p>
+<ul>
+  <li>n_layer = 12，d_model = 768：N = 12×12×768² = 84,934,656 ≈ 8500 万。词向量表另有 50257×768 ≈ 3860 万，不算在 N 里。</li>
+  <li>n_layer = 48，d_model = 1600：N ≈ 14.7 亿，是原文参数范围的上限。</li>
+  <li>(n_layer, d_model) = (6, 4288)：N ≈ 13.2 亿。</li>
+</ul>
+<h4>C ≈ 6ND：为什么是 6</h4>
+<p>算力是训练里总共做的浮点运算次数（FLOPs，一次加或乘算一次）。每个参数在前向里大致参与一次乘加，所以前向约 2N 次运算每 token；反向传播的运算量约是前向的两倍（4N），合计 6N；训 D 个 token 就是 C ≈ 6ND。原文式 2.2 还有一项与上下文长度有关的 2·n_layer·n_ctx·d_model，n_ctx = 1024 且 d_model ≫ n_ctx/12 时占比很小，被忽略，这是本文的一个前提。</p>
+<p>原文用 <b>PF-day</b> 作单位：1 petaFLOP/s（每秒 10¹⁵ 次）持续算一天 = 10¹⁵ × 86400 = 8.64×10¹⁹ 次运算。算例（推算）：N = 10⁹、D = 2×10¹⁰ 时，C = 1.2×10²⁰ ≈ 1.4 PF-day。原文之外的参照（我的算法）：GPT-3（1750 亿参数、3000 亿 token）约 6 × 1.75×10¹¹ × 3×10¹¹ ≈ 3.15×10²³ ≈ 3650 PF-day，是否与 GPT-3 论文自己给的算力一致，待到 011 核实。</p>
+<h4>过拟合、早停、epoch、样本效率、nat</h4>
+<p>epoch：训练集完整过一遍。过拟合：模型开始背训练集，训练损失继续降，没见过的测试数据上的损失反而变差。早停：同时监控测试损失，不再下降就停，取最好的点；本文对所有有限数据的实验都这样做，并对所有模型用 10% dropout。直觉：1000 道练习题，记忆力超强的学生做 5 遍就把答案背下来了，遇到新题还是不会；给他 10 万道题，他就背不下，只能学规律。</p>
+<p>样本效率：把损失降到某个值需要看多少数据，越少越高。本文发现大模型样本效率更高（原文 Figure 2、19）。直觉：同一本教材，聪明的学生读一遍就懂。这和「为了省钱应该训小模型」的直觉相反，是第 7 节结论的基础。</p>
+<p>nat：损失用自然对数算。L = 2.3 对应困惑度约 10，L = 3.0 约 20。原文 4.1 节第一条原则说，改变词表或分词只会让损失整体乘一个因子，所以 L 的绝对值不能跨分词器、跨数据集比。</p>
+<h4>临界批量：式子怎么读（原文 5.1 节，引用 McCandlish 等 2018）</h4>
+<p>批量大小默认 2¹⁹ = 524,288 token（512 条 × 1024 token）。批量大，每步梯度准，步数少，总时间短；批量大到一定程度，多出的数据对梯度改善有限，是浪费。式 5.1 的小数字读法：训练了 S = 2·S<sub>min</sub> 步（S/S<sub>min</sub> − 1 = 1），就必有 E = 2·E<sub>min</sub>，对应 B = E/S = E<sub>min</sub>/S<sub>min</sub> = B<sub>crit</sub>。也就是以临界批量训练，步数和样本数都是各自最小值的 2 倍（原文原话）。</p>
+<p>B<sub>crit</sub> 只取决于损失（原文 Figure 10）。代入式 5.3 验算：L = 3.0 时 B<sub>crit</sub> ≈ 1.1×10⁶ token，L = 2.5 时约 2.7×10⁶；损失每降 13%，B<sub>crit</sub> 约翻倍（0.87<sup>−4.76</sup> ≈ 1.94）。本文大多数模型固定用 B = 2¹⁹，并不在 B<sub>crit</sub> 上，所以要换算：L = 3.0 时 B<sub>crit</sub>/B ≈ 2.14，S<sub>min</sub> = S/3.14，C<sub>min</sub> = C/1.47（我的验算）。一句话：C<sub>min</sub> 是每步都用最合适批量时达到该损失最少需要的算力，S<sub>min</sub> 是最少步数；后面的最优分配都用它们表达。</p>
+<h4>幂律值怎么读（推算）</h4>
+<p>L(D) 在 N 足够大时：D = 10⁸ 得 3.50，10⁹ 得 2.82，10¹⁰ 得 2.26，2.2×10¹⁰（约 WebText2 全量）得 2.10。D 乘 10，损失乘 0.80，降 20%。</p>
+</details>
+
+<details class="ext"><summary>C · 联合公式怎么选出来；形状无关的假说；训练曲线的一个推测（原文 3.1、4.1、5.2 节）</summary>
+<p>作者为 L(N, D) 选形式时用了三条原则（原文 4.1 节）：</p>
+<ol>
+  <li>词表变化只会让损失整体缩放一个因子，公式应当允许通过调整 N<sub>c</sub>、D<sub>c</sub> 来吸收；</li>
+  <li>极限必须对：D→∞ 还原为 L(N)，N→∞ 还原为 L(D)；</li>
+  <li>在 D = ∞ 附近可以按 1/D 的整数次幂展开。作者自己说这一条的理论支持「明显较弱」：过拟合应与数据集的方差或信噪比有关，而它按 1/D 缩放。</li>
+</ol>
+<p>作者说：「我们的 L(N, D) 与数据拟合得很好，这才是最重要的理由」。验证极限：D→∞ 时 D<sub>c</sub>/D→0，剩 [(N<sub>c</sub>/N)<sup>α_N/α_D</sup>]<sup>α_D</sup> = (N<sub>c</sub>/N)<sup>α_N</sup>；N→∞ 时第一项→0，剩 (D<sub>c</sub>/D)<sup>α_D</sup>。N 与 D 不对称（D 的指数是 1，N 的是 α_N/α_D），是第三条原则造成的；作者说类似的对称形式也行，但要多一个参数。</p>
+<p><b>N<sup>0.74</sup> 还是 N<sup>0.80</sup>：</b>用 Table 2 的联合拟合 α_N/α_D = 0.076/0.103 ≈ 0.74；改用单变量拟合的 α_D = 0.095 则是 0.80。两个数差别不大，提醒读者指数的第二位小数对应的是拟合误差。作者还做了配套推论：过拟合越严重，早停应当越早（原文 5.3 节、式 5.7，给出早停步数的下界），本解读不展开。</p>
+<p><b>形状无关的假说（原文 3.1 节、第 7 节）：</b>如果更深的 Transformer 在效果上相当于更浅模型的集成，就能解释与层数无关。这是作者的假说，没有在本文验证。我补充的联系：004 的 Table 3 A、B 组里头数、d_k 带来的 BLEU 差异（零点几到 0.9），在本文看来属于次要变量，但两篇任务和指标不同，只作参考。</p>
+<p><b>训练曲线的推测（原文 5.2 节末）：</b>学习曲线后期损失大致是二次型，幂律应当反映损失曲面 Hessian（二阶导数矩阵）特征值的谱，而这种幂律不随模型大小变，说明 Hessian 谱大致与模型大小无关。这是假说，未验证，也不影响后面的推导。</p>
+</details>
+
+<details class="ext"><summary>D · 训练设置（原文第 2 节、第 3 节开头）</summary>
+<ul>
+  <li><b>模型：</b>主要是只有解码器的 Transformer，参数化为 (n_layer, d_model, d_ff, d_attn, n_heads)，上下文长度 n_ctx = 1024。也训练了 LSTM 和 Universal Transformer（复用参数的循环式 Transformer）做对比。</li>
+  <li><b>数据：</b>WebText2，共 2030 万篇文档、96 GB 文本、1.62×10¹⁰ 个词（wc 统计），经 BPE 分词后 2.29×10¹⁰ token，其中 6.6×10⁸ 留作测试集。另用 Books Corpus、Common Crawl、英文维基、公开网络书籍测试泛化。</li>
+  <li><b>优化：</b>Adam，固定 2.5×10⁵ 步，批量 512 条 × 1024 token，3000 步线性预热后余弦衰减到 0；超过 10 亿参数的模型因显存限制改用 Adafactor。作者试了多种学习率和调度，说收敛时的结果基本与调度无关（2.2 节）。</li>
+  <li><b>范围：</b>N 从 768 到 15 亿（非嵌入）；D 从 2200 万到 230 亿 token。</li>
+  <li><b>词表：</b>BPE，50257 个。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>E · 完整数字表：拟合参数、L(N, D) 算例、算力最优的两张表（原文 Table 2、3、5、6、附录 B.3）</summary>
+<p><b>原文 Table 5（单变量拟合）</b>，按原文列出：</p>
+<div class="tbl"><table>
+  <thead><tr><th>幂律</th><th>指数</th><th>常数（依赖分词）</th></tr></thead>
+  <tbody>
+    <tr><td>L(N)</td><td class="num">α<sub>N</sub> = 0.076</td><td class="num">N<sub>c</sub> = 8.8×10¹³ 参数（非嵌入）</td></tr>
+    <tr><td>L(D)</td><td class="num">α<sub>D</sub> = 0.095</td><td class="num">D<sub>c</sub> = 5.4×10¹³ token</td></tr>
+    <tr><td>L(C)，固定批量</td><td class="num">α<sub>C</sub> = 0.057</td><td class="num">C<sub>c</sub> = 1.6×10⁷ PF-day</td></tr>
+    <tr><td>L(C<sub>min</sub>)，校正批量</td><td class="num">α<sub>C</sub><sup>min</sup> = 0.050</td><td class="num">C<sub>c</sub><sup>min</sup> = 3.1×10⁸ PF-day</td></tr>
+    <tr><td>B<sub>crit</sub></td><td class="num">α<sub>B</sub> = 0.21</td><td class="num">B* = 2.1×10⁸ token</td></tr>
+    <tr><td>S<sub>min</sub></td><td class="num">α<sub>S</sub> = 0.76</td><td class="num">S<sub>c</sub> = 2.1×10³ 步</td></tr>
+  </tbody>
+</table></div>
+<p><b>原文 Table 2（L(N, D) 联合拟合）</b>：α<sub>N</sub> = 0.076，α<sub>D</sub> = 0.103，N<sub>c</sub> = 6.4×10¹³，D<sub>c</sub> = 1.8×10¹³。与单变量拟合略有出入，原文 4.2 节解释：这里拟合的是完整的 L(N, D)，不是 L(N, ∞) 或 L(∞, D)。最小的数据集（缩小 1024 倍，约 2×10⁷ token，一个 epoch 只有 40 次参数更新）拟合不好，作者推测这样小的数据集可能属于语言建模的另一个机制。</p>
+<p><b>原文 Table 3（L(N, S<sub>min</sub>) 拟合）</b>：α<sub>N</sub> = 0.077，α<sub>S</sub> = 0.76，N<sub>c</sub> = 6.5×10¹³，S<sub>c</sub> = 2.1×10³。</p>
+<p><b>原文 Table 6（计算最优分配）</b>：N<sub>opt</sub> = 1.3×10⁹·C<sub>min</sub><sup>0.73</sup>；B ≪ B<sub>crit</sub> = B*/L<sup>1/α_B</sup> = 2.0×10⁶·C<sub>min</sub><sup>0.24</sup>；S<sub>min</sub> = 5.4×10³·C<sub>min</sub><sup>0.03</sup>（下界）；D<sub>opt</sub> = 2×10¹⁰·C<sub>min</sub><sup>0.27</sup>（1 个 epoch）。</p>
+<p><b>L(N, D) 完整算例</b>（我按 1.2 节单变量参数代入；表中「只看 L(N)」是 D = ∞，「只看 L(D)」是 N = ∞）：</p>
+<div class="tbl"><table>
+  <thead><tr><th>N</th><th>D（token）</th><th class="num">L(N, D)</th><th class="num">只看 L(N)</th><th class="num">只看 L(D)</th><th>谁是瓶颈</th></tr></thead>
+  <tbody>
+    <tr><td>10⁸</td><td>2.2×10¹⁰</td><td class="num">2.84</td><td class="num">2.83</td><td class="num">2.10</td><td>模型</td></tr>
+    <tr><td>10⁸</td><td>10⁹</td><td class="num">3.02</td><td class="num">2.83</td><td class="num">2.82</td><td>两者接近</td></tr>
+    <tr><td>10⁹</td><td>10⁹</td><td class="num">2.86</td><td class="num">2.38</td><td class="num">2.82</td><td>数据</td></tr>
+    <tr><td>10⁹</td><td>2.2×10¹⁰</td><td class="num">2.43</td><td class="num">2.38</td><td class="num">2.10</td><td>模型</td></tr>
+    <tr><td>10¹⁰</td><td>2.2×10¹⁰</td><td class="num">2.19</td><td class="num">1.99</td><td class="num">2.10</td><td>两者都有</td></tr>
+    <tr><td>10¹⁰</td><td>10⁹</td><td class="num">2.82</td><td class="num">1.99</td><td class="num">2.82</td><td>数据</td></tr>
+  </tbody>
+</table></div>
+<p><b>L(N) 对照</b>（式 1.1，推算）：10⁶ → 4.02，10⁷ → 3.37，10⁸ → 2.83，10⁹ → 2.38，10¹⁰ → 1.99，10¹¹ → 1.67。</p>
+<p><b>最优分配的自洽检查</b>（我的验算）：用 Table 6，C<sub>min</sub> = 1 PF-day 时 N = 1.3×10⁹，L(N, ∞) = (8.8×10¹³/1.3×10⁹)<sup>0.076</sup> ≈ 2.33，乘 1.1 得 2.56，与直接用 L(C<sub>min</sub>) 算的 2.66 相差约 4%。D 的换算：式 6.7 的定义部分是临界批量训练（C = 2·C<sub>min</sub>）且数据只看一遍，D = 2C<sub>min</sub>/(6N)；C<sub>min</sub> = 1 PF-day 时 D = 2×8.64×10¹⁹/(6×1.3×10⁹) ≈ 2.2×10¹⁰，与 Table 6 的 2×10¹⁰ 一致。</p>
+<p><b>偏离最优大小的代价（原文附录 B.4）：</b>模型在最优大小的 0.6 到 2.2 倍内，只需多花约 20% 的算力。用更小的模型可能更合理，因为推理更便宜（原文：考虑推理成本时，较小的模型是有用的）；2.2 倍大的模型少 45% 的步数、多 20% 算力，在有足够并行硬件时训练更快。这是今天「实际模型比计算最优更小、数据更多」的伏笔。</p>
+</details>
+
+<details class="ext"><summary>F · 压力测试的推导和交点（原文 6.3 节）</summary>
+<ol>
+  <li>避免过拟合所需的数据（式 4.4 / 6.6）：D ∝ N<sup>0.74</sup> ∝ C<sup>0.54</sup>。</li>
+  <li>计算最优训练实际用的数据（式 6.7，数据只看一遍）：D ∝ C<sup>0.26</sup> 到 C<sup>0.27</sup>（式 6.7 写 0.26，Table 6 写 0.27），增长慢得多。</li>
+  <li>所以随算力增加，计算最优训练所用数据比「不过拟合所需数据」增长慢得多，迟早数据不够，即使一条数据都不重复。</li>
+  <li>一旦被数据卡住，损失按 L(D) ∝ D<sup>−0.095</sup> 下降，换算成对算力的依赖是 C<sup>−0.03</sup>，比 L(C<sub>min</sub>) ∝ C<sup>−0.050</sup> 平缓。两条曲线终会相交。</li>
+</ol>
+<p>交点（式 6.8）：C* ∼ 10⁴ PF-day，N* ∼ 10¹² 参数，D* ∼ 10¹² token，L* ∼ 1.7 nats/token，数值高度不确定。两层解读：保守的是缩放定律在这个点之前就会失效；作者的猜想是模型再大也无法在没有「性质上不同的数据」时继续提高，L* 可能是自然语言每个 token 的熵（不可压缩的部分）的粗略估计。作者还做了噪声底的类比：如果在每个输入后附加随机噪声，所有损失加上一个常数，有意义的是离噪声底还有多远；即使 L 在这里看起来变平，离底线更近一点也可能对应质上的巨大提升。</p>
+</details>
+
+<details class="ext"><summary>G · 相关工作与当时的背景（原文第 1、7 节）</summary>
+<ul>
+  <li><b>模型规模的上涨：</b>引言引用的先进模型包括 GPT-1、BERT、GPT-2 和其他几个（按参考文献，后三个是 XLNet、RoBERTa、T5）。GPT-2（2019，15 亿参数）刚发布不久，本文最大模型尺寸和它相当。</li>
+  <li><b>同一批人：</b>作者几乎全在 OpenAI，包括 GPT-2 的主要作者 Alec Radford 和 Jeffrey Wu；Tom Brown 后来是 GPT-3 的第一作者（待核实）。本文的优化版 Transformer 实现由 Tom Brown、Rewon Child、Scott Gray、Alec Radford 开发（原文开头的贡献说明）。Dario Amodei 全程提供指导。临界批量的前序工作 McCandlish、Kaplan、Amodei 等 2018，是同一批人的延续。</li>
+  <li><b>Hestness 等 2017：</b>原文称为文献中与本文最接近的工作，也研究了模型大小与数据量的缩放。他们得到数据量随模型大小超线性增长，本文是亚线性（N<sup>0.74</sup>）。</li>
+  <li><b>Rosenfeld 等 2019：</b>对多种数据集同时拟合模型大小与数据量，形式与本文类似；原文脚注称本文完成后该工作也出现，做了类似预测。（原文参考文献里 RRBS19a 与 RRBS19b 实为同一篇 arXiv 1909.12673，是引用瑕疵。）</li>
+  <li><b>EfficientNet（2019）：</b>在图像上也发现准确率与模型大小的近似幂律，并主张深度和宽度按不同系数指数放大；本文发现语言模型的宽深比应近似不变。</li>
+  <li><b>过参数化模型的泛化研究：</b>那类研究不使用早停，模型大小接近数据大小时出现相变（jamming transition）；本文没有观察到这种转变，且发现所需数据随模型亚线性增长。两者是否因果相关，原文没写，「可能因为本文用了早停」是我的推测。</li>
+  <li><b>算力条件：</b>原文没给硬件细节，数字都是 FLOPs。2020 年的训练主要在 V100 级 GPU 集群上（待核实）。PF-day 大概是为了让不同硬件上的训练有统一的算力度量，这是我的推测。</li>
+  <li><b>范式背景：</b>预训练加微调（GPT-1、BERT）已成主流，问题变成「预训练做多大」。本文是第一批系统回答这个问题的工作之一（「第一」属后世评价，待核实）。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>H · 局限（原文附录 C、6.3 节、第 8 节，以及我补充的）</summary>
+<p><b>作者承认的：</b></p>
+<ul>
+  <li>没有理论。对任何提出的缩放定律都没有扎实的理论理解，随模型大小和算力的缩放关系尤其神秘，不知道什么时候可以信任它们。</li>
+  <li>B<sub>crit</sub>(L) 在远离已测范围的损失值上预测不太有把握。</li>
+  <li>小数据区域没有仔细研究，也没有试验正则化和数据增强，这些改进可能定量或定性地改变结果。</li>
+  <li>C ≈ 6NBS 没算与上下文长度有关的项，n_ctx ≳ 12·d_model 的大上下文时结论可能被混淆。</li>
+  <li>可能漏调了对缩放有重要影响的超参数（初始化尺度、动量等）；学习率对目标损失敏感，作者没有对没跑到收敛的短训练尝试更大学习率。</li>
+  <li>哪些结果依赖语言数据的结构、哪些是普适的，「我们还不知道」。</li>
+  <li>损失下降能否转化为具体语言任务上的改进，尚未检验。</li>
+</ul>
+<p><b>我补充的：</b>所有实验在 ≤ 15 亿非嵌入参数、一个数据集、一种架构上；主实验固定 25 万步的学习率调度，训练长度与调度绑在一起，后来的研究认为这类做法会使中途停下的模型被低估（待核实）；一部分拟合参数在文内不完全一致（见附录 J）；附录 C 的「没有理论」实际意味着指数 0.076、0.095 由什么决定本文给不出答案，010 重新测出了不同的指数。</p>
+</details>
+
+<details class="ext"><summary>I · 后来的发展与前后篇衔接（原文第 8 节及之外，凡原文之外都标待核实）</summary>
+<p><b>被继承。</b>「用小模型预测大模型」成为大模型研发的常规操作（待核实）；业界一段时间内把「把模型做大」当主要路线，本文第 8 节写道「大模型可能比大数据更重要」。</p>
+<p><b>被修正。</b>010 Chinchilla（2022）重新测了分配，结论是模型大小和数据量应随算力等比例增长（两者指数都接近 0.5），大致每个参数配约 20 个 token（待核实）；按此标准当时的大模型包括 GPT-3 普遍训练不足，更小的模型喂更多数据可用同样算力得到更好效果（待核实）。后世对差异的解释（均待核实）：本文对不同长度的训练用同一个固定调度；本文的 N 不含嵌入参数且实验规模只到 15 亿，有研究认为这些因素在小规模下会改变拟合出的指数。这并不推翻本文的主体：损失对规模是幂律的结构、N/D/C 要一起考虑、计算最优不等于训到收敛，后来的研究都延续了，变的是最优分配的比例。</p>
+<p><b>被改变的实践（待核实）。</b>由于推理成本占大头，后来的趋势是训练比计算最优更小、数据更多的模型（如 LLaMA 一路），和本文附录 B.4「考虑推理成本时较小的模型有用」同一方向。本文第 8 节预告了「平滑的损失下降可能掩盖质变」，后来关于「能力涌现」的讨论很多，也有研究认为这和评测指标是否平滑有关。本文 6.3 节预言的数据增长慢于所需，后来在「高质量文本快用完」的讨论里以另一种形式出现。</p>
+<p><b>后世评价（待核实）。</b>本文常被视为「缩放假说」的实证起点，也是 AI 实验室为什么要搞越来越大的算力的重要论据。</p>
+<p><b>前后篇衔接。</b>继承自：004 Transformer（研究对象，Table 3 C 组「越大越好」的朴素观察是起点，参数量与并行的账本在这里变成 C ≈ 6ND）；001 NPLM（交叉熵、困惑度的目标）；002、003 与 LSTM 的对比（长距离短板的老问题）；005 Adam（所有训练用 Adam / Adafactor）；006、007（仅解码器路线、WebText、BPE）。对 004 的推进：把「越大越好」变成公式；把「改结构能提升效果」补充为「在合理范围内规模比结构重要得多」；把「训到收敛」改成「在远未收敛处停」；给出用便宜实验预测昂贵训练的方法。留下的问题：分配比例对不对 → 010 Chinchilla；更大规模的实际检验、损失降低能否转成任务能力 → 011 GPT-3；平滑的损失下降掩盖了什么 → 011 的 few-shot 能力，以及更后面 015 到 018 面向的「模型有能力但不听话」；为什么是幂律 → 本系列 18 篇没有专门解决。</p>
+</details>
+
+<details class="ext"><summary>J · 疑点：原文内部的不一致，和待核实的地方</summary>
+<ul>
+  <li><b>α<sub>C</sub><sup>min</sup> 有三个取值：</b>式 1.3（及 Figure 13、Table 5、6.3 节）写 0.050，是对 L(C<sub>min</sub>) 实验点的直接拟合；式 6.4（6.2 节）写 ≈ 0.054；式 B.7（附录 B.2）写 ≈ 0.052。后两者是同一个理论公式 1/(1/α<sub>S</sub> + 1/α<sub>B</sub> + 1/α<sub>N</sub>)，输入也相同，却给出两个数。我按原文参数复算：Table 5（0.76、0.21、0.076）得 0.0520；Table 3 的 α<sub>N</sub> = 0.077 得 0.0525；6.1 节的 B ∝ L<sup>−4.8</sup>（α<sub>B</sub> = 0.208）得 0.0519。没有任何一组原文参数能算出 0.054，所以 0.054 很可能是原文笔误（待核实）。</li>
+  <li><b>连带后果：</b>式 6.5 的 N ∝ C<sup>0.71</sup> 恰好等于 0.054/0.076 = 0.711；改用自洽的 0.052 则是 0.052/0.076 ≈ 0.68，与实测 0.73 差约 7%，大于原文声称的「几个百分点」。不推翻「N 主要随算力增长」的结论，但引用 0.71 时要知道它依赖那个复算不出的 0.054。</li>
+  <li><b>别的常数不一致：</b>Figure 13 图中的拟合写 C<sub>c</sub><sup>min</sup> = 2.3×10⁸，式 1.3 和 Table 5 写 3.1×10⁸（本页原文 Figure 1 的图例也是 2.3×10⁸）；Figure 13 的固定批量拟合写 C<sub>c</sub> = 2.0×10⁷（指数 0.057），Table 5 写 1.6×10⁷。</li>
+  <li><b>式 6.7 的系数：</b>式 6.7 右端写 (4×10¹⁰ token)·(C<sub>min</sub>/PF-day)<sup>0.26</sup>，系数与它自己的定义式和 Table 6 都差约一倍，指数也是 0.26 而非 Table 6 的 0.27。本页采用定义式和 Table 6 的数值。原文内部不一致，是印刷笔误还是另有口径，待核实。</li>
+  <li><b>「跨几个数量级」的说法：</b>摘要写「部分趋势超过七个数量级」，1.1 节写六个以上，1.2 节说 C<sub>min</sub> 跨 8 个、N 跨 6 个、D 跨 2 个，各处说的是不同的量，不完全统一。</li>
+  <li><b>GPT-3 的算力、GPT-2 的训练成本：</b>原文没给，上文的 3650 PF-day 是我的推算，待到 011 核实。</li>
+  <li><b>L(N, D) 的联合拟合 α<sub>D</sub> = 0.103 与单变量的 0.095：</b>是不同拟合目标的结果，不是矛盾，但引用 N<sup>0.74</sup> 还是 N<sup>0.80</sup> 要看用的是哪一组。</li>
+</ul>
+</details>
+
+<footer>
+  AI 论文解读 · 009 · 原文：Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B. Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, Dario Amodei. <i>Scaling Laws for Neural Language Models.</i> OpenAI, 2020 (arXiv 2001.08361).<br>
+  图中标「示意」的数字是为了讲清机制设定的例子，都验算过；标「推算」的是我按原文参数代入算的，原文没直接给。拟合参数出自原文 Table 2、3、5、6；原文 Figure 1、6、14 的图源为原文。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>

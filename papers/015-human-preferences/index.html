@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>人类偏好 图解</title>
+<meta name="description" content="Christiano 等 2017《Deep Reinforcement Learning from Human Preferences》图解：奖励函数写不出来时，让人反复比较两段短视频哪段更好，用比较训练一个奖励预测器，再让强化学习去最大化它；RLHF 的原型。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文的做法（从人的比较里学出奖励，再让 RL 去最大化它），赭 = 要被替代的旧做法（手写奖励、让人示范、让人逐步打分）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;min-width:520px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th:first-child,td:first-child{white-space:nowrap}
+th:first-child,td:first-child{padding-right:20px}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+<main class="wrap">
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　015</nav>
+  <h1 style="margin-top:14px">奖励写不出来，就让人在两段视频里挑一个更好的</h1>
+  <p class="lede">Christiano 等人 2017 年（OpenAI 与 DeepMind 合作）写的《Deep Reinforcement Learning from Human Preferences》。强化学习要有一个「奖励函数」告诉智能体每一步做得好不好，可很多想要的事写不成公式。这篇论文的做法是：<b>不写了。让人反复看两段 1–2 秒的短视频，只回答「哪段更好」；用这些比较训练一个「奖励预测器」，再让强化学习去最大化它给出的分数。</b>在 Atari 游戏上，人的比较只占智能体交互量的不到 1%，机器人任务上用几百到一千多条比较就接近用真实奖励的强化学习；还学会了一个没人写得出奖励函数的新动作：后空翻（900 次比较，不到 1 小时，反馈来自作者）。这套「人类偏好 → 奖励模型 → 强化学习」的流水线，是后来 RLHF 的原型，在语言模型上的版本见 <a href="../018-instructgpt/index.html">018 InstructGPT</a>。</p>
+  <div class="meta">
+    <span>Paul F. Christiano、Jan Leike、Tom B. Brown、Miljan Martic、Shane Legg、Dario Amodei · OpenAI 与 DeepMind · 2017 年（arXiv 1706.03741）</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的做法（从人的比较里学出奖励，再让 RL 去最大化它）</span>
+    <span class="key"><i class="sw o"></i>赭色：要被替代的旧做法（手写奖励、让人示范、让人逐步打分）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · 全篇一个循环：人比较，预测器学分，RL 去拿分，新片段再交给人</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 196" role="img" aria-label="四个方框依次连接：人看两段 1 到 2 秒的片段，选哪段更好；奖励预测器，一个小神经网络，从比较里学分数；强化学习算法，最大化预测器给的分数；策略在环境里行动，产生新的片段。最后一个方框有箭头回到第一个方框，表示新片段又交给人比较，三件事同时在转。底部写：奖励函数从头到尾没有人写过。">
+      <rect class="softS" x="20" y="20" width="140" height="76" rx="8"/>
+      <text class="b" x="90" y="48" text-anchor="middle">人</text>
+      <text class="sm" x="90" y="68" text-anchor="middle">看两段 1–2 秒的片段</text>
+      <text class="sm" x="90" y="84" text-anchor="middle">选哪段更好</text>
+      <line class="mutS" x1="162" y1="58" x2="188" y2="58" marker-end="url(#ah)"/>
+      <rect class="new" x="190" y="20" width="150" height="76" rx="8"/>
+      <text class="b on" x="265" y="48" text-anchor="middle">奖励预测器 r̂</text>
+      <text class="sm on" x="265" y="68" text-anchor="middle">一个小神经网络</text>
+      <text class="sm on" x="265" y="84" text-anchor="middle">从比较里学分数</text>
+      <line class="mutS" x1="342" y1="58" x2="368" y2="58" marker-end="url(#ah)"/>
+      <rect class="newT" x="370" y="20" width="140" height="76" rx="8"/>
+      <text class="b tn" x="440" y="48" text-anchor="middle">强化学习</text>
+      <text class="sm" x="440" y="68" text-anchor="middle">最大化 r̂ 的分数</text>
+      <text class="sm" x="440" y="84" text-anchor="middle">A2C / TRPO</text>
+      <line class="mutS" x1="512" y1="58" x2="538" y2="58" marker-end="url(#ah)"/>
+      <rect class="softS" x="540" y="20" width="120" height="76" rx="8"/>
+      <text class="b" x="600" y="48" text-anchor="middle">策略 π</text>
+      <text class="sm" x="600" y="68" text-anchor="middle">在环境里行动</text>
+      <text class="sm" x="600" y="84" text-anchor="middle">产生新片段</text>
+      <path class="mutS dash" d="M600 98 V128 H90 V100" marker-end="url(#ah)"/>
+      <text class="sm m" x="345" y="148" text-anchor="middle">新片段又交给人比较；三件事同时在转，没有「先标完再训练」</text>
+      <text class="sm m" x="345" y="178" text-anchor="middle">奖励函数从头到尾没有人写过；人也不必会做这件事，只要认得出哪段更好</text>
+    </svg>
+    </div>
+    <figcaption>从左到右是一次循环里的四个角色。每个方框的细节在后面对应的小节里展开（人怎么被问：第 2 节；r̂ 怎么学：第 3 节；RL 怎么用它：第 4 节）。</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>要解决的问题：奖励写不出来</a>
+    <a href="#s2"><span>2</span>第一步：只问「哪段更好」</a>
+    <a href="#s3"><span>3</span>第二步：从比较里学出奖励预测器</a>
+    <a href="#s4"><span>4</span>第三步：让 RL 去最大化它</a>
+    <a href="#s5"><span>5</span>为什么必须边练边问</a>
+    <a href="#s6"><span>6</span>省人的办法：只问最有分歧的</a>
+    <a href="#s7"><span>7</span>证据：它做到了多少</a>
+    <a href="#s8"><span>8</span>局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>正文只走一条线</b>：奖励写不出来、老办法都不够 → 只问人「哪段更好」→ 从比较里学出奖励 → 让强化学习去最大化它 → 为什么必须边练边问、怎么省人 → 每个结论对应哪个实验。只读每节的标题和每段第一句，也能串起来。</li>
+      <li>这是本系列第一篇强化学习论文。读懂主线需要的概念（奖励、策略、回报），正文里用一两句话带过；强化学习的基础、A2C 和 TRPO 的区别、公式、完整结果、当时的背景，都在页尾的<b>附录</b>里，默认折叠，标明对应原文第几节。</li>
+      <li>小数字例子都验算过：为讲解设定的标「示意」，按原文数字估算的标「推算」。</li>
+      <li>零件在前面篇讲过：softmax 和交叉熵在 <a href="../001-nplm/index.html">001 NPLM</a>，优化器在 <a href="../005-adam/index.html">005 Adam</a>。本篇的网络都是很小的 CNN 和全连接网络，没有用 Transformer。之后 <a href="../016-ppo/index.html">016 PPO</a> 取代了这里的 RL 算法，<a href="../018-instructgpt/index.html">018 InstructGPT</a> 把同一条流水线搬到语言模型上。</li>
+    </ul>
+  </div>
+</header>
+
+<!-- ============ 1 ============ -->
+<h2 id="s1"><span class="no">1</span>要解决的问题：奖励写不出来</h2>
+<p>强化学习（RL）有一个前提：每一步都有一个分数，告诉智能体这一步做得好不好，这个分数叫<b>奖励</b>。围棋有输赢，Atari 有游戏得分，所以 2017 年前后深度强化学习的成功，都发生在奖励现成的任务上（原文第 1 节）。可是很多想要的事写不成公式，比如「把桌子擦干净」「把鸡蛋炒好」。绕不开的办法有两条，各有一个毛病。</p>
+
+<h3>毛病一：随手写个近似的奖励，智能体会钻空子</h3>
+<p>奖励要写成传感器读数的函数。你只能写一个近似的，而智能体最大化的是你写下的这个公式，不是你心里想的那件事。原文第 1 节的说法是：这会让智能体「优化我们的奖励函数，却并不满足我们的偏好」。作者把它和当时越来越多的「价值错位」担忧联系在一起，所以这篇论文有明确的安全动机：如果能把「我们真正想要什么」传达给智能体，就是向解决错位迈了一步。</p>
+
+<figure class="fig">
+  <span class="tag">图 1 · 钻空子的例子（示意，我举的，原文没有）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 196" role="img" aria-label="示意：你写的奖励是每吸走一点灰尘加 1 分。机器人学会了循环：吸走灰尘得 1 分，把灰倒出来，再吸走又得 1 分。分数不停上涨，但你想要的地面干净一直没有发生。">
+    <text class="sm m" x="30" y="26">你写的奖励：每吸走一点灰尘，+1 分</text>
+    <rect class="oldT" x="30" y="44" width="170" height="56" rx="8"/>
+    <text class="b to" x="115" y="68" text-anchor="middle">吸走灰尘</text>
+    <text class="sm" x="115" y="87" text-anchor="middle">+1 分</text>
+    <rect class="softS" x="260" y="44" width="170" height="56" rx="8"/>
+    <text class="b" x="345" y="68" text-anchor="middle">把灰倒出来</text>
+    <text class="sm m" x="345" y="87" text-anchor="middle">没有惩罚</text>
+    <line class="oldS" x1="202" y1="62" x2="256" y2="62" marker-end="url(#ahO)"/>
+    <line class="oldS" x1="258" y1="84" x2="204" y2="84" marker-end="url(#ahO)"/>
+    <text class="b to" x="470" y="66">分数：一路上涨</text>
+    <text class="sm m" x="470" y="90">你要的「地面干净」：没有发生</text>
+    <text class="b" x="30" y="140">智能体最大化的是你写下的公式，不是你想要的那件事。</text>
+    <text class="sm m" x="30" y="164">原文说的是同一件事：随手写的近似奖励，会让智能体优化奖励函数本身，而不是我们的偏好。</text>
+  </svg>
+  </div>
+  <figcaption>这是我设想的例子，用来说明「代理目标和真实意图不一致」；原文没有举这个例子。</figcaption>
+</figure>
+
+<h3>毛病二：绕开写奖励的老办法，各有各的短板</h3>
+<p>不写奖励，办法也有：让人做示范，或者让人当奖励函数。它们的问题在于：很多行为人<b>能认出来，但做不出来</b>。原文的例子是控制一个关节很多、形态完全不像人的机器人，人没法示范它怎么走。让人每一步打分又太贵：RL 要几百上千小时的经验，一个 Atari 智能体约训练 5000 万步，每一步都问人是不可想象的，原文说要把所需的反馈量降低「几个数量级」。让人给整段打绝对分也不行，因为尺度不统一。</p>
+
+<figure class="fig">
+  <span class="tag">图 2 · 三条老路，各自卡在哪</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="三张赭色卡片。示范学习，包括逆强化学习和模仿学习：要人会做示范，形态不像人的机器人，人没法示范。人当奖励函数，每一步由人打分：强化学习要几百上千小时的经验，人给不起。让人打绝对分：同一个动作，几分因人而异、因时而异，数字为示意。下方一条蓝色横带：本文只让人回答哪段更好，认得出就行，不必会做，两两比较答得更一致。">
+    <rect class="oldT" x="20" y="14" width="200" height="132" rx="8"/>
+    <text class="b to" x="120" y="40" text-anchor="middle">示范学习</text>
+    <text class="sm m" x="120" y="58" text-anchor="middle">逆强化学习、模仿学习</text>
+    <text class="sm" x="120" y="86" text-anchor="middle">要人先会做示范</text>
+    <text class="sm" x="120" y="106" text-anchor="middle">形态不像人的机器人</text>
+    <text class="sm" x="120" y="126" text-anchor="middle">人没法示范怎么走</text>
+    <rect class="oldT" x="240" y="14" width="200" height="132" rx="8"/>
+    <text class="b to" x="340" y="40" text-anchor="middle">人当奖励函数</text>
+    <text class="sm m" x="340" y="58" text-anchor="middle">每一步由人打分</text>
+    <text class="sm" x="340" y="86" text-anchor="middle">RL 要几百上千小时</text>
+    <text class="sm" x="340" y="106" text-anchor="middle">的经验</text>
+    <text class="sm" x="340" y="126" text-anchor="middle">人给不起</text>
+    <rect class="oldT" x="460" y="14" width="200" height="132" rx="8"/>
+    <text class="b to" x="560" y="40" text-anchor="middle">让人打绝对分</text>
+    <text class="sm m" x="560" y="58" text-anchor="middle">给每一段打几分</text>
+    <text class="sm" x="560" y="86" text-anchor="middle">同一个动作，7 分还是 4 分</text>
+    <text class="sm" x="560" y="106" text-anchor="middle">因人而异，因时而异</text>
+    <text class="sm m" x="560" y="126" text-anchor="middle">（数字为示意）</text>
+    <rect class="newT" x="20" y="164" width="640" height="56" rx="8"/>
+    <text class="b tn" x="340" y="188" text-anchor="middle">本文：人只回答「哪段更好」</text>
+    <text class="sm" x="340" y="208" text-anchor="middle">认得出就行，不必会做；两两比较，比打分答得更一致</text>
+  </svg>
+  </div>
+  <figcaption>前两张卡片的理由出自原文第 1 节；第三张卡片的「更难一致」，原文 3.3 节的说法是：人给出一致的比较，比给出一致的绝对分数容易得多，尤其在连续控制任务和后面的新行为任务里。</figcaption>
+</figure>
+
+<p>原文把想要的方案写成四条：只能<b>认出</b>想要的行为也能教；<b>非专家</b>也能教；能<b>规模化</b>到大问题；<b>省反馈</b>。难就难在四条同时满足。</p>
+<p class="punch">做法很小：让人只做最容易的那件事，<em>比较两段，哪段更好</em>。</p>
+
+<!-- ============ 2 ============ -->
+<h2 id="s2"><span class="no">2</span>第一步：只问「哪段更好」</h2>
+<p><b>做什么。</b>智能体在环境里行动，系统从它的轨迹里截出两个很短的片段，给人看。MuJoCo 机器人任务里片段长 1.5 秒（15 到 60 个时间步，随任务而定）；Atari 里是 25 个时间步，约 1.7 秒。人有四种回答：片段 1 更好，片段 2 更好，一样好，无法比较。</p>
+<p><b>怎么存。</b>数据库里存的是三元组（片段 1，片段 2，μ），μ 是「人偏向哪个」的分布：选了一个，μ 把全部分量放在那个上；选「一样好」，μ 是均匀的（0.5，0.5）；选「无法比较」，这条不入库。把平局存成均匀分布，是为了让它也能进后面的交叉熵损失：它告诉模型「这两段的分应该差不多」，信息不丢。</p>
+
+<figure class="fig">
+  <span class="tag">图 3 · 人怎么被问、答案怎么存</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 246" role="img" aria-label="左边是两个片段，每段 1 到 2 秒。中间是人的四种回答：片段 1 更好、片段 2 更好、一样好、无法比较。右边是各自存成的记录：μ 等于 1 比 0，μ 等于 0 比 1，μ 等于 0.5 比 0.5 均匀，无法比较则不入库。">
+    <rect class="softS" x="20" y="24" width="150" height="84" rx="8"/>
+    <text class="b" x="95" y="62" text-anchor="middle">片段 1</text>
+    <text class="sm m" x="95" y="84" text-anchor="middle">1–2 秒的短视频</text>
+    <rect class="softS" x="20" y="130" width="150" height="84" rx="8"/>
+    <text class="b" x="95" y="168" text-anchor="middle">片段 2</text>
+    <text class="sm m" x="95" y="190" text-anchor="middle">1–2 秒的短视频</text>
+    <path class="mutS" d="M172 66 H196 V120 H226" marker-end="url(#ah)"/>
+    <path class="mutS" d="M172 172 H196 V120"/>
+    <text class="sm m" x="210" y="14">人的回答</text>
+    <rect class="newT" x="230" y="26" width="180" height="34" rx="6"/>
+    <text class="sm" x="320" y="48" text-anchor="middle">片段 1 更好</text>
+    <rect class="newT" x="230" y="76" width="180" height="34" rx="6"/>
+    <text class="sm" x="320" y="98" text-anchor="middle">片段 2 更好</text>
+    <rect class="newT" x="230" y="126" width="180" height="34" rx="6"/>
+    <text class="sm" x="320" y="148" text-anchor="middle">一样好</text>
+    <rect class="softS" x="230" y="176" width="180" height="34" rx="6"/>
+    <text class="sm" x="320" y="198" text-anchor="middle">无法比较</text>
+    <text class="sm m" x="440" y="14">存进数据库的 μ</text>
+    <line class="mutS" x1="412" y1="43" x2="448" y2="43" marker-end="url(#ah)"/>
+    <line class="mutS" x1="412" y1="93" x2="448" y2="93" marker-end="url(#ah)"/>
+    <line class="mutS" x1="412" y1="143" x2="448" y2="143" marker-end="url(#ah)"/>
+    <line class="mutS" x1="412" y1="193" x2="448" y2="193" marker-end="url(#ah)"/>
+    <text class="mo" x="456" y="48">μ = (1, 0)</text>
+    <text class="mo" x="456" y="98">μ = (0, 1)</text>
+    <text class="mo" x="456" y="148">μ = (0.5, 0.5)</text>
+    <text class="sm m" x="456" y="198">不入库</text>
+    <text class="sm m" x="456" y="226">μ 的两个数：偏向片段 1、片段 2 的程度</text>
+  </svg>
+  </div>
+  <figcaption>四种回答，实际存三种。人每答一题平均 3–5 秒（原文 3.1 节）。</figcaption>
+</figure>
+
+<p><b>为什么这样就行。</b>人不需要会做任务，也不需要给分，只需要看出两段里哪段更接近想要的。非专家也能答：反馈由承包商提供，事先只拿到每个任务的一两句话描述。片段为什么选 1–2 秒，原文 3.3 节的解释是工程经验：片段太短，人要花一阵子才看懂状况；更长的片段，评价时间大致和长度成正比；作者选了「评价时间仍然成正比的最短长度」。这一步对着的是上面的毛病二：人只做认得出、答得一致的判断，一条只要几秒，700 条比较约 35–58 分钟（推算：700 × 3–5 秒）。精确写法见附录 A。</p>
+
+<!-- ============ 3 ============ -->
+<h2 id="s3"><span class="no">3</span>第二步：从比较里学出奖励预测器</h2>
+<p><b>做什么。</b>训练一个小神经网络 r̂，输入一步的观察和动作，输出一个分数。一个片段的总分，是它每一步的分数加起来。两个片段的总分之差，决定「人选片段 1」的概率：分差越大，越可能选分高的那个。原文 2.2.3 节把它比作国际象棋的 Elo 分：两个棋手的 Elo 分之差，估计其中一人赢棋的概率；这里是两个片段的预测奖励之差，估计人选哪个的概率。数学上这是 1952 年的 Bradley-Terry 模型，就是只有两个选项的 softmax。</p>
+<p><b>为什么这样就行。</b>因为只有分差有意义：分数整体加 100，分差不变，概率不变。所以不需要任何一条绝对分数，整个 r̂ 都是从「选了哪个」里训练出来的。训练时，每条数据的损失是 −log（模型给人实际选的那个的概率），也就是交叉熵：预测对了损失小，预测错了损失大，梯度推着 r̂ 把人选的那个片段的分往上调。</p>
+
+<figure class="fig">
+  <span class="tag">图 4 · 分差怎么变成概率，概率怎么变成损失（示意：设定的分数）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 268" role="img" aria-label="左图：预测人选片段 1 的概率。分差 0 时是 0.500，分差 1 时是 0.731，分差 2 时是 0.881，分差 4 时是 0.982。右图：假设分差是 2，预测概率 0.881。人选了片段 1，损失 0.127，很小；人选了片段 2，损失 2.127，很大。">
+    <text class="b" x="20" y="24">预测「人选片段 1」的概率</text>
+    <text class="sm m" x="20" y="44">分差 = 片段 1 的总分 − 片段 2 的总分</text>
+    <text class="sm" x="20" y="78">分差 0</text>
+    <rect class="soft" x="90" y="62" width="260" height="22" rx="4"/>
+    <rect class="new" x="90" y="62" width="130" height="22" rx="4"/>
+    <text class="sm mo" x="358" y="78">0.500</text>
+    <text class="sm" x="20" y="118">分差 1</text>
+    <rect class="soft" x="90" y="102" width="260" height="22" rx="4"/>
+    <rect class="new" x="90" y="102" width="190" height="22" rx="4"/>
+    <text class="sm mo" x="358" y="118">0.731</text>
+    <text class="sm" x="20" y="158">分差 2</text>
+    <rect class="soft" x="90" y="142" width="260" height="22" rx="4"/>
+    <rect class="new" x="90" y="142" width="229" height="22" rx="4"/>
+    <text class="sm mo" x="358" y="158">0.881</text>
+    <text class="sm" x="20" y="198">分差 4</text>
+    <rect class="soft" x="90" y="182" width="260" height="22" rx="4"/>
+    <rect class="new" x="90" y="182" width="255" height="22" rx="4"/>
+    <text class="sm mo" x="358" y="198">0.982</text>
+    <text class="sm m" x="20" y="236">分差越大越确定，但永远到不了 1；整体加 100，概率不变。</text>
+    <line class="ln" x1="428" y1="14" x2="428" y2="250"/>
+    <text class="b" x="450" y="24">若分差 2（预测 0.881）</text>
+    <text class="sm m" x="450" y="44">损失 = −ln（人实际选的那个的概率）</text>
+    <text class="sm" x="450" y="78">人选了片段 1</text>
+    <rect class="new" x="450" y="88" width="6" height="18" rx="2"/>
+    <text class="sm mo" x="464" y="102">0.127</text>
+    <text class="sm m" x="450" y="124">预测对了：损失很小</text>
+    <text class="sm" x="450" y="164">人选了片段 2</text>
+    <rect class="old" x="450" y="174" width="85" height="18" rx="2"/>
+    <text class="sm mo" x="543" y="188">2.127</text>
+    <text class="sm m" x="450" y="210">预测错了：损失很大，推着 r̂ 改</text>
+  </svg>
+  </div>
+  <figcaption>左：分差 2 时，e²/(e²+e¹)（e 是自然对数的底）= 0.881。右：−ln 0.881 = 0.127，−ln 0.119 = 2.127。分数是我为讲解设的。</figcaption>
+</figure>
+
+<p>r̂ 学到的只是「相对大小对」，这对 RL 够用：RL 只需要一个让好行为分高的排序。作者在这个基本做法上加了三处工程修改，早期实验里发现有帮助：训练一个集成而不是单个预测器；留出约 1/e 的数据做验证并自动调正则；假设人有 10% 的概率乱点。细节在附录 A。这一步对着的是毛病一和毛病二：奖励不再是人写的公式，而是从人的比较里长出来的。精确写法见附录 A 式 1 和损失。</p>
+
+<!-- ============ 4 ============ -->
+<h2 id="s4"><span class="no">4</span>第三步：让强化学习去最大化它，三件事同时转</h2>
+<p><b>做什么。</b>有了 r̂，对 RL 算法来说问题回到了传统样子，只是「奖励从哪来」换了：环境不再给奖励，每一步的奖励由 r̂ 给出。Atari 用 A2C，机器人任务用 TRPO，参数沿用在真实奖励任务上调好的那套，唯一调过的是 TRPO 的熵奖励（鼓励继续探索的一项）。作者偏好策略梯度这一类算法，原文给的理由是奖励 r̂ 会变（非平稳），需要对奖励变化稳健的方法。这两种算法是什么，附录 B 里讲。</p>
+<p><b>三件事同时转。</b>整个系统有三个过程：策略在环境里行动并用 RL 更新，系统挑片段对给人比较，用人的比较更新 r̂。三者异步、同时地运行：轨迹从第一个流向第二个，人的比较从第二个流向第三个，r̂ 的新参数又流回第一个。没有「先标完、再训练」的阶段。Atari 里，在作者的硬件上，预测器典型地每 10 个 RL 时间步处理 1 个标签。</p>
+
+<figure class="fig">
+  <span class="tag">图 5 · 三个过程，三条数据流</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 246" role="img" aria-label="三个方框。过程一：策略与环境交互，RL 更新策略，最大化 r̂ 的分数。过程二：从轨迹里挑片段对，交给人比较。过程三：用监督学习更新 r̂，拟合目前所有的人类比较。过程一到过程二的箭头是轨迹，过程二到过程三的箭头是人的比较，过程三回到过程一的箭头是 r̂ 的新参数。它们同时运行。">
+    <rect class="newT" x="20" y="36" width="170" height="90" rx="8"/>
+    <text class="b tn" x="105" y="62" text-anchor="middle">① 策略与环境交互</text>
+    <text class="sm" x="105" y="86" text-anchor="middle">RL 更新策略 π</text>
+    <text class="sm" x="105" y="104" text-anchor="middle">最大化 r̂ 的分数</text>
+    <line class="mutS" x1="192" y1="81" x2="253" y2="81" marker-end="url(#ah)"/>
+    <text class="sm m" x="222" y="70" text-anchor="middle">轨迹</text>
+    <rect class="softS" x="255" y="36" width="170" height="90" rx="8"/>
+    <text class="b" x="340" y="62" text-anchor="middle">② 挑片段对</text>
+    <text class="sm" x="340" y="86" text-anchor="middle">交给人比较</text>
+    <text class="sm" x="340" y="104" text-anchor="middle">人选出更好的一段</text>
+    <line class="mutS" x1="427" y1="81" x2="488" y2="81" marker-end="url(#ah)"/>
+    <text class="sm m" x="457" y="70" text-anchor="middle">人的比较</text>
+    <rect class="new" x="490" y="36" width="170" height="90" rx="8"/>
+    <text class="b on" x="575" y="62" text-anchor="middle">③ 监督学习更新 r̂</text>
+    <text class="sm on" x="575" y="86" text-anchor="middle">拟合目前收集到的</text>
+    <text class="sm on" x="575" y="104" text-anchor="middle">全部比较</text>
+    <path class="newS" d="M575 128 V176 H105 V130" marker-end="url(#ahN)"/>
+    <text class="sm tn" x="340" y="196" text-anchor="middle">r̂ 的新参数流回策略</text>
+    <text class="sm m" x="340" y="228" text-anchor="middle">三件事同时在跑，没有「先标完再训练」这两个阶段</text>
+  </svg>
+  </div>
+  <figcaption>对应原文 2.2 节的三个过程。作者自己的示意图是下面这张。</figcaption>
+</figure>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 1 · 方法示意</span>
+  <img class="orig" src="orig-fig1.png" alt="原文 Figure 1：一张流程示意图。RL algorithm 向 environment 发出 action，environment 向 RL algorithm 返回 observation，同时 observation 送进 reward predictor；human feedback 用虚线箭头送进 reward predictor；reward predictor 输出 predicted reward 送回 RL algorithm。" loading="lazy">
+  <figcaption>这张图在说什么：<b>环境不再给奖励，奖励由一个被人类反馈训练着的预测器给出</b>。怎么看：实线是 RL 的常规回路（观察、动作），虚线是人类反馈只进预测器、不直接进 RL。图源：Christiano 等 2017 原文。</figcaption>
+</figure>
+
+<p><b>为什么这样就行。</b>奖励预测器相当于把稀缺的人换成便宜的网络：人只标一小部分，网络把这些标注外推到海量的交互上，RL 在海量交互上尽情使用 r̂。原文第 4 节的说法是，学一个单独的奖励模型，使交互复杂度降低约 3 个数量级。RL 部分基本不用改，只是奖励的来源换了。这一步对着毛病二里的「人给不起」：几百上千小时的经验，由 r̂ 来评，人只评其中一小部分。原文还做了一件事，保证人的反馈是智能体唯一的指引：去掉环境里泄漏任务信息的信号（比如摔倒就终止回合、屏幕上的得分），细节在附录 F。</p>
+
+<!-- ============ 5 ============ -->
+<h2 id="s5"><span class="no">5</span>为什么必须边练边问</h2>
+<p><b>问题。</b>既然 r̂ 能从比较里学出来，为什么不一次标一大批，训练好，之后永远用它？原文 3.3 节给了一个很重要的答案。</p>
+<p><b>机制。</b>开头的策略很烂，它的轨迹都是乱动。人比较这些乱动的片段，r̂ 学到的只是区分「乱动里相对好的」。策略用 r̂ 一练，很快走到 r̂ <b>从没见过</b>的状态。在那里 r̂ 的输出只是外推，没人对它负责；总有一些状态，r̂ 给了高分，按真实意图却是错的。原文的说法是：由于占用分布（策略会访问的状态的分布）在变，离线训练的预测器只捕获了真实奖励的一部分，最大化这个「部分奖励」会导致在真实奖励看来很怪异的行为。我补充的：策略本身是个优化器，专门会找这种漏洞，找到了就一直刷。</p>
+
+<figure class="fig">
+  <span class="tag">图 6 · 离线标注和在线标注（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 282" role="img" aria-label="上半：离线，只在开头标一批。开头的策略走过的状态，人标过，预测器可靠；右边预测器没见过的状态，输出只是外推，策略专找预测器给高分却不对的地方。策略一练就走到这里。下半：在线，边练边标。标注区跟着策略向右扩展，开头的状态和策略新走到的状态都有人标，漏洞被及时纠正。">
+    <text class="b" x="20" y="22">离线：只在开头标一批</text>
+    <rect class="newT" x="20" y="34" width="200" height="56" rx="8"/>
+    <text class="sm" x="120" y="58" text-anchor="middle">开头策略走过的状态</text>
+    <text class="sm" x="120" y="76" text-anchor="middle">人标过，r̂ 靠谱</text>
+    <rect class="softS dash" x="226" y="34" width="434" height="56" rx="8"/>
+    <text class="sm" x="443" y="58" text-anchor="middle">r̂ 没见过的状态：输出只是外推</text>
+    <text class="sm to" x="443" y="76" text-anchor="middle">r̂ 给高分、真实意图却不对的地方，策略专找这里</text>
+    <line class="oldS" x1="60" y1="110" x2="640" y2="110" marker-end="url(#ahO)"/>
+    <text class="sm to" x="640" y="130" text-anchor="end">策略一练，就走到这里</text>
+    <text class="b" x="20" y="162">在线：边练边标</text>
+    <rect class="newT" x="20" y="174" width="200" height="56" rx="8"/>
+    <text class="sm" x="120" y="198" text-anchor="middle">开头的状态</text>
+    <text class="sm" x="120" y="216" text-anchor="middle">人标过</text>
+    <rect class="newT" x="226" y="174" width="250" height="56" rx="8"/>
+    <text class="sm" x="351" y="198" text-anchor="middle">策略新走到的状态</text>
+    <text class="sm" x="351" y="216" text-anchor="middle">也有人标，漏洞被及时纠正</text>
+    <rect class="softS dash" x="482" y="174" width="178" height="56" rx="8"/>
+    <text class="sm m" x="571" y="207" text-anchor="middle">还没走到</text>
+    <line class="newS" x1="60" y1="250" x2="470" y2="250" marker-end="url(#ahN)"/>
+    <text class="sm tn" x="470" y="270" text-anchor="end">标注跟着策略走</text>
+  </svg>
+  </div>
+  <figcaption>这是我画的示意，说明原文 3.3 节的机制，不是原文的数据图。</figcaption>
+</figure>
+
+<p><b>原文的例子。</b>Pong 里，离线训练有时让智能体学会避免丢分，却不学得分，结果是一轮来回击球永远打不完，同一串事件无限重复（原文用的词是 extremely long volleys）。这里的「一轮击球」不是强化学习里的回合（episode）。这就是<b>奖励钻空子</b>：智能体优化的是代理（r̂），不是真正目标。原文的补救是在线的：持续标注，让人看到智能体新近的行为，及时纠正 r̂。原文的结论是：人类反馈需要和 RL 学习<b>交织</b>在一起，而不是静态提供。</p>
+<p>这也是为什么标注的节奏有讲究：开头先标一批（MuJoCo 里 25% 的比较来自随机初始化的策略；Atari 开头 500 条，并在 RL 开始前先把预测器训练 200 个 epoch），之后标注速率随训练推进逐渐下降，Atari 里只保留最近 3,000 条标签循环训练，让新标签的权重不被旧标签稀释。具体公式见附录 F。这一步对着的是毛病一：钻空子在这里没有被消除，只是被在线标注逐步缓解。</p>
+
+<!-- ============ 6 ============ -->
+<h2 id="s6"><span class="no">6</span>省人的办法：只问最有分歧的</h2>
+<p><b>问题。</b>人的时间是最贵的资源。随机选片段对来问，很多问题模型已经会了，浪费标注。</p>
+<p><b>做什么。</b>训练的是一个<b>集成</b>：默认 3 个独立的预测器，每个在从数据库里有放回抽样的数据上训练，所以它们各学各的。选问题时，先从当前轨迹里抽出一大批候选片段对（数量是最终展示给人的 10 倍），让每个预测器都预测「哪段会被偏好」，挑出<b>预测方差最高</b>的那些给人。</p>
+
+<figure class="fig">
+  <span class="tag">图 7 · 三个预测器意见一致就不问，分歧大才问（示意：设定的概率）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 250" role="img" aria-label="左图情形 A：三个预测器预测片段 1 更好的概率都是 0.80，方差 0，不必问人。右图情形 B：三个预测器分别是 0.90、0.10、0.50，均值 0.50，方差 0.107，分歧大，值得问人。">
+    <rect class="softS" x="20" y="14" width="300" height="222" rx="10"/>
+    <text class="b" x="40" y="40">情形 A：意见一致</text>
+    <rect class="soft" x="64" y="104" width="40" height="86" rx="3"/>
+    <rect class="mutF" x="64" y="110" width="40" height="80" rx="3"/>
+    <rect class="mutF" x="124" y="110" width="40" height="80" rx="3"/>
+    <rect class="mutF" x="184" y="110" width="40" height="80" rx="3"/>
+    <text class="sm mo" x="84" y="102" text-anchor="middle">0.80</text>
+    <text class="sm mo" x="144" y="102" text-anchor="middle">0.80</text>
+    <text class="sm mo" x="204" y="102" text-anchor="middle">0.80</text>
+    <line class="ln" x1="50" y1="190" x2="250" y2="190"/>
+    <text class="sm m" x="84" y="208" text-anchor="middle">预测器 1</text>
+    <text class="sm m" x="144" y="208" text-anchor="middle">预测器 2</text>
+    <text class="sm m" x="204" y="208" text-anchor="middle">预测器 3</text>
+    <text class="sm" x="270" y="140" text-anchor="middle">方差 0</text>
+    <text class="sm m" x="270" y="158" text-anchor="middle">不必问人</text>
+    <rect class="newT" x="360" y="14" width="300" height="222" rx="10"/>
+    <text class="b tn" x="380" y="40">情形 B：意见分歧</text>
+    <rect class="new" x="404" y="110" width="40" height="80" rx="3"/>
+    <rect class="new" x="464" y="172" width="40" height="18" rx="3"/>
+    <rect class="new" x="524" y="140" width="40" height="50" rx="3"/>
+    <text class="sm mo" x="424" y="102" text-anchor="middle">0.90</text>
+    <text class="sm mo" x="484" y="164" text-anchor="middle">0.10</text>
+    <text class="sm mo" x="544" y="132" text-anchor="middle">0.50</text>
+    <line class="ln" x1="390" y1="190" x2="590" y2="190"/>
+    <text class="sm m" x="424" y="208" text-anchor="middle">预测器 1</text>
+    <text class="sm m" x="484" y="208" text-anchor="middle">预测器 2</text>
+    <text class="sm m" x="544" y="208" text-anchor="middle">预测器 3</text>
+    <text class="sm tn" x="620" y="140" text-anchor="middle">方差 0.107</text>
+    <text class="sm tn" x="620" y="158" text-anchor="middle">值得问</text>
+  </svg>
+  </div>
+  <figcaption>每根柱子是一个预测器对「片段 1 更好」的预测概率。情形 B 的方差：均值 0.5，三个偏差 0.4、0.4、0，(0.16 + 0.16 + 0) / 3 = 0.107。原文只说「选预测的方差最高的」，没说用硬投票还是概率，这里用概率只是示意。</figcaption>
+</figure>
+
+<p><b>为什么这样就行。</b>集成里各预测器在不同的样本上训练，意见一致，通常说明数据已经把这个问题钉住；意见分歧，说明数据在这里不够。问这类问题，每次标注最能缩小预测器之间的差异，类似主动学习里的不确定性采样。这只是直觉，不是严格保证。原文 2.2.4 节自己承认：这是一个<b>粗糙的近似</b>，消融实验显示在某些任务上它反而损害性能；理想做法是按「查询的期望信息价值」来选，留给了未来工作。所以不要把「主动选择」当成这篇论文成功的原因。这一步对着的是难点「人的时间最贵」。自助采样和为什么每个预测器会留出约 1/e 的数据，见附录 E。</p>
+
+<!-- ============ 7 ============ -->
+<h2 id="s7"><span class="no">7</span>证据：它做到了多少</h2>
+<h3>怎么比：三种反馈来源</h3>
+<p>两个领域：8 个 MuJoCo 模拟机器人任务（其中一个简单的小车倒立摆，原文叫 pendulum，复杂度相当于前人工作）和 7 个 Atari 游戏（与 Mnih 等 2013 相同）。同时比三种反馈来源：<b>真实人类</b>（承包商，不了解环境和算法）；<b>合成预言机</b>（用任务的真实奖励直接判哪段更好，等价于完美、无噪声的人）；以及<b>直接用真实奖励做 RL</b>（上限基线）。原文 3.1 节说，目标不是超越 RL，而是几乎一样好，只依赖稀缺得多的反馈。</p>
+
+<h3>机器人任务：700 条比较接近真实奖励的 RL</h3>
+<p>原文 3.1.1 节：用 700 条标签，在这些任务上<b>接近</b>用真实奖励的 RL；学出来的奖励训练往往不太稳定、方差更大，但均值相当。到 1400 条标签，整体<b>略好于</b>直接给真实奖励，原文说「令人惊讶」，猜想原因是学出来的奖励塑形更好：奖励学习过程会给所有通常之后伴随高奖励的行为分配正奖励。这是作者的假说，原文没有验证。真实人类反馈通常略逊于合成反馈，效率介于合成的一半到同样之间。Ant 是例外：人类反馈<b>显著优于</b>合成反馈，因为人被要求偏好「直立站着」的轨迹，这个信号对奖励塑形很有用。</p>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 2 · MuJoCo 机器人任务</span>
+  <img class="orig" src="orig-fig2.png" alt="原文 Figure 2：八个小图，依次是 walker、hopper、swimmer、cheetah、ant、reacher、double-pendulum、pendulum，横轴是训练的时间步，纵轴是真实奖励。每个小图里有五条曲线：橙色是真实奖励的 RL，深蓝是 1400 条合成比较，青色是 700 条，浅蓝是 350 条，紫色是约 750 条真实人类比较。大多数任务里几条曲线接近，ant 里紫色的人类反馈远高于其他。" loading="lazy">
+  <figcaption>这张图在说什么：<b>几百条比较训练出来的奖励，在大多数任务上追得上真实奖励；ant 里人类反馈甚至明显更高</b>。怎么看：橙色是上限基线，紫色是真实人类。曲线是 5 次平均，真实人类反馈只有一次运行。图例写的是 750 human queries，正文写的是 700 条，两处数字不一致，我没有查到原文的解释（见附录 J）。图源：Christiano 等 2017 原文。</figcaption>
+</figure>
+
+<h3>Atari：更难追平，但大多数游戏上有明显进步</h3>
+<p>原文 3.1.2 节：Atari 里比机器人更难匹配 RL，但大多数游戏上有显著学习，个别游戏持平甚至超过。人的比较有多少？摘要说不到交互量的 1%。我用原文数字推算：5,500 条比较 × 每条两个片段 × 每片段 25 步 = 275,000 个时间步，对总训练量 50M 时间步约 0.55%，与「不到 1%」一致（这里按时间步算，原文没有逐项核算）。</p>
+
+<figure class="fig">
+  <span class="tag">图 8 · 七个 Atari 游戏，按原文 3.1.2 节的文字分组</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 330" role="img" aria-label="四行。BeamRider 和 Pong：合成标签 3300 条左右就持平或接近 RL。Seaquest 和 Qbert：合成反馈最终接近 RL 水平，但学得更慢。SpaceInvaders 和 Breakout：合成反馈始终没追上 RL，但智能体明显进步：SpaceInvaders 常能通过第一关，Breakout 得分到 20，标签足够时到 50。Enduro：真实人类反馈超过 A3C，结果可与 DQN 比肩，因为标注者奖励任何朝超车前进的进度，相当于塑形。底部注：Qbert 用真实人类反馈没学会通过第一关。">
+    <rect class="newT" x="20" y="14" width="190" height="58" rx="8"/>
+    <text class="b tn" x="115" y="48" text-anchor="middle">持平或接近 RL</text>
+    <rect class="card" x="220" y="14" width="440" height="58" rx="8"/>
+    <text class="b" x="236" y="40">BeamRider · Pong</text>
+    <text class="sm m" x="236" y="60">合成标签约 3,300 条就持平或接近 RL</text>
+    <rect class="softS" x="20" y="84" width="190" height="58" rx="8"/>
+    <text class="b" x="115" y="118" text-anchor="middle">最终接近，学得慢</text>
+    <rect class="card" x="220" y="84" width="440" height="58" rx="8"/>
+    <text class="b" x="236" y="110">Seaquest · Qbert</text>
+    <text class="sm m" x="236" y="130">合成反馈最终接近 RL 水平，但学得更慢</text>
+    <rect class="softS" x="20" y="154" width="190" height="58" rx="8"/>
+    <text class="b" x="115" y="188" text-anchor="middle">没追上，但明显进步</text>
+    <rect class="card" x="220" y="154" width="440" height="58" rx="8"/>
+    <text class="b" x="236" y="180">SpaceInvaders · Breakout</text>
+    <text class="sm m" x="236" y="200">常能通过第一关；Breakout 得分到 20，标签足够时到 50</text>
+    <rect class="newT" x="20" y="224" width="190" height="58" rx="8"/>
+    <text class="b tn" x="115" y="258" text-anchor="middle">超过 A3C</text>
+    <rect class="card" x="220" y="224" width="440" height="58" rx="8"/>
+    <text class="b" x="236" y="250">Enduro</text>
+    <text class="sm m" x="236" y="270">人给「朝超车前进」的进度也打正分，相当于塑形</text>
+    <text class="sm m" x="20" y="312">Qbert 用真实人类反馈没学会通过第一关；作者猜短片段在 Qbert 里容易混淆，难评价。</text>
+  </svg>
+  </div>
+  <figcaption>前三行是合成反馈的结果；Enduro 那一行是真实人类反馈。Breakout 的 20 和 50 是原文文字里的数；曲线具体形状见原文 Figure 3。</figcaption>
+</figure>
+
+<p>真实人类反馈在多数游戏上与同数量的合成标签相近或略差，常与少 40% 标签的合成反馈相当；作者列了可能原因（标注错误、不同承包商不一致、标注速率不均使标签集中在状态空间的狭窄部分），都没有验证。Enduro 里，A3C 靠随机探索很难学会超车，用合成标签也难；人类标注者则倾向于奖励任何朝超车前进的进度，相当于把稀疏的奖励塑形了，所以反而<b>超过</b> A3C。塑形的机制见附录 C。</p>
+
+<h3>新行为：没有现成奖励函数的任务</h3>
+<p>这是全文真正的亮点：前面的任务都有现成奖励，可以说「何必这样做」；下面这些行为，很难手写出能激励它们的奖励函数。参数与前面的实验相同，反馈由作者本人提供（不是外部承包商）。</p>
+<div class="tbl"><table>
+  <thead><tr><th>行为</th><th class="num">比较次数</th><th>用时 / 交互</th></tr></thead>
+  <tbody>
+    <tr><td>Hopper 连续后空翻，落地站稳再翻</td><td class="num">900</td><td>不到 1 小时</td></tr>
+    <tr><td>Half-Cheetah 单腿站立前进</td><td class="num">800</td><td>不到 1 小时</td></tr>
+    <tr><td>Enduro 与别的车并排行驶</td><td class="num">约 1,300</td><td>约 400 万帧交互；会在相当长一段回合里和别的车几乎并排，但会被背景变化搞糊涂</td></tr>
+  </tbody>
+</table></div>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 4 · Hopper 的一次后空翻（四帧）</span>
+  <img class="orig" src="orig-fig4.png" alt="原文 Figure 4：四张并排的截图，一个由几根橙色杆子组成的单腿 Hopper 机器人在棋盘格地面上，依次是蜷缩起跳、在空中翻转、倒置、重新直立的四个瞬间。" loading="lazy">
+  <figcaption>这张图在说什么：<b>一个没有人写得出奖励函数的动作，靠 900 次比较学会了</b>。怎么看：从左到右是同一次后空翻的四帧，智能体被训练成连续后空翻，每次落地站稳。图源：Christiano 等 2017 原文。</figcaption>
+</figure>
+
+<h3>哪个零件重要：消融实验</h3>
+<p>每次去掉一个零件，看性能掉多少。MuJoCo 每个变体用 700 条合成标签、5 次平均；Atari 用 5,500 条合成标签、3 次平均（Figure 5、6 说明；附录 A.2 记了少数例外）。下图只转述原文的文字结论，曲线我没有逐条读，需要对照原图的地方都标明了。</p>
+
+<figure class="fig">
+  <span class="tag">图 9 · 去掉一个零件，原文怎么说</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 352" role="img" aria-label="六行。no online queries，只用开头标的一批：效果很差，Pong 里一轮来回击球没完没了。target，改成预测绝对分数用回归：连续控制任务里预测比较明显更好，Atari 里没有谁稳定占优。no segments，单帧比较，仅机器人：要多得多的比较才能得到同样结果。random queries，随机选问题：原文承认主动选择在某些任务上反而更差。no ensemble，只训一个预测器：原文没有文字结论，要看 Figure 5 和 6。no regularization，去掉 L2：原文没有文字结论，要看 Figure 5 和 6。">
+    <text class="sm m" x="20" y="18">去掉了什么</text>
+    <text class="sm m" x="340" y="18">原文的文字结论</text>
+    <rect class="newT" x="20" y="28" width="640" height="48" rx="6"/>
+    <text class="mo b" x="32" y="48">no online queries</text>
+    <text class="sm" x="32" y="66">只用开头标的一批，不再在线标</text>
+    <text class="b tn" x="340" y="48">效果很差</text>
+    <text class="sm" x="340" y="66">Pong：一轮来回击球没完没了</text>
+    <rect class="newT" x="20" y="84" width="640" height="48" rx="6"/>
+    <text class="mo b" x="32" y="104">target</text>
+    <text class="sm" x="32" y="122">改成预测绝对分数，用回归</text>
+    <text class="b tn" x="340" y="104">连续控制：预测比较明显更好</text>
+    <text class="sm" x="340" y="122">Atari：两者没有谁稳定占优</text>
+    <rect class="newT" x="20" y="140" width="640" height="48" rx="6"/>
+    <text class="mo b" x="32" y="160">no segments</text>
+    <text class="sm" x="32" y="178">单帧比较（仅机器人任务）</text>
+    <text class="b tn" x="340" y="160">要多得多的比较才能得到同样结果</text>
+    <text class="sm" x="340" y="178">只在连续控制任务上测过</text>
+    <rect class="softS" x="20" y="196" width="640" height="48" rx="6"/>
+    <text class="mo b" x="32" y="216">random queries</text>
+    <text class="sm" x="32" y="234">随机选问题，不挑分歧最大的</text>
+    <text class="b" x="340" y="216">原文承认：某些任务上主动选择反而更差</text>
+    <text class="sm" x="340" y="234">是粗糙近似，不能当成成功的原因</text>
+    <rect class="softS" x="20" y="252" width="640" height="48" rx="6"/>
+    <text class="mo b" x="32" y="272">no ensemble</text>
+    <text class="sm" x="32" y="290">只训一个预测器，随机选问题</text>
+    <text class="b" x="340" y="272">原文没有给文字结论</text>
+    <text class="sm" x="340" y="290">要看 Figure 5、6，我这里不下结论</text>
+    <rect class="softS" x="20" y="308" width="640" height="38" rx="6"/>
+    <text class="mo b" x="32" y="332">no regularization</text>
+    <text class="sm" x="196" y="332">去掉 ℓ2，只留 dropout</text>
+    <text class="b" x="340" y="332">原文没有给文字结论，同上</text>
+  </svg>
+  </div>
+  <figcaption>蓝底是原文给出了明确文字结论的；灰底是原文没有写结论或自己承认有问题的。对「比较胜过打分」，原文的解释是奖励的尺度变化很大，使回归问题变复杂，而只预测比较时问题被显著平滑，这是作者的解释，不是严格证明。</figcaption>
+</figure>
+
+<p><b>证据收在一起。</b>人只回答「哪段更好」，就能训练出能用的奖励：机器人任务几百到一千多条比较，Atari 上不到交互量 1% 的比较，接近甚至个别超过用真实奖励的 RL；还能教没人写得出奖励的新动作。离线标注效果很差，所以反馈必须和 RL 交织在一起；单帧比较和打分在连续控制里都不如片段比较。主动选择和集成的贡献，原文没有给出结论。</p>
+
+<!-- ============ 8 ============ -->
+<h2 id="s8"><span class="no">8</span>局限和后来</h2>
+<ul>
+  <li><b>作者承认的</b>：主动选择只是粗糙近似，某些任务上有害；真实人类反馈比合成反馈差，可能因为标注错误、不一致、标签集中；Qbert 没学会，短片段难评价；结论里希望将来「从偏好学一个任务，不比从程序化奖励学更难」。</li>
+  <li><b>我补充的</b>：评估大多在真实奖励已知的任务上，用真实奖励当评分标准；真正没有奖励的新行为只是定性展示，反馈来自作者，没有定量对照。真实人类反馈实验全部只跑了一次，随机波动无法评估。承包商也被告知了任务描述，在 Atari 里还要先自己玩 5 分钟，所以「非专家」也需要一点培训。1–2 秒的片段对要几十分钟才看出好坏的长时程目标够不够，原文没有讨论。</li>
+  <li><b>钻空子没有被消除</b>，只是被在线标注缓解。</li>
+  <li><b>后来</b>：原文已经给出完整的三段式流水线：从人的比较学一个奖励模型，再用 RL 优化它，并强调在线持续收集反馈。这和 <a href="../018-instructgpt/index.html">018 InstructGPT</a> 的三步法在结构上是同一件事；本篇用的 A2C、TRPO 后来被 <a href="../016-ppo/index.html">016 PPO</a> 取代；把「对齐」放到语言模型上讨论的是 <a href="../017-alignment-lab/index.html">017</a>。「RLHF」这个词本身不在本文里，本文用的是 human preferences。</li>
+</ul>
+
+<!-- ============ 附录 ============ -->
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块都默认折叠，标题里写明了对应的原文章节；正文用不到它们。其中标「我补充」的，是原文之外我加的说明，标「待核实」的是我没有核对清楚的。</p>
+
+<details class="ext"><summary>A · 公式和符号表（原文 2.1–2.2.3 节）</summary>
+<p><b>式 1：把片段总分之差变成「人选哪个」的概率（Bradley-Terry）</b></p>
+<div class="formula">P̂(σ<sup>1</sup> ≻ σ<sup>2</sup>) = exp Σ<sub>t</sub> r̂(o<sub>t</sub><sup>1</sup>, a<sub>t</sub><sup>1</sup>) / [ exp Σ<sub>t</sub> r̂(o<sub>t</sub><sup>1</sup>, a<sub>t</sub><sup>1</sup>) + exp Σ<sub>t</sub> r̂(o<sub>t</sub><sup>2</sup>, a<sub>t</sub><sup>2</sup>) ]<span class="fsrc">（原文 Eq. 1）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>是什么</th></tr></thead>
+  <tbody>
+    <tr><td>σ<sup>1</sup> ≻ σ<sup>2</sup></td><td>人更喜欢片段 1</td></tr>
+    <tr><td>r̂(o, a)</td><td>奖励预测器：对每一步给一个分数</td></tr>
+    <tr><td>Σ<sub>t</sub> r̂(…)</td><td>片段里每一步的分数加起来，当作这个片段的总分。隐含假设：片段的好坏就是每一步好坏之和，且没有折扣（原文脚注 3）</td></tr>
+    <tr><td>exp(总分)</td><td>把任意实数变成正数；分母是两个片段的 exp(总分) 之和，让两个概率加起来为 1</td></tr>
+  </tbody>
+</table></div>
+<p>分子分母同除以第一项，得到 1 / (1 + e<sup>−(R1−R2)</sup>)，即对分差做 sigmoid：只有分差有意义，绝对大小没有。原文说这是 Luce-Shepard 选择规则在轨迹片段上的特例。Atari 里奖励是前 4 个观察的函数而不是单帧（原文脚注 1），因为单帧看不出球往哪边飞。</p>
+
+<p><b>损失：交叉熵</b></p>
+<div class="formula">loss(r̂) = − Σ<sub>(σ<sup>1</sup>,σ<sup>2</sup>,μ)∈D</sub> [ μ(1)·log P̂(σ<sup>1</sup>≻σ<sup>2</sup>) + μ(2)·log P̂(σ<sup>2</sup>≻σ<sup>1</sup>) ]<span class="fsrc">（原文 2.2.3 节）</span></div>
+<p>对数据库里每条三元组求和；μ 是人的标签（选 1 是 (1,0)，平局是 (0.5,0.5)）；括号里是交叉熵，前面的负号把「最大化对数似然」变成「最小化损失」。平局的数字例子（我补充的，示意）：若 P̂ = 0.881（分差 2），人标平局，loss = 0.5 × 0.127 + 0.5 × 2.127 = 1.127，比预测 0.5 时的 ln 2 = 0.693 更大，所以梯度会把两个片段的分数往一起拉。</p>
+
+<p><b>三处工程修改（原文 2.2.3 节，「早期实验发现有帮助」）</b></p>
+<ul>
+  <li><b>集成</b>：每个预测器在 |D| 条数据的有放回抽样上训练；最终 r̂ 是对每个预测器独立归一化后取平均。</li>
+  <li><b>留 1/e 数据做验证并自适应正则</b>：每个预测器留出 1/e 的数据当验证集；用 ℓ2 正则，调节正则系数使验证损失保持在训练损失的 1.1 到 1.5 倍；有的领域也用 dropout。</li>
+  <li><b>假设人有 10% 概率乱点</b>：不直接用式 1，而用 P′ = 0.9 · P̂ + 0.1 · 0.5。原文给的理由：人的出错概率是一个不会随分差变大而衰减到 0 的常数。</li>
+</ul>
+<div class="tbl"><table>
+  <thead><tr><th>情形（示意）</th><th class="num">无此修改的损失</th><th class="num">有此修改的损失</th></tr></thead>
+  <tbody>
+    <tr><td>分差 2（P̂ = 0.881），人选了对的那个</td><td class="num">0.127</td><td class="num">0.171</td></tr>
+    <tr><td>分差 2，人选了「错的」那个</td><td class="num">2.127</td><td class="num">1.850</td></tr>
+    <tr><td>分差 10（P̂ ≈ 0.99995），人选了「错的」</td><td class="num">10.0</td><td class="num">≈ 2.99</td></tr>
+  </tbody>
+</table></div>
+<p>没有这个修改时，模型对一个标签错得很自信，损失就会爆炸，一条标错的数据能把预测器带偏；有了它，P′ 永远落在 [0.05, 0.95] 内，每条数据的损失最多约 ln 20 = 3.0。这是一种标签噪声模型，是对「非专家会点错」的稳健化处理。</p>
+
+<p><b>归一化</b>（2.2.1 节）：预测器给出的奖励减均值、除标准差（MuJoCo 标准差 1，Atari 为 0.05）。原因是 Bradley-Terry 里只有分差有意义，奖励的零点和大小都是任意的，原文说「奖励的位置在学习问题里没有被确定」；统一量级后可以沿用针对真实奖励调好的超参数。</p>
+</details>
+
+<details class="ext"><summary>B · 强化学习基础：本文用到的概念（原文 2.1、2.2.1 节）</summary>
+<p>001–014 都是监督学习或自监督学习：每个输入都有标准答案。本篇换了一个世界：<b>没有标准答案，只有「做完之后的评价」</b>。智能体自己去试，试出来的结果好不好，由奖励信号告诉它。</p>
+<div class="tbl"><table>
+  <thead><tr><th>名词</th><th>含义</th><th>在本文里</th></tr></thead>
+  <tbody>
+    <tr><td>智能体</td><td>做决策的程序</td><td>玩 Atari 的网络；控制机器人的网络</td></tr>
+    <tr><td>环境</td><td>智能体之外的一切</td><td>Atari 模拟器；MuJoCo 物理模拟器</td></tr>
+    <tr><td>观察</td><td>智能体此刻看到的东西</td><td>Atari：一帧 84×84 画面（叠 4 帧）；机器人：关节角度和速度等数字</td></tr>
+    <tr><td>动作</td><td>智能体能做的选择</td><td>手柄按键；关节上施加的力矩</td></tr>
+    <tr><td>奖励</td><td>环境对这一步打的分</td><td>通常是游戏得分的变化、向前走的距离。<b>本文的核心设定：环境不提供它</b></td></tr>
+    <tr><td>策略 π</td><td>看到观察，输出动作（或各动作的概率）</td><td>一个神经网络</td></tr>
+    <tr><td>片段</td><td>较短的一段轨迹 σ = ((o<sub>0</sub>,a<sub>0</sub>), …, (o<sub>k−1</sub>,a<sub>k−1</sub>))</td><td>k 只有 15–60 步（1–2 秒）</td></tr>
+  </tbody>
+</table></div>
+<p>和监督学习有三点本质不同：没有标准答案；奖励有延迟，要弄清是前面哪一步的功劳（归因难题）；数据由智能体自己产生，策略一变，看到的画面分布就变，这一点在第 5 节极关键。</p>
+
+<p><b>回报与折扣</b>：目标是一整串奖励的总和 G = r<sub>0</sub> + γ·r<sub>1</sub> + γ²·r<sub>2</sub> + …（0 &lt; γ ≤ 1），越晚拿到的奖励打越多折扣。示意：γ = 0.9，奖励 [1, 0, 2]，G = 1 + 0 + 0.81 × 2 = 2.62；同样的奖励晚一步 [0, 1, 2]，G = 0 + 0.9 + 1.62 = 2.52，更低。原文 Eq. 1 本身没有折扣，但训练策略的 RL 算法有折扣：TRPO 用 γ = 0.995，A2C 用 γ = 0.99。</p>
+
+<p><b>策略梯度</b>：策略网络输出每个动作的概率。某个动作之后拿到好结果，就把它的概率调高一点；坏结果就调低。示意：某状态下 P(左) = P(右) = 0.5，选「右」之后回报 +10，更新后 P(右) 可能到 0.55；单次回报噪声大，只调一点，靠大量样本平均。<b>优势</b>：用「实际回报 − V(s)」代替回报，V(s) 是一个叫 critic 的网络估计的「从这个状态出发按现在策略走的期望回报」。例：V(s) = 4，实际回报 5，则优势 +1，说明这个动作比平均好。</p>
+<p><b>A2C</b>（A3C 的同步版本）：actor 是策略网络，critic 是价值网络，一起训练；很多并行的环境副本同时采集经验；除优势项外，还加一项熵奖励，鼓励继续探索。<b>TRPO</b>：策略梯度步子迈大了会崩，TRPO 限定新旧策略的差异（用 KL 散度衡量）不超过一个小范围，只在旧策略周围的信任区域里更新；本文用在 MuJoCo 机器人任务上。<b>PPO</b> 与本文同期，用更简单的办法达到类似效果，本文没有用，后来的 RLHF 基本都用它（见 016）。</p>
+<p><b>探索与熵奖励</b>：只会利用已知最好的动作，会一直卡在最早碰到的「还行」的做法上。策略的随机程度用熵衡量：P = [0.5, 0.5] 的熵是 0.693，P = [0.99, 0.01] 只有 0.056。熵奖励是在目标里加一项「熵越高越好」。为什么本文里探索更要紧：r̂ 在不断变化，一个动作今天被打低分，明天可能变高分；如果策略早把它的概率压到接近 0，就再也试不到。原文说 TRPO 靠信任区域保证探索，在奖励变化时反而会探索不足，所以唯一调过的超参数是给 TRPO 加了熵奖励（0.01；swimmer 用 0.001）；「信任区域为什么会减少探索」，原文只给了结论。</p>
+<p><b>为什么偏好策略梯度</b>：原文只说奖励可能非平稳，所以倾向于对奖励变化稳健的方法，并引用 Ho &amp; Ermon 2016，没有给理由也没有对比。我的推测（原文没有验证）：基于价值的方法（如 DQN）先学「每个动作的预期回报表」，价值表是针对某个固定奖励学出来的，奖励一变就过期；策略梯度每次更新都用刚采集的新轨迹和当前 r̂ 重新算，对奖励变化更宽容。</p>
+</details>
+
+<details class="ext"><summary>C · 奖励塑形与稀疏奖励（原文 3.1 节；我补充）</summary>
+<p><b>先区分两个独立的问题</b>：钻空子是「代理目标和真实意图不一致」；<b>奖励塑形</b>说的是：就算奖励完全正确，如果它太稀疏，智能体也学不动。</p>
+<ul>
+  <li><b>稀疏奖励</b>：只有达成最终目标才给分，过程中全是 0。原文说 Enduro 对 A3C 很难，因为靠随机探索很难成功超过别的车；据此推断，真实奖励只有超车那一刻才有，智能体收不到任何信号，策略梯度没有方向可调。</li>
+  <li><b>塑形</b>：在真实奖励之外加「中间进展」的奖励，告诉智能体门在哪个方向。示意（我的数字）：除了超过那一刻的 +1，再给「距前车越近越有小奖励」。</li>
+  <li><b>塑形的风险</b>：中间奖励若和真实目标不一致，智能体可能只刷中间奖励，回到钻空子。</li>
+  <li><b>和本文的关系</b>：人比较两段视频时，不会只在超车那一刻才觉得好，「逼近前车」的片段也会被选为更好。r̂ 拟合这些比较，就自动学到了一个带中间进展的奖励，等于自动塑形。原文 3.1.1 节对「1400 条略好于真实奖励」的解释，以及 Ant、Enduro 里人类反馈优于对照，说的都是这个机制；这个解释是作者的假说，原文没有验证。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>D · Bradley-Terry 的算例，和 Elo 的类比（原文 2.2.3 节）</summary>
+<p>国际象棋里每个选手有一个 Elo 分，对局前系统根据分差预测谁赢的概率，每局结果再反过来调整双方的分。没有人给选手打绝对分，分数完全是从两两胜负里反推出来的。本文把每个片段当成一个选手，它的 Elo 分是片段内每一步 r̂ 的总和，人比较两个片段相当于一局对局。</p>
+<p>算例（示意）：R<sub>1</sub> = 3.0，R<sub>2</sub> = 1.0，分差 2。e<sup>3</sup> = 20.09，e<sup>1</sup> = 2.72，P(1 胜) = 20.09 / 22.81 = 0.881，P(2 胜) = 0.119。分差 0、1、2、4 对应 0.5、0.731、0.881、0.982。把所有分都加 100，分差仍是 2，概率不变。人选了 1，模型给 0.881：损失 −ln 0.881 = 0.127；人选了 2，模型却给 0.119：损失 −ln 0.119 = 2.127，梯度推着 r̂ 把片段 2 的分往上调、片段 1 往下调。</p>
+</details>
+
+<details class="ext"><summary>E · 集成与自助采样（原文 2.2.3、2.2.4 节）</summary>
+<p>单个神经网络只给一个答案，不告诉你它有多确定。训练好几个独立的预测器，若它们对某对片段的判断一致，说明这个判断大概率已经学好；若各说各的，说明这里数据没覆盖，需要人来补。分歧是不确定性的粗略近似。</p>
+<p><b>自助采样（bootstrap）</b>：每个预测器训练时，从全部 |D| 条数据里有放回地抽 |D| 条，所以有的数据被抽到多次，有的一次也没抽到。每条数据在一次抽取里没被选中的概率是 1 − 1/|D|，抽 |D| 次都没被选中的概率 (1 − 1/|D|)<sup>|D|</sup>，|D| 大时趋近 1/e ≈ 0.368。所以每个预测器约有 36.8% 的数据没见过。原文说每个预测器留 1/e 的数据当验证集，数值对得上，但原文没有明说留出的就是自助采样没抽到的那部分，这是我的推测。</p>
+<p>三个预测器的分歧算例见图 7：[0.80, 0.80, 0.80] 方差 0；[0.90, 0.10, 0.50] 方差 0.107；[0.95, 0.90, 0.92] 方差约 0.0004，很小。</p>
+</details>
+
+<details class="ext"><summary>F · 训练设置、超参数、标注节奏、成本（原文附录 A，3.1 节，第 4 节脚注 6）</summary>
+<div class="tbl"><table>
+  <thead><tr><th>项目</th><th>MuJoCo 机器人</th><th>Atari</th></tr></thead>
+  <tbody>
+    <tr><td>RL 算法</td><td>TRPO，γ = 0.995，λ = 0.97</td><td>A2C，γ = 0.99，N = 16 个并行 worker，每次更新 n = 5 步，学习率 7×10<sup>−4</sup></td></tr>
+    <tr><td>训练量</td><td>图 2 的横轴约 2×10<sup>7</sup> 个时间步（pendulum 约 2×10<sup>6</sup>）</td><td>50M 个时间步（学习率计划按 80M 设，实际只训 50M）</td></tr>
+    <tr><td>奖励预测器</td><td>2 层全连接，每层 64 单元，leaky ReLU（α = 0.01）</td><td>输入 84×84×4（叠 4 帧）；4 层卷积（核 7×7、5×5、3×3、3×3，步长 3、2、1、1，各 16 个滤波器）→ 全连接 64 → 标量；卷积层用 batch norm 和 dropout 0.5</td></tr>
+    <tr><td>片段长度</td><td>1.5 秒（15–60 步，随任务）</td><td>25 步（1.7 秒，15 fps）</td></tr>
+    <tr><td>奖励归一化</td><td>标准差 1</td><td>标准差 0.05</td></tr>
+    <tr><td>熵奖励</td><td>0.01（swimmer 为 0.001）</td><td>β = 0.01</td></tr>
+    <tr><td>开头的比较</td><td>25% 来自随机初始化的策略</td><td>500 条，开始 RL 前预训练预测器 200 个 epoch</td></tr>
+    <tr><td>标注速率（T 为帧数）</td><td>2×10<sup>6</sup> / (T + 2×10<sup>6</sup>)</td><td>每 5×10<sup>6</sup> 帧下调一次，大致正比于 5×10<sup>6</sup> / (T + 5×10<sup>6</sup>)</td></tr>
+    <tr><td>集成</td><td colspan="2">3 个预测器；候选片段对的数量是展示给人的 10 倍（除非另有说明）</td></tr>
+  </tbody>
+</table></div>
+<p>标注速率的数字例子（示意，按连续公式）：MuJoCo 里 T = 2×10<sup>6</sup> 时速率降为初始的一半，T = 6×10<sup>6</sup> 时降为 0.25；Atari 里 T = 5×10<sup>6</sup> 时为一半。Atari 的预测器与 RL 异步训练，典型地每 10 个 RL 时间步处理 1 个标签，并只保留最近 3,000 个标签循环训练，理由是新标签可能代表分布偏移，标签总数很多时旧标签会稀释它们。</p>
+<p><b>去除环境里泄漏的任务信息</b>（2.1 节、附录 A）：很多环境失败时终止回合，这个「终止」本身就泄漏了「什么是坏」。作者去掉所有变长回合：MuJoCo 里把摔倒终止换成必须学出来的惩罚；Atari 里不向智能体发送丢命或结束信号，还把屏幕上的分数盖成黑色；MuJoCo 里去掉对力矩的惩罚，因为人从视频里看不到力矩。另外，不要求系统能重置到任意状态，所以两个片段起点不同，比较更难解释，但本文方法能克服。MuJoCo 的真实奖励其实是输入特征的二次多项式，用 2 层网络是「过强」的（脚注 7），作者故意用更灵活的结构，是为了立即适用于没有简单奖励的新任务。Atari 的标准环境包装（0–30 个空操作开头、帧最大池化、叠 4 帧、frameskip 4、奖励裁剪到 [−1, 1]）沿用 Mnih 等 2015；奖励裁剪使 Atari 里实际上只预测奖励的符号。</p>
+<p><b>成本</b>（第 4 节脚注 6）：Atari 实验用一台 16 CPU + 1 块 Nvidia K80 的虚拟机，约 $700/月，训练约一天，算力成本约 $25；5,000 条标签约 5 小时人工，按美国最低工资约 $36。这是原文说「计算成本已经和非专家反馈的成本相当」的依据。真实人类反馈的实验需要 30 分钟到 5 小时的人时（3.1 节）。</p>
+</details>
+
+<details class="ext"><summary>G · 实验的更多细节（原文 3.1–3.3 节）</summary>
+<ul>
+  <li><b>曲线设置</b>：MuJoCo 的曲线是 5 次平均，Atari 是 3 次平均，真实人类反馈都只有一次运行；MuJoCo 的 Reacher 和 Cheetah 因时间原因由作者本人标注，其余任务由承包商标注；Hopper 曲线不规则，原文说是因为一位承包商偏离了常规标注节奏。</li>
+  <li><b>反馈来源的原文措辞</b>：「With 700 labels we are able to nearly match reinforcement learning on all of these tasks」没有区分这里的标签是人类还是合成；紧接着单独说人类反馈「通常略逊于合成」，所以不能直接读成「人类 700 条在所有任务上接近 RL」，具体看原文 Figure 2。</li>
+  <li><b>Atari 的合成标签数</b>：正文文字提到 350、700、1400 条合成比较的对比，后文又说 3,300 条；Figure 3 的图例写的是 10k、5.6k、3.3k 条合成标签和 5.5k 条人类标签。正文与图例的数字不一致，见附录 J。</li>
+  <li><b>消融的设置例外</b>（附录 A.2）：图 6 里的 pretraining 变体用的是 5,000 条标签，target 的 BeamRider 曲线只平均了 2 次。</li>
+  <li><b>片段长度</b>：原文总结是「更长的片段每条更有用，但每帧更不有用」，这是对学习效果的观察；评价时间随长度的关系是另一个现象，原文没有把前一个归因于后一个。Atari 里更长的片段还因为提供了上下文而更容易比较。单帧比较只在连续控制任务上测过，因为 Atari 的奖励模型依赖连续几帧（脚注 5）。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>H · 当时的技术背景（2017）</summary>
+<ul>
+  <li><b>深度 RL 的黄金期</b>：DQN 用深度网络从像素学会 Atari（Mnih 等 2013、2015）；A3C（2016）用多个并行 worker 异步训练；TRPO（2015）解决策略梯度步长过大的问题；AlphaGo（2016）击败围棋高手。这些工作共同的前提是奖励函数现成。</li>
+  <li><b>工具</b>：OpenAI Gym（Brockman 等 2016）提供统一接口；MuJoCo 是物理模拟器；ALE 是 Atari 模拟器。本文实现在 TensorFlow 上。</li>
+  <li><b>AI 安全话题升温</b>：《Concrete problems in AI safety》（2016）系统地提出了奖励设计不当导致的副作用和奖励黑客，作者里有 Christiano 和 Amodei，也是本文作者。本文的动机是把这类担忧落成一个可做的实验，带有很强的对齐色彩。</li>
+  <li><b>偏好式 RL 并非本文发明</b>：原文 1.1 节列了一长串前人工作，本文方法遵循与 Akrour 等 2012、2014 相同的基本做法。区别在于他们的环境小、奖励假设为手工特征的线性函数；本文用深度网络做奖励模型，处理几十个自由度的物理任务和没有手工特征的 Atari。原文说「key contribution is to scale human feedback up to deep reinforcement learning」：贡献是规模化，不是概念首创。Akrour 等问的是整条轨迹，所以本文的比较数多约两个数量级，人工时间却多不到一个数量级。</li>
+  <li><b>和 004 同年</b>：Transformer 刚出现（<a href="../004-transformer/index.html">004</a>），但本文所有网络都是小 CNN 和全连接网络；两条线要到 2019–2022 年才汇合。</li>
+  <li><b>组织背景</b>：署名栏里，Christiano、Amodei 标 OpenAI，Leike、Martic、Legg 标 DeepMind，Brown 只写了邮箱；致谢里感谢了两家机构的支持。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>I · 后来的发展，和前后篇衔接</summary>
+<p><b>事实（可从本系列其他篇或原文核实）</b>：原文已给出完整的三段式流水线轮廓，与 InstructGPT 的三步法在结构上是同一件事；本文使用的 A2C、TRPO 后来被 PPO 取代，PPO 是之后 RLHF 的默认优化器。</p>
+<p><b>我所知道的后续（本系列之外，细节待核实）</b>：2019 年起同一批研究者把这个方法搬到语言模型上，用人类对文本续写或摘要的比较训练奖励模型，再用 PPO 微调语言模型（如 Ziegler 等 2019、Stiennon 等 2020）；2022 年的 InstructGPT 把它做成了面向指令遵循的标准流程。「RLHF」这个名字是后来的通行叫法，具体出处待核实。</p>
+<p><b>后世评价（观点性的）</b>：常被视为 RLHF 的起点，以及把「对齐」从理论讨论变成工程方法的早期例子。本文暴露的问题也被继承：奖励模型是代理，优化过头就会钻空子，后来的工作用 KL 惩罚、定期更新奖励模型、更多人类数据等方式缓解，具体见 018。</p>
+<p><b>继承自</b>：系列里没有直接前驱，这是第一篇强化学习论文；可算作基础的是 <a href="../001-nplm/index.html">001</a> 的交叉熵损失和 softmax，以及监督学习的训练套路；A2C 里用的优化器见 <a href="../005-adam/index.html">005</a>。001–014 的目标函数一直是预测下一个词或遮住的词，也就是模仿人类写的文本；本篇开启了一条平行线：目标不是模仿，而是满足偏好。</p>
+<div class="tbl"><table>
+  <thead><tr><th>015（2017，游戏和机器人）</th><th>018（2022，语言模型）中的对应（概念对应，细节待核实）</th></tr></thead>
+  <tbody>
+    <tr><td>轨迹片段（1–2 秒的视频）</td><td>模型对同一提示生成的若干条回答</td></tr>
+    <tr><td>人比较两个片段</td><td>人对多个回答排序</td></tr>
+    <tr><td>奖励预测器，Bradley-Terry + 交叉熵</td><td>奖励模型，思路相同，损失也是成对比较的形式</td></tr>
+    <tr><td>小 CNN 或全连接网络做策略，用 A2C / TRPO 优化</td><td>语言模型本身作为策略，用 PPO 优化（<a href="../016-ppo/index.html">016</a>）</td></tr>
+    <tr><td>三个过程异步、在线地循环</td><td>更接近分批迭代（待核实）</td></tr>
+    <tr><td>防钻空子靠在线持续标注</td><td>额外靠对原模型的惩罚等机制（待核实）</td></tr>
+  </tbody>
+</table></div>
+<p>一句话：015 回答「能不能这样训练」，018 回答「能不能把它用在语言模型上，让它听话」。留下的问题：优化器要更稳（<a href="../016-ppo/index.html">016 PPO</a>）；价值观目标怎么定义（<a href="../017-alignment-lab/index.html">017</a>）；开放式文本里标注者要判断长文本的质量，且需要一个已经很强的预训练模型作起点（<a href="../018-instructgpt/index.html">018</a>）。</p>
+</details>
+
+<details class="ext"><summary>J · 疑点和没有核实的地方</summary>
+<ul>
+  <li><b>人类反馈的条数</b>：Figure 2 的图例写 750 human queries，正文 3.1.1 节说用 700 条标签；我没有找到原文对这个差别的说明。</li>
+  <li><b>Atari 的合成标签数</b>：正文说与 350、700、1400 条合成比较对比，又讨论 3,300 条；Figure 3 图例是 10k、5.6k、3.3k 合成标签和 5.5k 人类标签。可能是沿用了 MuJoCo 的措辞，以图例为准，待核实。</li>
+  <li><b>Breakout 的分数</b>：正文说得分能到 20，标签足够时到 50；Figure 3 里合成标签的曲线看起来高一些，具体数字没有逐条读，以原图为准。</li>
+  <li><b>人时下限</b>：3.1 节说 30 分钟到 5 小时，我取这个说法；原文没有别处给出不同的下限。</li>
+  <li><b>1/e 与自助采样</b>：留出的 1/e 是不是自助采样里没被抽到的那部分，是我的推测。</li>
+  <li><b>策略梯度的偏好</b>：为什么偏好策略梯度而不是基于价值的方法，原文没有给理由，附录 B 里是我的推测。</li>
+  <li><b>主动选择和集成的贡献</b>：原文没有给文字结论，需要对照 Figure 5、6，本页不下结论。</li>
+  <li><b>用的是概率还是硬投票</b>：选方差最高的片段对时，原文没有说清，图 7 用概率只是示意。</li>
+  <li><b>论文的会议</b>：本页依据 arXiv 2023 年的 v4 版，首页没有标会议名，是否发表于 NIPS 2017，待核实。</li>
+</ul>
+</details>
+
+<footer>
+  AI 论文解读 · 015 · 原文：Paul F. Christiano, Jan Leike, Tom B. Brown, Miljan Martic, Shane Legg, Dario Amodei. <i>Deep Reinforcement Learning from Human Preferences.</i> arXiv:1706.03741, 2017（本页依据 v4 版）。<br>
+  图中标「示意」的数字是为了讲清机制设定的例子，都验算过；标「推算」的是我按原文数字估算的。实验数字出自原文第 3 节正文；原文 Figure 1、2、4 的图源为原文。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>

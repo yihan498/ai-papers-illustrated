@@ -1,0 +1,15 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="两段视频 A 和 B 交给人比较，人选更好的一段，比较结果训练出奖励预测器，再交给强化学习">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <rect x="16" y="30" width="56" height="36" rx="5" style="fill:var(--card);stroke:var(--line)"/>
+  <text x="44" y="53" class="sm m" text-anchor="middle">片段 A</text>
+  <rect x="16" y="82" width="56" height="36" rx="5" style="fill:var(--card);stroke:var(--line)"/>
+  <text x="44" y="105" class="sm m" text-anchor="middle">片段 B</text>
+  <text x="92" y="66" class="sm" text-anchor="middle">A &gt; B</text>
+  <line class="ln" x1="72" y1="48" x2="110" y2="74"/><line class="ln" x1="72" y1="100" x2="110" y2="80"/>
+  <rect class="new" x="110" y="58" width="56" height="38" rx="6"/>
+  <text x="138" y="82" class="sm on" text-anchor="middle">奖励 r̂</text>
+  <line class="ln" x1="166" y1="77" x2="182" y2="77"/>
+  <rect class="new" x="182" y="58" width="44" height="38" rx="6"/>
+  <text x="204" y="82" class="sm on" text-anchor="middle">RL</text>
+  <text x="120" y="150" class="sm m" text-anchor="middle">不写奖励，只让人比较</text>
+</svg>

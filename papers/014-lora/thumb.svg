@@ -1,0 +1,13 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="赭色大方框 W 冻结不动，旁边加上蓝色的一竖条 B 乘一横条 A，只训练这两小块">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <rect x="24" y="34" width="96" height="96" style="fill:none;stroke:var(--old);stroke-width:2"/>
+  <text x="72" y="80" text-anchor="middle" style="fill:var(--old);font-weight:700">W</text>
+  <text x="72" y="98" class="sm m" text-anchor="middle">冻结</text>
+  <text x="136" y="87" text-anchor="middle" class="m">+</text>
+  <rect x="152" y="34" width="12" height="96" style="fill:var(--new)"/>
+  <text x="158" y="146" class="sm" text-anchor="middle" style="fill:var(--new)">B</text>
+  <text x="176" y="44" class="sm m" text-anchor="middle">×</text>
+  <rect x="186" y="34" width="40" height="12" style="fill:var(--new)"/>
+  <text x="206" y="62" class="sm" text-anchor="middle" style="fill:var(--new)">A</text>
+  <text x="120" y="166" class="sm m" text-anchor="middle">只训练两小块</text>
+</svg>

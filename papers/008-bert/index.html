@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BERT 图解</title>
+<meta name="description" content="Devlin 等 2018《BERT》图解：把「猜下一个词」改成「完形填空」，盖住 15% 的词让模型看着左右两边填回来，一个预训练模型加一个输出层就刷新 11 项任务。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文（完形填空式的双向预训练，加一个输出层微调），赭 = 要被替代的旧做法（只能单向读、或每个任务一套专用架构）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;min-width:520px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th:first-child,td:first-child{white-space:nowrap}
+th:first-child,td:first-child{padding-right:20px}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+<main class="wrap">
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　008</nav>
+  <h1 style="margin-top:14px">盖住一个词，让它根据左右两边填回来</h1>
+  <p class="lede">Devlin 等人 2018 年在 Google 写的《BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding》。GPT 式的「先预训练再微调」只能从左往右读。<b>BERT 把训练任务从「猜下一个词」改成「完形填空」：随机盖住 15% 的词，让模型根据左右两边把它填回来，于是每个词在每一层都能同时看到两侧。</b>架构就是 004 的编码器叠 12 或 24 层，真正的新东西是训练任务。同一个预训练模型，只加一个输出层，就刷新了 11 项任务的最好成绩。</p>
+  <div class="meta">
+    <span>Jacob Devlin、Ming-Wei Chang、Kenton Lee、Kristina Toutanova（Google AI Language）· 2018 年（本页依据 2019 年 5 月的 v2 版）</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的做法（完形填空，每层左右都看）</span>
+    <span class="key"><i class="sw o"></i>赭色：要被替代的旧做法（只能单向读，或左右各读各的）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · 预训练一次，再给每个任务微调一次</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 256" role="img" aria-label="上排是预训练，四个方框依次连接：无标注文本 33 亿词；盖住 15% 的词；编码器 12 或 24 层，每个词左右都看；两个任务，填回被盖的词、判断两句是否相邻。下排是微调，四个方框依次连接：有标注的任务数据；按固定格式拼成一条序列；同一个编码器，所有参数继续训练；只加一个小输出层，做分类、问答或标注。上排的编码器用一条虚线箭头连到下排的编码器，标注参数复制过去。">
+      <text class="sm m" x="20" y="16">预训练：只做一次，用没人标过的文字</text>
+      <rect class="softS" x="20" y="26" width="140" height="64" rx="8"/>
+      <text class="b" x="90" y="52" text-anchor="middle">无标注文本</text><text class="sm" x="90" y="72" text-anchor="middle">33 亿词</text>
+      <line class="mutS" x1="162" y1="58" x2="188" y2="58" marker-end="url(#ah)"/>
+      <rect class="newT" x="190" y="26" width="140" height="64" rx="8"/>
+      <text class="b tn" x="260" y="52" text-anchor="middle">盖住 15% 的词</text><text class="sm" x="260" y="72" text-anchor="middle">其余词原样</text>
+      <line class="mutS" x1="332" y1="58" x2="358" y2="58" marker-end="url(#ah)"/>
+      <rect class="new" x="360" y="26" width="140" height="64" rx="8"/>
+      <text class="b on" x="430" y="48" text-anchor="middle">编码器</text><text class="sm on" x="430" y="66" text-anchor="middle">12 或 24 层</text><text class="sm on" x="430" y="82" text-anchor="middle">每个词左右都看</text>
+      <line class="mutS" x1="502" y1="58" x2="528" y2="58" marker-end="url(#ah)"/>
+      <rect class="newT" x="530" y="26" width="130" height="64" rx="8"/>
+      <text class="b tn" x="595" y="48" text-anchor="middle">两个任务</text><text class="sm" x="595" y="66" text-anchor="middle">填回被盖的词</text><text class="sm" x="595" y="82" text-anchor="middle">判断两句是否相邻</text>
+
+      <line class="newS dash" x1="430" y1="94" x2="430" y2="146" marker-end="url(#ahN)"/>
+      <text class="sm tn" x="440" y="124">参数复制过去</text>
+
+      <text class="sm m" x="20" y="136">微调：每个任务单独做一次，用有标注的数据</text>
+      <rect class="softS" x="20" y="150" width="140" height="64" rx="8"/>
+      <text class="b" x="90" y="176" text-anchor="middle">有标注的数据</text><text class="sm" x="90" y="196" text-anchor="middle">几千到几十万条</text>
+      <line class="mutS" x1="162" y1="182" x2="188" y2="182" marker-end="url(#ah)"/>
+      <rect class="softS" x="190" y="150" width="140" height="64" rx="8"/>
+      <text class="b" x="260" y="176" text-anchor="middle">一条序列</text><text class="sm" x="260" y="196" text-anchor="middle">一句或两句，固定格式</text>
+      <line class="mutS" x1="332" y1="182" x2="358" y2="182" marker-end="url(#ah)"/>
+      <rect class="new" x="360" y="150" width="140" height="64" rx="8"/>
+      <text class="b on" x="430" y="176" text-anchor="middle">同一个编码器</text><text class="sm on" x="430" y="196" text-anchor="middle">所有参数继续训练</text>
+      <line class="mutS" x1="502" y1="182" x2="528" y2="182" marker-end="url(#ah)"/>
+      <rect class="newT" x="530" y="150" width="130" height="64" rx="8"/>
+      <text class="b tn" x="595" y="176" text-anchor="middle">一个小输出层</text><text class="sm" x="595" y="196" text-anchor="middle">分类 / 问答 / 标注</text>
+      <text class="sm m" x="20" y="242">以 3 分类、BASE 为例：新加的参数是 3 × 768 = 2,304 个，模型本体约 1.1 亿个。</text>
+    </svg>
+    </div>
+    <figcaption>上排训练一次，下排每个任务各做一次。两排用的是同一个编码器，差别只在最上面的输出：上排是填空和判断相邻，下排是任务自己的小输出层。3 × 768 的算例见第 4 节。</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>要解决的问题：只能单向读</a>
+    <a href="#s2"><span>2</span>第一步：改成完形填空</a>
+    <a href="#s3"><span>3</span>第二步：一条序列放一句或两句</a>
+    <a href="#s4"><span>4</span>第三步：微调，一个模型接所有任务</a>
+    <a href="#s5"><span>5</span>证据：它到底做到了多少</a>
+    <a href="#s6"><span>6</span>局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>正文只走一条线</b>：单向读有什么毛病 → 为什么不能直接改双向 → 用完形填空绕开 → 怎么接到各种任务上 → 每个结论对应哪个实验。只读每节标题和每段第一句，也能串起来。</li>
+      <li>公式、符号表、各任务和指标的解释、完整结果表、训练设置、概念注解、当时的背景，都在页尾的<b>附录</b>里，默认折叠，标明对应原文第几节。</li>
+      <li>小数字例子都验算过：为讲解设定的标「示意」，按原文规格估算的标「推算」。</li>
+      <li>模型的零件（自注意力、多头、残差）在 004 <a href="../004-transformer/index.html">Transformer</a> 讲过；「先预训练再微调」的范式在 006 <a href="../006-gpt-1/index.html">GPT-1</a> 讲过，本篇是它的双向版。</li>
+    </ul>
+  </div>
+</header>
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>要解决的问题：只能单向读</h2>
+<p>到 2018 年，「先在没人标过的文字上预训练，再迁到具体任务」已经行得通。迁移有两条路：ELMo 把预训练好的向量当<b>特征</b>，喂给各个任务自己设计的模型；GPT（006）把整个预训练模型拿来<b>微调</b>，只加一个很小的输出层。本文走 GPT 这条路。但这两条路的预训练目标都是传统语言模型，<b>只能单向读</b>：从左往右，或从右往左。</p>
+
+<h3>毛病一：每个词的表示，看不到另一边</h3>
+<p>单向读，一个词的表示只由它一侧的词算出。「I went to the bank to deposit money」里，读到 bank 时只看左边的「I went to the」，既可能是河岸，也可能是银行。真正消歧的是右边的「deposit money」。</p>
+<figure class="fig">
+  <span class="tag">图 1 · 同一个词 bank，单向和双向各能用到什么</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 300" role="img" aria-label="上下两组。每组都是同一句话的八个词：I、went、to、the、bank、to、deposit、money。上组是单向：bank 的表示只收到它左边四个词的箭头，右边三个词用虚线表示用不上。下组是双向：bank 的表示同时收到左边四个词和右边三个词的箭头。">
+    <text class="b to" x="20" y="20">单向（GPT）：bank 的表示只由它左边的词算出</text>
+    <g class="mo sm" text-anchor="middle">
+      <rect class="softS" x="20" y="30" width="70" height="28" rx="5"/><text x="55" y="48">I</text>
+      <rect class="softS" x="100" y="30" width="70" height="28" rx="5"/><text x="135" y="48">went</text>
+      <rect class="softS" x="180" y="30" width="70" height="28" rx="5"/><text x="215" y="48">to</text>
+      <rect class="softS" x="260" y="30" width="70" height="28" rx="5"/><text x="295" y="48">the</text>
+      <rect class="oldT" x="340" y="30" width="70" height="28" rx="5"/><text class="to b" x="375" y="48">bank</text>
+      <rect class="softS" x="420" y="30" width="70" height="28" rx="5"/><text x="455" y="48">to</text>
+      <rect class="softS" x="500" y="30" width="70" height="28" rx="5"/><text x="535" y="48">deposit</text>
+      <rect class="softS" x="580" y="30" width="70" height="28" rx="5"/><text x="615" y="48">money</text>
+    </g>
+    <line class="oldS" x1="55" y1="62" x2="360" y2="108" marker-end="url(#ahO)"/>
+    <line class="oldS" x1="135" y1="62" x2="365" y2="108" marker-end="url(#ahO)"/>
+    <line class="oldS" x1="215" y1="62" x2="370" y2="108" marker-end="url(#ahO)"/>
+    <line class="oldS" x1="295" y1="62" x2="374" y2="108" marker-end="url(#ahO)"/>
+    <line class="ln dash" x1="455" y1="62" x2="395" y2="108"/>
+    <line class="ln dash" x1="535" y1="62" x2="400" y2="108"/>
+    <line class="ln dash" x1="615" y1="62" x2="405" y2="108"/>
+    <rect class="oldT" x="300" y="112" width="150" height="30" rx="6"/><text class="to b" x="375" y="132" text-anchor="middle">bank 的表示</text>
+    <text class="sm m" x="470" y="130">右边的词不参与，消歧的线索用不上</text>
+
+    <text class="b tn" x="20" y="176">双向（BERT）：bank 的表示同时由左右两边算出</text>
+    <g class="mo sm" text-anchor="middle">
+      <rect class="softS" x="20" y="186" width="70" height="28" rx="5"/><text x="55" y="204">I</text>
+      <rect class="softS" x="100" y="186" width="70" height="28" rx="5"/><text x="135" y="204">went</text>
+      <rect class="softS" x="180" y="186" width="70" height="28" rx="5"/><text x="215" y="204">to</text>
+      <rect class="softS" x="260" y="186" width="70" height="28" rx="5"/><text x="295" y="204">the</text>
+      <rect class="newT" x="340" y="186" width="70" height="28" rx="5"/><text class="tn b" x="375" y="204">bank</text>
+      <rect class="softS" x="420" y="186" width="70" height="28" rx="5"/><text x="455" y="204">to</text>
+      <rect class="softS" x="500" y="186" width="70" height="28" rx="5"/><text x="535" y="204">deposit</text>
+      <rect class="softS" x="580" y="186" width="70" height="28" rx="5"/><text x="615" y="204">money</text>
+    </g>
+    <line class="newS" x1="55" y1="218" x2="360" y2="264" marker-end="url(#ahN)"/>
+    <line class="newS" x1="135" y1="218" x2="365" y2="264" marker-end="url(#ahN)"/>
+    <line class="newS" x1="215" y1="218" x2="370" y2="264" marker-end="url(#ahN)"/>
+    <line class="newS" x1="295" y1="218" x2="374" y2="264" marker-end="url(#ahN)"/>
+    <line class="newS" x1="455" y1="218" x2="395" y2="264" marker-end="url(#ahN)"/>
+    <line class="newS" x1="535" y1="218" x2="400" y2="264" marker-end="url(#ahN)"/>
+    <line class="newS" x1="615" y1="218" x2="405" y2="264" marker-end="url(#ahN)"/>
+    <rect class="newT" x="300" y="268" width="150" height="28" rx="6"/><text class="tn b" x="375" y="287" text-anchor="middle">bank 的表示</text>
+  </svg>
+  </div>
+  <figcaption>示意图，箭头表示「这个词的信息进入了 bank 的表示」。单向模型里右边的词虽然能回头看到 bank，但不会反过来改变 bank 自己的表示。</figcaption>
+</figure>
+<p>这对句子整体的分类影响不大，对要给<b>每个词</b>一个好表示的任务影响最大，比如问答要判断「段落里这个词是不是答案」，需要同时融合问题和它后面的上下文。原文说，单向对这类词级任务「可能非常有害」。</p>
+
+<h3>毛病二：想改成双向，直接做不行</h3>
+<p>传统语言模型的任务是「根据上文猜下一个词」。如果让模型也能看右边，答案就在输入里。多层网络里更糟：就算在输入层把要猜的词挡住，别的位置也会先把它吸收进自己的向量，再传回来。</p>
+<figure class="fig">
+  <span class="tag">图 2 · 「间接看到自己」：两层网络里，b 绕了一圈回到 b</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 286" role="img" aria-label="三列三行。三列是位置 a、b、c，三行是输入层、第 1 层、第 2 层。第 1 层的位置 a 和 c 各自收到来自三个输入的细线，位置 b 只收到 a 和 c 的输入，b 自己的输入被挡住。赭色粗线标出绕路：输入 b 进入第 1 层的 a 和 c，再从 a 和 c 进入第 2 层的 b。第 2 层的 b 要猜 b，但 b 的信息已经绕路进来。">
+    <text class="sm m" x="20" y="54">输入层</text><text class="sm m" x="20" y="134">第 1 层</text><text class="sm m" x="20" y="214">第 2 层</text>
+    <g class="mo b" text-anchor="middle">
+      <rect class="softS" x="140" y="38" width="60" height="26" rx="5"/><text x="170" y="56">a</text>
+      <rect class="oldT" x="310" y="38" width="60" height="26" rx="5"/><text class="to" x="340" y="56">b</text>
+      <rect class="softS" x="480" y="38" width="60" height="26" rx="5"/><text x="510" y="56">c</text>
+    </g>
+    <g class="ln">
+      <line x1="170" y1="66" x2="170" y2="114"/><line x1="170" y1="66" x2="330" y2="114"/><line x1="170" y1="66" x2="500" y2="114"/>
+      <line x1="510" y1="66" x2="510" y2="114"/><line x1="510" y1="66" x2="350" y2="114"/><line x1="510" y1="66" x2="180" y2="114"/>
+      <line x1="170" y1="146" x2="330" y2="194"/><line x1="510" y1="146" x2="350" y2="194"/><line x1="340" y1="146" x2="340" y2="194"/>
+    </g>
+    <line class="ln dash" x1="340" y1="66" x2="340" y2="112"/>
+    <text class="sm to" x="348" y="92">× b 自己的输入被挡住</text>
+    <line class="oldS" x1="330" y1="66" x2="178" y2="114" style="stroke-width:3"/>
+    <line class="oldS" x1="350" y1="66" x2="502" y2="114" style="stroke-width:3"/>
+    <line class="oldS" x1="172" y1="146" x2="328" y2="194" style="stroke-width:3"/>
+    <line class="oldS" x1="508" y1="146" x2="352" y2="194" style="stroke-width:3"/>
+    <circle class="softS" cx="170" cy="130" r="16"/><circle class="softS" cx="340" cy="130" r="16"/><circle class="softS" cx="510" cy="130" r="16"/>
+    <text class="mo b" x="170" y="135" text-anchor="middle">a</text><text class="mo b" x="340" y="135" text-anchor="middle">b</text><text class="mo b" x="510" y="135" text-anchor="middle">c</text>
+    <circle class="softS" cx="170" cy="210" r="16"/><circle class="oldT" cx="340" cy="210" r="16"/><circle class="softS" cx="510" cy="210" r="16"/>
+    <text class="mo b" x="170" y="215" text-anchor="middle">a</text><text class="mo b to" x="340" y="215" text-anchor="middle">b</text><text class="mo b" x="510" y="215" text-anchor="middle">c</text>
+    <text class="sm to" x="366" y="234">要猜的位置</text>
+    <text class="b to" x="20" y="260">赭色粗线：b 先被 a、c 的位置吸收，再传回 b 的位置，答案绕了一圈。</text>
+    <text class="sm m" x="20" y="278">模型最后学会的是把绕回来的 b 读出来，损失很快变低，语言却没学到。</text>
+  </svg>
+  </div>
+  <figcaption>示意：三个词、两层，每层每个位置都能看所有位置。为了画清楚，第 2 层只画了 b 一个位置收到的线。单向时，要猜的词在看不到的那一侧，层数再多也不会泄漏，这就是 004 里掩码的作用。</figcaption>
+</figure>
+<p>003 里的双向 RNN 没有这个问题，因为它读的是翻译的<b>源句</b>，输出是另一种语言的词，没人要求它预测自己。BERT 面对的是没有标注的文字，答案只能是文字本身，一旦预测的就是输入，就会泄漏。</p>
+
+<h3>ELMo 的折衷：左右各训一个，最后拼接</h3>
+<p>ELMo 的做法是训两个独立的 LSTM，一个从左往右，一个从右往左，各自都不看自己，用的时候把两个向量拼起来。每个词的表示里有了两边的信息，但两个方向从没有交流过，原文称为「浅层」双向。</p>
+<figure class="fig">
+  <span class="tag">图 3 · 三种预训练方式，每个词能看到什么</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 232" role="img" aria-label="三栏对比。ELMo：两排圆点，上排箭头向右，下排箭头向左，两个方向各训各的，最后才拼接，特征式用法。GPT：两排圆点，箭头都向右，每一层只看左边，预测下一个词，微调式用法。BERT：两排圆点，箭头是双向的，每一层左右都看，填回被盖住的词，微调式用法，也可以特征式。">
+    <rect class="card" x="8" y="8" width="214" height="216" rx="10"/><rect class="card" x="233" y="8" width="214" height="216" rx="10"/><rect class="card" x="458" y="8" width="214" height="216" rx="10"/>
+    <text class="b to" x="115" y="32" text-anchor="middle">ELMo</text><text class="b to" x="340" y="32" text-anchor="middle">GPT</text><text class="b tn" x="565" y="32" text-anchor="middle">BERT</text>
+    <g class="old"><circle cx="55" cy="72" r="8"/><circle cx="115" cy="72" r="8"/><circle cx="175" cy="72" r="8"/><circle cx="55" cy="122" r="8"/><circle cx="115" cy="122" r="8"/><circle cx="175" cy="122" r="8"/></g>
+    <g class="oldS"><line x1="65" y1="72" x2="104" y2="72" marker-end="url(#ahO)"/><line x1="125" y1="72" x2="164" y2="72" marker-end="url(#ahO)"/>
+      <line x1="105" y1="122" x2="66" y2="122" marker-end="url(#ahO)"/><line x1="165" y1="122" x2="126" y2="122" marker-end="url(#ahO)"/></g>
+    <text class="sm m" x="20" y="100">前向 LSTM</text><text class="sm m" x="20" y="150">后向 LSTM</text>
+    <g class="old"><circle cx="280" cy="72" r="8"/><circle cx="340" cy="72" r="8"/><circle cx="400" cy="72" r="8"/><circle cx="280" cy="122" r="8"/><circle cx="340" cy="122" r="8"/><circle cx="400" cy="122" r="8"/></g>
+    <g class="oldS"><line x1="290" y1="72" x2="329" y2="72" marker-end="url(#ahO)"/><line x1="350" y1="72" x2="389" y2="72" marker-end="url(#ahO)"/>
+      <line x1="290" y1="122" x2="329" y2="122" marker-end="url(#ahO)"/><line x1="350" y1="122" x2="389" y2="122" marker-end="url(#ahO)"/></g>
+    <text class="sm m" x="245" y="100">第 2 层</text><text class="sm m" x="245" y="150">第 1 层</text>
+    <g class="new"><circle cx="505" cy="72" r="8"/><circle cx="565" cy="72" r="8"/><circle cx="625" cy="72" r="8"/><circle cx="505" cy="122" r="8"/><circle cx="565" cy="122" r="8"/><circle cx="625" cy="122" r="8"/></g>
+    <g class="newS"><line x1="513" y1="72" x2="557" y2="72" marker-start="url(#ahN)" marker-end="url(#ahN)"/><line x1="573" y1="72" x2="617" y2="72" marker-start="url(#ahN)" marker-end="url(#ahN)"/>
+      <line x1="513" y1="122" x2="557" y2="122" marker-start="url(#ahN)" marker-end="url(#ahN)"/><line x1="573" y1="122" x2="617" y2="122" marker-start="url(#ahN)" marker-end="url(#ahN)"/></g>
+    <text class="sm m" x="470" y="100">第 2 层</text><text class="sm m" x="470" y="150">第 1 层</text>
+    <text class="sm" x="115" y="180" text-anchor="middle">两个方向各训各的</text><text class="sm" x="115" y="198" text-anchor="middle">最后才拼接，特征式</text><text class="sm to" x="115" y="216" text-anchor="middle">浅层双向</text>
+    <text class="sm" x="340" y="180" text-anchor="middle">每一层只看左边</text><text class="sm" x="340" y="198" text-anchor="middle">预测下一个词，微调式</text><text class="sm to" x="340" y="216" text-anchor="middle">单向</text>
+    <text class="sm" x="565" y="180" text-anchor="middle">每一层左右都看</text><text class="sm" x="565" y="198" text-anchor="middle">填回被盖住的词，微调式</text><text class="sm tn" x="565" y="216" text-anchor="middle">深度双向</text>
+  </svg>
+  </div>
+  <figcaption>示意。ELMo 的两排不是上下层，而是两个独立的模型（左向、右向）；GPT 和 BERT 的两排才是上下两层。原文用「深度双向」指 BERT：只有它在所有层同时以左右两侧为条件。</figcaption>
+</figure>
+<p>所以问题归结成一句：<b>要想让单个模型每层都双向，就得换一个训练目标，让被预测的词不在输入里。</b>这就是下一节。</p>
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>第一步：把「猜下一个词」改成完形填空</h2>
+<p>做法很直接：随机选出序列里 <b>15%</b> 的词元（WordPiece 切出来的小片段）盖住，让模型根据整条序列，把被盖住的原词填回来。损失只算这 15% 的位置，其余位置不计。被盖住的词不在输入里，就没有「绕回自己」的路，所以可以放心用 004 编码器里<b>没有掩码</b>的全双向自注意力。</p>
+<figure class="fig">
+  <span class="tag">图 4 · 填空时，多看右边，答案就锁得更准（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 284" role="img" aria-label="一句话十二个词：The man went to the [MASK] to buy a gallon of milk。下面两组横条。只看左边：store 0.25，bank 0.20，hospital 0.15，park 0.10，很分散，损失是负的对数 0.25，约 1.386。左右都看：store 0.90，market 0.05，答案被锁定，损失约 0.105。概率是为说明编的。">
+    <text class="sm m" x="16" y="20">盖住一个词，让模型填回去</text>
+    <g class="mo sm" text-anchor="middle">
+      <rect class="softS" x="16" y="30" width="52" height="26" rx="5"/><text x="42" y="47">The</text>
+      <rect class="softS" x="70" y="30" width="52" height="26" rx="5"/><text x="96" y="47">man</text>
+      <rect class="softS" x="124" y="30" width="52" height="26" rx="5"/><text x="150" y="47">went</text>
+      <rect class="softS" x="178" y="30" width="52" height="26" rx="5"/><text x="204" y="47">to</text>
+      <rect class="softS" x="232" y="30" width="52" height="26" rx="5"/><text x="258" y="47">the</text>
+      <rect class="newT" x="286" y="30" width="52" height="26" rx="5"/><text class="tn b" x="312" y="47">[MASK]</text>
+      <rect class="softS" x="340" y="30" width="52" height="26" rx="5"/><text x="366" y="47">to</text>
+      <rect class="softS" x="394" y="30" width="52" height="26" rx="5"/><text x="420" y="47">buy</text>
+      <rect class="softS" x="448" y="30" width="52" height="26" rx="5"/><text x="474" y="47">a</text>
+      <rect class="softS" x="502" y="30" width="52" height="26" rx="5"/><text x="528" y="47">gallon</text>
+      <rect class="softS" x="556" y="30" width="52" height="26" rx="5"/><text x="582" y="47">of</text>
+      <rect class="softS" x="610" y="30" width="52" height="26" rx="5"/><text x="636" y="47">milk</text>
+    </g>
+    <text class="b to" x="20" y="102">只看左边「The man went to the」</text>
+    <text class="sm m" x="20" y="118">候选很分散，猜不准</text>
+    <g class="sm">
+      <text x="20" y="144">store</text><rect class="old" x="95" y="132" width="37.5" height="14" rx="2"/><text class="mo" x="138" y="144">0.25</text>
+      <text x="20" y="168">bank</text><rect class="old" x="95" y="156" width="30" height="14" rx="2"/><text class="mo" x="131" y="168">0.20</text>
+      <text x="20" y="192">hospital</text><rect class="old" x="95" y="180" width="22.5" height="14" rx="2"/><text class="mo" x="123" y="192">0.15</text>
+      <text x="20" y="216">park</text><rect class="old" x="95" y="204" width="15" height="14" rx="2"/><text class="mo" x="116" y="216">0.10</text>
+    </g>
+    <text class="b tn" x="360" y="102">左右都看「… the ＿ to buy a gallon of milk」</text>
+    <text class="sm m" x="360" y="118">右边的 buy、gallon、milk 把答案锁定</text>
+    <g class="sm">
+      <text x="360" y="144">store</text><rect class="new" x="435" y="132" width="135" height="14" rx="2"/><text class="mo" x="576" y="144">0.90</text>
+      <text x="360" y="168">market</text><rect class="new" x="435" y="156" width="7.5" height="14" rx="2"/><text class="mo" x="448" y="168">0.05</text>
+    </g>
+    <text class="sm to" x="20" y="248">损失 −log 0.25 ≈ 1.386</text>
+    <text class="sm tn" x="360" y="248">损失 −log 0.90 ≈ 0.105</text>
+    <text class="sm b" x="20" y="272">要把损失压低，模型就必须学会利用右边的词。概率是我为讲解编的，不是原文数字。</text>
+  </svg>
+  </div>
+  <figcaption>横条长度 = 概率（1.0 对应 150 像素）。完形填空是语文考试里的题型，原文说 MLM 受它启发。</figcaption>
+</figure>
+<p>为什么这样就行：要填对，就必须用上被盖住位置左右两边的词，这就是「双向的训练信号」。只盖一部分，其余位置仍然完整，模型也能顺带学到语法、搭配、指代。原文在这里的话是「直觉上，深度双向模型严格强于从左到右、或左右各训一个再拼接的模型」，这是前提假设，第 5 节用实验来验证。损失的精确写法见附录 A 式 1。对着第 1 节的两个毛病：被预测的词不在输入里，所以能放心双向。</p>
+
+<h3>补丁：被选中的词，不全换成 [MASK]</h3>
+<p>还有一个麻烦：预训练时输入里有 [MASK]，微调和实际使用时一个 [MASK] 都没有，两边不一致。作者的办法是，选中的 15% 位置里，<b>80%</b> 换成 [MASK]，<b>10%</b> 换成一个随机词，<b>10%</b> 原样保留。三种情况都要把原词填回来。</p>
+<figure class="fig">
+  <span class="tag">图 5 · 80% / 10% / 10%：选中的词怎么处理</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 258" role="img" aria-label="上面一条横条代表全部词元：85% 不动不计损失，15% 被选中。下面把选中的 15% 展开成一条横条：80% 换成 MASK，10% 换成随机词，10% 保持不变。例子：my dog is hairy，选中 hairy，三种结果分别是 my dog is MASK、my dog is apple、my dog is hairy。三种情况都要把 hairy 猜出来。">
+    <text class="sm m" x="20" y="20">一条序列里的全部词元</text>
+    <rect class="softS" x="20" y="28" width="544" height="26"/><text class="sm" x="292" y="46" text-anchor="middle">85% 不动，不计损失</text>
+    <rect class="new" x="564" y="28" width="96" height="26"/><text class="sm on b" x="612" y="46" text-anchor="middle">15% 选中</text>
+    <line class="ln dash" x1="564" y1="56" x2="20" y2="104"/><line class="ln dash" x1="660" y1="56" x2="660" y2="104"/>
+    <text class="sm m" x="20" y="96">把选中的 15% 展开：</text>
+    <rect class="new" x="20" y="106" width="512" height="32"/><text class="sm on b" x="276" y="127" text-anchor="middle">80% 换成 [MASK]</text>
+    <rect class="newT" x="532" y="106" width="64" height="32"/><text class="sm" x="564" y="127" text-anchor="middle">10%</text>
+    <rect class="softS" x="596" y="106" width="64" height="32"/><text class="sm" x="628" y="127" text-anchor="middle">10%</text>
+    <text class="sm m" x="20" y="164">例：my dog is hairy，选中了 hairy</text>
+    <rect class="new" x="20" y="174" width="12" height="12" rx="2"/><text class="mo sm" x="40" y="185">my dog is [MASK]</text><text class="sm m" x="250" y="185">盖住（80%）</text>
+    <rect class="newT" x="20" y="198" width="12" height="12" rx="2"/><text class="mo sm" x="40" y="209">my dog is apple</text><text class="sm m" x="250" y="209">换成随机词（10%）</text>
+    <rect class="softS" x="20" y="222" width="12" height="12" rx="2"/><text class="mo sm" x="40" y="233">my dog is hairy</text><text class="sm m" x="250" y="233">原样不动（10%）</text>
+    <text class="sm tn b" x="400" y="209">三种情况都要把 hairy 猜出来</text>
+  </svg>
+  </div>
+  <figcaption>每一档的宽度按比例画：选中占 15%，其中 80% 是 12%（占全部），随机和不变各占全部的 1.5%。</figcaption>
+</figure>
+<p>作者的解释（附录 A.1）：编码器不知道哪些词要预测、哪些词被随机换掉了，所以被迫对<b>每个</b>输入词都保持一个结合了上下文的表示。如果总是 [MASK]，模型只需在见到 [MASK] 时动脑，微调时没有 [MASK]，每个词却都要有好表示。算一下：序列长 512，选中约 76.8 个，[MASK] 约 61.4 个，随机和不变各约 7.7 个；随机替换只占全部词元的 1.5%，原文认为不会损害语言理解。</p>
+<p>原文的 Table 8 做了验证：微调时几乎没差别，特征式 NER 里全用 [MASK] 掉到 94.0，BERT 的组合是 94.9，差 0.9（全部数字见附录 F）。这些都是开发集上零点几分的差距，我只当趋势看。对着毛病：预训练和微调的输入不一致。「10% 保持不变」会不会又回到「看见自己」，我放在附录 B 里解释。</p>
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>第二步：一条序列放一句或两句</h2>
+<p>下游任务有的只有一句（情感分类），有的是两句（推理的前提和假设，问答的问题和段落）。BERT 把它们统一成一种输入：<code>[CLS] 句子 A [SEP] 句子 B [SEP]</code>。<code>[CLS]</code> 放最前面，它最后一层的向量被当作整条序列的汇总；<code>[SEP]</code> 是分隔符。每个位置的输入向量是三种嵌入相加：<b>词元嵌入 + 段嵌入（属于 A 还是 B）+ 位置嵌入</b>。位置嵌入和 004 的 sin/cos 不同，是像词向量一样学出来的，最长 512。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 2 · BERT 的输入表示</span>
+  <img class="orig" src="orig-fig2.png" alt="原文 Figure 2：输入序列 [CLS] my dog is cute [SEP] he likes play ##ing [SEP] 共 11 个词元。下面三排嵌入逐列相加：词元嵌入、段嵌入（前 6 个是 E_A，后 5 个是 E_B）、位置嵌入（E_0 到 E_10）。" loading="lazy">
+  <figcaption>这张图在说什么：<b>每个位置的输入，是三个向量按列相加</b>。怎么看：最上面是切好的词元，play 和 ##ing 是同一个词 playing 切成两片，##表示接在前一片后面；中间一排标明属于 A 句还是 B 句；最下面是位置。图源：Devlin 等 2018 原文，已转灰度。</figcaption>
+</figure>
+<p>两句拼成一条序列还有一个好处：自注意力从第 1 层起，A 句的每个词就能直接看 B 句的每个词。原文说这实际上就包含了两句之间的双向交叉注意力，不用像以前那样先分别编码两个文本。</p>
+
+<h3>再加一个任务：下一句预测</h3>
+<p>完形填空只让模型学词和上下文的关系，没有直接学<b>两句话之间</b>的关系，而问答、推理恰恰依赖它。所以预训练里加了第二个任务 NSP：给每个样本选句子 A 和 B，<b>50%</b> 的时候 B 是 A 在原文里真正的下一句（IsNext），<b>50%</b> 的时候 B 是语料里随机抽的一句（NotNext）。用 <code>[CLS]</code> 的最终向量做二分类。训练数据从任何单语语料都能自动造出来。</p>
+<figure class="fig">
+  <span class="tag">图 6 · 下一句预测：一半真相邻，一半随机拼</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 214" role="img" aria-label="两个样本。上面一个标注 IsNext，占 50%：[CLS] the man went to [MASK] store [SEP] he bought a gallon [MASK] milk [SEP]，B 句是 A 句真正的下一句。下面一个标注 NotNext，占 50%：[CLS] the man [MASK] to the store [SEP] penguin [MASK] are flight ##less birds [SEP]，B 句是随机抽的一句。用 CLS 位置的最终向量做二分类。两个样本里的 MASK 是同时进行的完形填空。">
+    <text class="b tn" x="20" y="20">50%：B 是 A 真正的下一句，标签 IsNext</text>
+    <rect class="newT" x="20" y="28" width="640" height="34" rx="6"/>
+    <text class="mo sm" x="32" y="50">[CLS] the man went to [MASK] store [SEP] he bought a gallon [MASK] milk [SEP]</text>
+    <text class="b to" x="20" y="96">50%：B 是语料里随机抽的一句，标签 NotNext</text>
+    <rect class="oldT" x="20" y="104" width="640" height="34" rx="6"/>
+    <text class="mo sm" x="32" y="126">[CLS] the man [MASK] to the store [SEP] penguin [MASK] are flight ##less birds [SEP]</text>
+    <text class="sm" x="20" y="168">用 [CLS] 位置的最终向量 C 做二分类：这是不是真的下一句。</text>
+    <text class="sm m" x="20" y="190">同一条样本里，完形填空和下一句预测同时进行（两条里的 [MASK] 就是完形填空盖住的）。</text>
+  </svg>
+  </div>
+  <figcaption>样例取自原文附录 A.1。最终模型在 NSP 上的准确率是 97% 到 98%（原文脚注 5）。</figcaption>
+</figure>
+<p>原文说这个任务虽然简单，但对问答和推理都有益，证据是第 5 节 Table 5 里「去掉 NSP」那一行。我补充的：NotNext 的句子是随机抽的，话题往往完全不同，模型可能只靠「话题是否相近」就判对，不一定真学到了逻辑连贯。原文没有分析这一点。后来的研究对 NSP 是否必要，结论也不一样，见第 6 节。对着毛病：完形填空管不到句子之间的关系。</p>
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>第三步：微调，一个模型接所有任务</h2>
+<p>预训练做完，接任务就很简单：<b>按上一节的格式放入输入，顶上只加一个小输出层，所有参数一起继续训练。</b>每个任务得到一个独立的微调模型，但它们都从同一份预训练参数出发。原文强调的特色是：预训练架构和最终下游架构之间的差异极小。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 1 · 预训练和微调的整体流程</span>
+  <img class="orig" src="orig-fig1.png" alt="原文 Figure 1：左边是预训练，输入是盖住的句子 A 和 B，经过 BERT，C 位置做 NSP，各词元位置做 Mask LM。右边是微调，同一个 BERT 结构，叠着 MNLI、NER、SQuAD 三个任务，SQuAD 的输入是问题加段落，输出起止位置。中间三条点线表示预训练参数用来初始化各个下游模型。" loading="lazy">
+  <figcaption>这张图在说什么：<b>左右两边是同一个结构，只有最上面的输出不同</b>。怎么看：左边预训练，C 位置判断两句相邻（NSP），其余位置填被盖住的词（Mask LM）；右边微调，点线表示把预训练好的参数复制过去，三叠表示三个不同的任务各有一个模型。图源：Devlin 等 2018 原文，已转灰度。</figcaption>
+</figure>
+<figure class="fig">
+  <span class="tag">图 7 · 不同任务，用哪个位置的输出，新加什么</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 304" role="img" aria-label="四行，每行三个方框依次连接：任务和输入，用哪个位置的输出，新增参数。分类：CLS A SEP B，用 CLS 的输出 C，新增分类矩阵 W，K 乘 H。问答：CLS 问题 SEP 段落，用段落每个词的输出，新增起点向量 S 和终点向量 E。词元标注：CLS 句子，用每个词的输出，新增标签分类层。选择：给定句加四个续写，用每条序列的 C，新增一个向量给四条打分再做 softmax。底部：整个模型的参数一起更新，新增的只有最右一列。">
+    <text class="sm m" x="20" y="18">任务和输入</text><text class="sm m" x="216" y="18">用哪个位置的输出</text><text class="sm m" x="452" y="18">新增的参数</text>
+    <rect class="softS" x="20" y="26" width="170" height="50" rx="8"/><text class="b" x="30" y="46">分类（情感、推理）</text><text class="mo sm" x="30" y="64">[CLS] A [SEP] B</text>
+    <line class="mutS" x1="192" y1="51" x2="214" y2="51" marker-end="url(#ah)"/>
+    <rect class="newT" x="216" y="26" width="210" height="50" rx="8"/><text class="b tn" x="228" y="46">[CLS] 的输出 C</text><text class="sm" x="228" y="64">整条序列的汇总</text>
+    <line class="mutS" x1="428" y1="51" x2="450" y2="51" marker-end="url(#ah)"/>
+    <rect class="softS" x="452" y="26" width="208" height="50" rx="8"/><text class="b" x="464" y="46">分类矩阵 W</text><text class="sm" x="464" y="64">K 类 × H 维</text>
+
+    <rect class="softS" x="20" y="90" width="170" height="50" rx="8"/><text class="b" x="30" y="110">问答（SQuAD）</text><text class="mo sm" x="30" y="128">[CLS] 问题 [SEP] 段落</text>
+    <line class="mutS" x1="192" y1="115" x2="214" y2="115" marker-end="url(#ah)"/>
+    <rect class="newT" x="216" y="90" width="210" height="50" rx="8"/><text class="b tn" x="228" y="110">段落每个词的输出 T</text><text class="sm" x="228" y="128">每个词是答案起点或终点的概率</text>
+    <line class="mutS" x1="428" y1="115" x2="450" y2="115" marker-end="url(#ah)"/>
+    <rect class="softS" x="452" y="90" width="208" height="50" rx="8"/><text class="b" x="464" y="110">起点向量 S、终点向量 E</text><text class="sm" x="464" y="128">各 H 维</text>
+
+    <rect class="softS" x="20" y="154" width="170" height="50" rx="8"/><text class="b" x="30" y="174">词元标注（NER）</text><text class="mo sm" x="30" y="192">[CLS] 句子</text>
+    <line class="mutS" x1="192" y1="179" x2="214" y2="179" marker-end="url(#ah)"/>
+    <rect class="newT" x="216" y="154" width="210" height="50" rx="8"/><text class="b tn" x="228" y="174">每个词的输出 T</text><text class="sm" x="228" y="192">给每个词一个标签</text>
+    <line class="mutS" x1="428" y1="179" x2="450" y2="179" marker-end="url(#ah)"/>
+    <rect class="softS" x="452" y="154" width="208" height="50" rx="8"/><text class="b" x="464" y="174">标签分类层</text><text class="sm" x="464" y="192">人名 / 地名 / 机构 / 其他</text>
+
+    <rect class="softS" x="20" y="218" width="170" height="50" rx="8"/><text class="b" x="30" y="238">选择（SWAG）</text><text class="mo sm" x="30" y="256">给定句 + 4 个续写</text>
+    <line class="mutS" x1="192" y1="243" x2="214" y2="243" marker-end="url(#ah)"/>
+    <rect class="newT" x="216" y="218" width="210" height="50" rx="8"/><text class="b tn" x="228" y="238">每条序列的 C</text><text class="sm" x="228" y="256">四条各出一个</text>
+    <line class="mutS" x1="428" y1="243" x2="450" y2="243" marker-end="url(#ah)"/>
+    <rect class="softS" x="452" y="218" width="208" height="50" rx="8"/><text class="b" x="464" y="238">一个向量</text><text class="sm" x="464" y="256">和 C 点积打分，四个分数 softmax</text>
+    <text class="sm tn b" x="20" y="294">整个模型的参数一起更新，新增的只有最右一列。</text>
+  </svg>
+  </div>
+  <figcaption>四类任务都用同一种输入格式，只换「读哪里的输出」和一个小输出层。问答的起止位置怎么算，附录 G 有一个三个词的小算例。</figcaption>
+</figure>
+<p>微调很便宜：原文说所有结果在单个 Cloud TPU 上最多 1 小时、GPU 上几小时就能复现。昂贵的是预训练：BERT-BASE 用 4 个 Cloud TPU（共 16 块芯片）、LARGE 用 16 个（共 64 块）各训 4 天。我补充的：代码和预训练模型都开源了，别人就只用付微调的钱，这是 BERT 能迅速普及的现实原因。</p>
+<p>两个尺寸分别是 BASE（12 层、隐藏维度 768、12 个头，约 1.1 亿参数）和 LARGE（24 层、1024、16 个头，约 3.4 亿）。BASE 是特意定成和 GPT 一样大的，为了做第 5 节的受控对比。对着毛病：不用为每个任务再设计专用架构。精确的符号写法见附录 A。</p>
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>证据：它到底做到了多少</h2>
+<p>三个问题：刷新了多少成绩？功劳是不是真在双向？模型越大是不是越好？每个结论紧跟着证明它的那个实验。</p>
+
+<h3>刷新了 11 项任务</h3>
+<p>先看 GLUE（8 个句子级任务的合集，测试集，由评测服务器打分）。平均分：BERT-BASE 79.6，BERT-LARGE 82.1，GPT 75.1，ELMo 那一行 71.0，此前最好 74.0（Average 排除了有问题的 WNLI，所以和官方得分略有不同）。LARGE 比 GPT 高 7.0，BASE 高 4.5。官方排行榜上，BERT-LARGE 得分 80.5，GPT 为 72.8（撰文时）。</p>
+<figure class="fig">
+  <span class="tag">图 8 · 训练数据越少，提升越大</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 310" role="img" aria-label="横向柱状图，BERT-LARGE 比 GPT 在 GLUE 各任务测试集上多得的分数，按训练样本数从多到少排：MNLI +4.6；QQP +1.8；QNLI +5.3；SST-2 +3.6；CoLA +15.1；STS-B +6.5；MRPC +7.0；RTE +14.1。训练样本最少的 CoLA 和 RTE 提升最大。"><text class="sm m" x="20" y="20">BERT-LARGE 比 GPT 多得多少分（GLUE 测试集，按训练样本从多到少排）</text><line class="mutS" x1="170" y1="34" x2="170" y2="284"/><text class="sm m" x="170" y="298" text-anchor="middle">GPT = 0</text><text x="20" y="60" class="b">MNLI</text><text class="sm m mo" x="76" y="60">392k</text><rect class="new" x="170" y="46" width="101.2" height="18" rx="3"/><text class="sm tn" x="279.2" y="60">+4.6　<tspan class="m" style="fill:var(--mut)">82.1 → 86.7</tspan></text><text x="20" y="90" class="b">QQP</text><text class="sm m mo" x="76" y="90">363k</text><rect class="new" x="170" y="76" width="39.6" height="18" rx="3"/><text class="sm tn" x="217.6" y="90">+1.8　<tspan class="m" style="fill:var(--mut)">70.3 → 72.1</tspan></text><text x="20" y="120" class="b">QNLI</text><text class="sm m mo" x="76" y="120">108k</text><rect class="new" x="170" y="106" width="116.6" height="18" rx="3"/><text class="sm tn" x="294.6" y="120">+5.3　<tspan class="m" style="fill:var(--mut)">87.4 → 92.7</tspan></text><text x="20" y="150" class="b">SST-2</text><text class="sm m mo" x="76" y="150">67k</text><rect class="new" x="170" y="136" width="79.2" height="18" rx="3"/><text class="sm tn" x="257.2" y="150">+3.6　<tspan class="m" style="fill:var(--mut)">91.3 → 94.9</tspan></text><text x="20" y="180" class="b">CoLA</text><text class="sm m mo" x="76" y="180">8.5k</text><rect class="new" x="170" y="166" width="332.2" height="18" rx="3"/><text class="sm tn" x="510.2" y="180">+15.1　<tspan class="m" style="fill:var(--mut)">45.4 → 60.5</tspan></text><text x="20" y="210" class="b">STS-B</text><text class="sm m mo" x="76" y="210">5.7k</text><rect class="new" x="170" y="196" width="143.0" height="18" rx="3"/><text class="sm tn" x="321.0" y="210">+6.5　<tspan class="m" style="fill:var(--mut)">80.0 → 86.5</tspan></text><text x="20" y="240" class="b">MRPC</text><text class="sm m mo" x="76" y="240">3.5k</text><rect class="new" x="170" y="226" width="154.0" height="18" rx="3"/><text class="sm tn" x="332.0" y="240">+7.0　<tspan class="m" style="fill:var(--mut)">82.3 → 89.3</tspan></text><text x="20" y="270" class="b">RTE</text><text class="sm m mo" x="76" y="270">2.5k</text><rect class="new" x="170" y="256" width="310.2" height="18" rx="3"/><text class="sm tn" x="488.2" y="270">+14.1　<tspan class="m" style="fill:var(--mut)">56.0 → 70.1</tspan></text></svg>
+  </div>
+  <figcaption>数字是原文 Table 1 的 BERT-LARGE 减去 OpenAI GPT，每格都对过原文。小数据的任务（CoLA、RTE）提升最大，但不严格随数据量递减：QNLI（10.8 万条）的 +5.3 就比 SST-2（6.7 万条）的 +3.6 大。</figcaption>
+</figure>
+<p>这是预训练价值最直观的体现：数据少时，从预训练里「借」来的知识比任务本身的数据更重要。这个「为什么」是我的解读，原文只陈述现象。BERT-LARGE 在小数据集上微调有时不稳定，作者做了多次随机重启、按开发集挑最好的；GLUE 测试标签不公开，每个模型只向评测服务器提交了一次。</p>
+<p>另外三项，都是测试集成绩（SQuAD 的 F1 是答案和标准答案的词重合程度，EM 是一字不差）：</p>
+<div class="tbl"><table>
+  <thead><tr><th>任务</th><th class="num">BERT</th><th>对照</th></tr></thead>
+  <tbody>
+    <tr><td>SQuAD v1.1（F1）</td><td class="num">93.2</td><td>榜首 nlnet 集成 91.7；人类 91.2。BERT 是集成 + TriviaQA 增广，EM 87.4</td></tr>
+    <tr><td>SQuAD v2.0（F1，可能无答案）</td><td class="num">83.1</td><td>此前最好 78.0（高 5.1）；人类 89.5。BERT-LARGE 单模型，没用 TriviaQA</td></tr>
+    <tr><td>SWAG（准确率）</td><td class="num">86.3</td><td>GPT 78.0；ESIM+ELMo 59.2；人类专家 85.0、5 人标注 88.0（只测了 100 个样本）</td></tr>
+  </tbody>
+</table></div>
+<p>SQuAD v1.1 上，单个 BERT 的 F1（91.8）就超过了榜上的顶尖集成系统。「超过人类」只是在这个数据集的测量方式下，不表示一般意义上超过人。到这里为止，BERT 比 GPT 好是事实，但 BERT 和 GPT 除了方向，数据量、批大小、微调学习率也不一样（附录 E），所以 Table 1 说不清功劳属于谁。真正干净的比较在下一小节。</p>
+
+<h3>功劳在双向：同数据、同设置，只换预训练任务</h3>
+<p>Table 5 是全文最重要的一张表：预训练数据、微调方案、超参数都和 BERT-BASE 一样，只换预训练任务。「从左到右、无 NSP」相当于 GPT 的做法。</p>
+<figure class="fig">
+  <span class="tag">原文 Table 5 · 拆掉零件，看掉多少分</span>
+  <img class="orig" src="orig-tab5.png" alt="原文 Table 5：开发集，五个任务 MNLI-m、QNLI、MRPC、SST-2 的准确率和 SQuAD 的 F1。BERT-BASE：84.4、88.4、86.7、92.7、88.5。去掉 NSP：83.9、84.9、86.5、92.6、87.9。从左到右且无 NSP：82.1、84.3、77.5、92.1、77.8。再加 BiLSTM：82.1、84.1、75.7、91.6、84.9。" loading="lazy">
+  <figcaption>这张图在说什么：<b>同样的设置下，改成从左到右后，MRPC 和 SQuAD 掉得最多</b>。怎么看：每一行是一种预训练方式，每一列是一个任务。图源：Devlin 等 2018 原文，已转灰度。</figcaption>
+</figure>
+<figure class="fig">
+  <span class="tag">图 9 · 上表的柱状图：谁掉得最多</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 398" role="img" aria-label="五个任务各四根横条，依次是 BERT-BASE、去掉 NSP、从左到右无 NSP、再加 BiLSTM。数值依次为 MNLI-m（准确率）：84.4、83.9、82.1、82.1；QNLI（准确率）：88.4、84.9、84.3、84.1；MRPC（准确率）：86.7、86.5、77.5、75.7；SST-2（准确率）：92.7、92.6、92.1、91.6；SQuAD（F1）：88.5、87.9、77.8、84.9。从左到右的模型在 MRPC 和 SQuAD 上掉得最多。"><rect class="new" x="20" y="10" width="12" height="12" rx="2"/><text class="sm" x="38" y="21">BERT-BASE（双向 + NSP）</text><rect class="newT" x="250" y="10" width="12" height="12" rx="2"/><text class="sm" x="268" y="21">去掉 NSP</text><rect class="old" x="20" y="30" width="12" height="12" rx="2"/><text class="sm" x="38" y="41">从左到右、无 NSP（相当于 GPT）</text><rect class="oldT" x="300" y="30" width="12" height="12" rx="2"/><text class="sm" x="318" y="41">再加随机初始化的 BiLSTM</text><text class="b" x="20" y="92">MNLI-m</text><text class="sm m" x="20" y="108">（准确率）</text><rect class="new" x="170" y="64" width="276.5" height="11" rx="2"/><text class="sm mo" x="452.5" y="74">84.4</text><rect class="newT" x="170" y="77" width="266.9" height="11" rx="2"/><text class="sm mo" x="442.9" y="87">83.9</text><rect class="old" x="170" y="90" width="232.3" height="11" rx="2"/><text class="sm mo" x="408.3" y="100">82.1</text><rect class="oldT" x="170" y="103" width="232.3" height="11" rx="2"/><text class="sm mo" x="408.3" y="113">82.1</text><text class="b" x="20" y="154">QNLI</text><text class="sm m" x="20" y="170">（准确率）</text><rect class="new" x="170" y="126" width="353.3" height="11" rx="2"/><text class="sm mo" x="529.3" y="136">88.4</text><rect class="newT" x="170" y="139" width="286.1" height="11" rx="2"/><text class="sm mo" x="462.1" y="149">84.9</text><rect class="old" x="170" y="152" width="274.6" height="11" rx="2"/><text class="sm mo" x="450.6" y="162">84.3</text><rect class="oldT" x="170" y="165" width="270.7" height="11" rx="2"/><text class="sm mo" x="446.7" y="175">84.1</text><text class="b" x="20" y="216">MRPC</text><text class="sm m" x="20" y="232">（准确率）</text><rect class="new" x="170" y="188" width="320.6" height="11" rx="2"/><text class="sm mo" x="496.6" y="198">86.7</text><rect class="newT" x="170" y="201" width="316.8" height="11" rx="2"/><text class="sm mo" x="492.8" y="211">86.5</text><rect class="old" x="170" y="214" width="144.0" height="11" rx="2"/><text class="sm mo" x="320.0" y="224">77.5</text><rect class="oldT" x="170" y="227" width="109.4" height="11" rx="2"/><text class="sm mo" x="285.4" y="237">75.7</text><text class="b" x="20" y="278">SST-2</text><text class="sm m" x="20" y="294">（准确率）</text><rect class="new" x="170" y="250" width="435.8" height="11" rx="2"/><text class="sm mo" x="611.8" y="260">92.7</text><rect class="newT" x="170" y="263" width="433.9" height="11" rx="2"/><text class="sm mo" x="609.9" y="273">92.6</text><rect class="old" x="170" y="276" width="424.3" height="11" rx="2"/><text class="sm mo" x="600.3" y="286">92.1</text><rect class="oldT" x="170" y="289" width="414.7" height="11" rx="2"/><text class="sm mo" x="590.7" y="299">91.6</text><text class="b" x="20" y="340">SQuAD</text><text class="sm m" x="20" y="356">（F1）</text><rect class="new" x="170" y="312" width="355.2" height="11" rx="2"/><text class="sm mo" x="531.2" y="322">88.5</text><rect class="newT" x="170" y="325" width="343.7" height="11" rx="2"/><text class="sm mo" x="519.7" y="335">87.9</text><rect class="old" x="170" y="338" width="149.8" height="11" rx="2"/><text class="sm mo" x="325.8" y="348">77.8</text><rect class="oldT" x="170" y="351" width="286.1" height="11" rx="2"/><text class="sm mo" x="462.1" y="361">84.9</text><line class="mutS" x1="170" y1="58" x2="170" y2="368"/><text class="sm m" x="170" y="388">横轴从 70 起，不是从 0 起；条越短分越低</text></svg>
+  </div>
+  <figcaption>数字全部取自原文 Table 5，横轴从 70 起，所以条的长短只表示比较，不表示占满分的比例。</figcaption>
+</figure>
+<p>三件事。<b>一，去掉 NSP</b>，QNLI 掉 3.5（88.4 到 84.9），MNLI 掉 0.5，SQuAD 掉 0.6，MRPC、SST-2 几乎没变。QNLI 是「句子里有没有问题的答案」，掉得最多，符合 NSP 训练的是句对关系。<b>二，换成从左到右</b>，所有任务都不如双向的 MLM，MRPC 掉 9.0（86.5 到 77.5），SQuAD 掉 10.1（87.9 到 77.8）。原文的理由：LTR 模型的词元级隐藏状态没有右侧上下文，做 SQuAD 当然差。SST-2 几乎不掉，这是我的推测：单句情感分类用句子最后一个词的向量就够了，它已经读过整句，而 SQuAD 要求每个词的向量都含全局信息。原文没讨论这一点。<b>三，给 LTR 补救一下</b>，微调时加一个随机初始化的 BiLSTM，SQuAD 回升到 84.9，仍低于 87.9，GLUE 任务反而更差。含义：右边的信息不能在微调阶段补上去，要在预训练阶段就让每一层都融合双向。</p>
+<p>要提醒的一点：ELMo 式（左右各训一个再拼接）作者没有做实验，只列了三条理由（附录 B）。所以「深度双向严格强于浅层拼接」这个论点，在 Table 5 里是没有被直接验证的（我的提醒）。</p>
+
+<h3>模型越大越好，小任务也受益</h3>
+<figure class="fig">
+  <span class="tag">图 10 · 六种尺寸，三个任务，一路向上</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="三张折线小图，横轴是六种模型尺寸从小到大，每张图的折线都一路向上。MNLI-m（准确率）：77.9、80.6、81.9、84.4、85.7、86.6；MRPC（准确率）：79.8、82.2、84.8、86.7、86.9、87.8；SST-2（准确率）：88.4、90.7、91.3、92.9、93.3、93.7。每张图的纵轴范围不同，各自从最小值到最大值。"><text class="b" x="14" y="22">MNLI-m（准确率）</text><line class="ln" x1="14" y1="160" x2="204" y2="160"/><polyline class="newS" fill="none" points="22,150.0 56,125.2 90,113.2 124,90.2 158,78.3 192,70.0"/><circle class="new ring" cx="22" cy="150.0" r="4.5"/><text class="sm mo" x="22" y="141.0" text-anchor="middle" style="font-size:10px">77.9</text><text class="sm m mo" x="22" y="176" text-anchor="middle">1</text><circle class="new ring" cx="56" cy="125.2" r="4.5"/><text class="sm mo" x="56" y="116.2" text-anchor="middle" style="font-size:10px">80.6</text><text class="sm m mo" x="56" y="176" text-anchor="middle">2</text><circle class="new ring" cx="90" cy="113.2" r="4.5"/><text class="sm mo" x="90" y="104.2" text-anchor="middle" style="font-size:10px">81.9</text><text class="sm m mo" x="90" y="176" text-anchor="middle">3</text><circle class="new ring" cx="124" cy="90.2" r="4.5"/><text class="sm mo" x="124" y="81.2" text-anchor="middle" style="font-size:10px">84.4</text><text class="sm m mo" x="124" y="176" text-anchor="middle">4</text><circle class="new ring" cx="158" cy="78.3" r="4.5"/><text class="sm mo" x="158" y="69.3" text-anchor="middle" style="font-size:10px">85.7</text><text class="sm m mo" x="158" y="176" text-anchor="middle">5</text><circle class="new ring" cx="192" cy="70.0" r="4.5"/><text class="sm mo" x="192" y="61.0" text-anchor="middle" style="font-size:10px">86.6</text><text class="sm m mo" x="192" y="176" text-anchor="middle">6</text><text class="b" x="238" y="22">MRPC（准确率）</text><line class="ln" x1="238" y1="160" x2="428" y2="160"/><polyline class="newS" fill="none" points="246,150.0 280,126.0 314,100.0 348,81.0 382,79.0 416,70.0"/><circle class="new ring" cx="246" cy="150.0" r="4.5"/><text class="sm mo" x="246" y="141.0" text-anchor="middle" style="font-size:10px">79.8</text><text class="sm m mo" x="246" y="176" text-anchor="middle">1</text><circle class="new ring" cx="280" cy="126.0" r="4.5"/><text class="sm mo" x="280" y="117.0" text-anchor="middle" style="font-size:10px">82.2</text><text class="sm m mo" x="280" y="176" text-anchor="middle">2</text><circle class="new ring" cx="314" cy="100.0" r="4.5"/><text class="sm mo" x="314" y="91.0" text-anchor="middle" style="font-size:10px">84.8</text><text class="sm m mo" x="314" y="176" text-anchor="middle">3</text><circle class="new ring" cx="348" cy="81.0" r="4.5"/><text class="sm mo" x="348" y="72.0" text-anchor="middle" style="font-size:10px">86.7</text><text class="sm m mo" x="348" y="176" text-anchor="middle">4</text><circle class="new ring" cx="382" cy="79.0" r="4.5"/><text class="sm mo" x="382" y="70.0" text-anchor="middle" style="font-size:10px">86.9</text><text class="sm m mo" x="382" y="176" text-anchor="middle">5</text><circle class="new ring" cx="416" cy="70.0" r="4.5"/><text class="sm mo" x="416" y="61.0" text-anchor="middle" style="font-size:10px">87.8</text><text class="sm m mo" x="416" y="176" text-anchor="middle">6</text><text class="b" x="462" y="22">SST-2（准确率）</text><line class="ln" x1="462" y1="160" x2="652" y2="160"/><polyline class="newS" fill="none" points="470,150.0 504,115.3 538,106.2 572,82.1 606,76.0 640,70.0"/><circle class="new ring" cx="470" cy="150.0" r="4.5"/><text class="sm mo" x="470" y="141.0" text-anchor="middle" style="font-size:10px">88.4</text><text class="sm m mo" x="470" y="176" text-anchor="middle">1</text><circle class="new ring" cx="504" cy="115.3" r="4.5"/><text class="sm mo" x="504" y="106.3" text-anchor="middle" style="font-size:10px">90.7</text><text class="sm m mo" x="504" y="176" text-anchor="middle">2</text><circle class="new ring" cx="538" cy="106.2" r="4.5"/><text class="sm mo" x="538" y="97.2" text-anchor="middle" style="font-size:10px">91.3</text><text class="sm m mo" x="538" y="176" text-anchor="middle">3</text><circle class="new ring" cx="572" cy="82.1" r="4.5"/><text class="sm mo" x="572" y="73.1" text-anchor="middle" style="font-size:10px">92.9</text><text class="sm m mo" x="572" y="176" text-anchor="middle">4</text><circle class="new ring" cx="606" cy="76.0" r="4.5"/><text class="sm mo" x="606" y="67.0" text-anchor="middle" style="font-size:10px">93.3</text><text class="sm m mo" x="606" y="176" text-anchor="middle">5</text><circle class="new ring" cx="640" cy="70.0" r="4.5"/><text class="sm mo" x="640" y="61.0" text-anchor="middle" style="font-size:10px">93.7</text><text class="sm m mo" x="640" y="176" text-anchor="middle">6</text><text class="sm" x="20" y="204">1：L3 H768 A12　　2：L6 H768 A3　　3：L6 H768 A12　　4：L12 H768 A12（BASE）</text><text class="sm" x="20" y="222">5：L12 H1024 A16　　6：L24 H1024 A16（LARGE）　　L 层数，H 隐藏维度，A 注意力头数</text><text class="sm tn" x="20" y="246">MLM 困惑度（越低越好）：5.84 → 5.24 → 4.68 → 3.99 → 3.54 → 3.23，同步下降</text></svg>
+  </div>
+  <figcaption>数字出自原文 Table 6：每个配置的下游结果是 5 次随机重启微调的开发集平均。三张图的纵轴范围各自不同，只看趋势。</figcaption>
+</figure>
+<p>从最小到最大：MNLI 77.9 到 86.6，MRPC 79.8 到 87.8，SST-2 88.4 到 93.7，没有一处下降。关键是 MRPC：只有约 3,600 条标注，任务又和预训练任务差得很远，仍随模型变大一路上升。原文称，这是第一项令人信服地证明「预训练得足够充分，扩到极端规模也会让很小的任务大幅提升」的工作。</p>
+<p>原文的解释是个假说（原文用的是「我们推测」）：前人对 ELMo 加层、加宽，下游好坏参半，但那些是特征式；微调式只加极少的随机初始化参数，所以即使任务数据很少，也能受益于更大的预训练表示。这个假说没有被直接检验。</p>
+
+<h3>两种用法都行：特征式的 NER</h3>
+<p>最后，BERT 不微调也行。在 CoNLL-2003 NER 上，微调 BASE 的开发集 F1 是 96.4，特征式最好的一种（取最后四层的拼接，不微调，喂给一个两层 BiLSTM）是 96.1，只差 0.3。只用嵌入层（还没经过任何注意力层）只有 91.0，说明提升来自 12 层自注意力带来的上下文化（我的解读）。测试集上 BERT-LARGE 微调是 92.8，ELMo 92.2、CVT 92.6、CSE 93.1，BERT 在这里只是「有竞争力」。NER 不在「11 项任务」里，这 11 项是 8 个 GLUE 任务加 SQuAD v1.1、v2.0 和 SWAG。</p>
+<p class="punch">原文的结论：<em>深度双向</em>是 BERT 最主要的贡献，同一个预训练模型加一个输出层，就能在句子级和词元级的许多任务上取得最好成绩，而且连很小的任务也受益于规模。</p>
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>局限和后来</h2>
+<ul>
+  <li><b>作者承认的</b>：[MASK] 的不一致只是缓解，没消除；完形填空每条样本只在 15% 的位置上学习，收敛更慢（附录 C.1 的实验显示它在准确率上几乎立刻就超过了从左到右的模型）；BERT-LARGE 小数据微调不稳定，要多次重启；每个任务仍要单独微调出一个模型。</li>
+  <li><b>我补充的</b>：这个架构天生不适合生成文本，双向编码器没有「一个词一个词往下写」的机制，适合理解类任务。最长 512 个词元。全部是英文、单语的研究型基准。几乎所有消融是单次或 5 次平均、没做显著性检验，零点几分的差距不宜过度解读。</li>
+  <li><b>后来</b>（我的归纳，细节待核实）：「预训练再微调」成了 NLP 的标准做法，一年内出现一批沿着 BERT 改进的模型（RoBERTa 等）；有后续研究报告去掉 NSP 反而更好，这和 Table 5 并不矛盾，因为 Table 5 说的是本文的设置。之后的大语言模型主要沿 GPT 的单向路线发展（<a href="../007-gpt-2/index.html">007 GPT-2</a>、<a href="../011-gpt-3/index.html">011 GPT-3</a>），BERT 类编码器长期用于分类、检索等理解任务；每个任务整体微调的成本，催生了只改少量参数的方法（<a href="../014-lora/index.html">014 LoRA</a>）。</li>
+</ul>
+
+<!-- ================= 附录 ================= -->
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块都默认折叠，标题里写明了对应的原文章节；正文用不到它们。标「我补充」的，是原文之外我加的说明，标「待核实」的是我没有核对清楚的。</p>
+
+<details class="ext"><summary>A · 公式和符号表（原文第 3 节、附录 A）</summary>
+<p><b>传统语言模型：</b>把一句话的概率拆成逐词猜下一个的乘积（001、002 已讲）。</p>
+<div class="formula">P(w<sub>1</sub>…w<sub>T</sub>) = Π<sub>t</sub> P( w<sub>t</sub> | w<sub>1</sub>, …, w<sub>t−1</sub> )</div>
+<p><b>式 1：完形填空的损失</b>（原文只用文字描述，这是我的写法）：只对被选中的位置取平均。</p>
+<div class="formula">L<sub>MLM</sub> = − (1 / |M|) Σ<sub>i∈M</sub> log P( 原词<sub>i</sub> | 被污染后的整条序列 )</div>
+<p>训练的总损失是 MLM 平均似然和 NSP 平均似然之和（原文附录 A.2）。</p>
+<p><b>式 2：输入向量</b>（原文第 3 节）：</p>
+<div class="formula">输入<sub>i</sub> = 词元嵌入(token<sub>i</sub>) + 段嵌入(A 或 B) + 位置嵌入(i)</div>
+<p><b>式 3：分类微调</b>（原文 4.1 节）：用 [CLS] 的输出 C，只新增分类矩阵 W，损失为 log(softmax(C·Wᵀ))。</p>
+<p><b>式 4：SQuAD</b>（原文 4.2 节）：词 i 是答案起点的概率，对段落所有词做 softmax；终点同理用 E。</p>
+<div class="formula">P<sub>i</sub> = e<sup>S·T<sub>i</sub></sup> / Σ<sub>j</sub> e<sup>S·T<sub>j</sub></sup>　　候选片段 (i, j) 的分数 = S·T<sub>i</sub> + E·T<sub>j</sub>（j ≥ i）</div>
+<p>训练目标是正确起点与正确终点的对数似然之和。<b>SQuAD v2.0</b>（原文 4.3 节）：无答案当作起点和终点都在 [CLS] 的片段，无答案分 s<sub>null</sub> = S·C + E·C，最优非空片段分记为 ŝ，当 ŝ &gt; s<sub>null</sub> + τ 时才预测有答案，τ 在开发集上选使 F1 最高的值。</p>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>是什么</th></tr></thead>
+  <tbody>
+    <tr><td>L、H、A</td><td>层数、隐藏维度、注意力头数</td></tr>
+    <tr><td>T<sub>i</sub></td><td>第 i 个位置最后一层的输出向量；C 是 [CLS] 位置的输出</td></tr>
+    <tr><td>M</td><td>被选中去预测的位置集合，约占 15%</td></tr>
+    <tr><td>K</td><td>分类任务的类别数</td></tr>
+    <tr><td>S、E</td><td>SQuAD 微调时新增的起点向量和终点向量，各 H 维</td></tr>
+    <tr><td>τ</td><td>SQuAD v2.0 里判断有无答案的阈值</td></tr>
+  </tbody>
+</table></div>
+<p><b>GELU</b>（原文附录 A.2，沿用 GPT）：GELU(x) = x·Φ(x)，Φ 是标准正态分布的累积分布函数。示意：GELU(1) = 1 × 0.841 = 0.841；GELU(−1) = −1 × 0.159 = −0.159；GELU(−2) ≈ −2 × 0.023 = −0.046；GELU(0) = 0。负值不是全砍，而是被平滑压小；ReLU 则直接砍成 0。作者没有单独对比过 GELU 和 ReLU。</p>
+</details>
+
+<details class="ext"><summary>B · 概念注解和几处细节（原文第 1、2、3、5 节）</summary>
+<p><b>预训练、自监督，特征式和微调式。</b>预训练是在大量无标注数据上用「答案就在文本里」的任务训练（自监督）。迁移到任务有两种用法：</p>
+<div class="tbl"><table>
+  <thead><tr><th></th><th>特征式（ELMo）</th><th>微调式（GPT、BERT）</th></tr></thead>
+  <tbody>
+    <tr><td>怎么用</td><td>当特征提取器，向量喂给任务专门设计的模型</td><td>预训练模型就是任务模型的主体，顶上加极少新参数</td></tr>
+    <tr><td>预训练参数</td><td>通常冻结</td><td>全部更新</td></tr>
+    <tr><td>任务专用部分</td><td>大，每个任务一套架构</td><td>小，一个输出层</td></tr>
+  </tbody>
+</table></div>
+<p>类比（我的）：特征式像雇一位翻译助手，把原文翻成通俗的话，你照旧用自己的方法做事；微调式像招一个通才新人，直接放到岗位上边干边调整。</p>
+<p><b>去噪自编码器和完形填空。</b>去噪自编码器是把输入弄坏再重建<b>整个</b>输入，MLM 只预测被盖住的词（原文 3.1 节）。<b>为什么是 15%：</b>原文没有对比其他比例。我的看法：盖得多，剩下的上下文就少；盖得少，每条序列的训练信号就少，训练更慢。</p>
+<p><b>「10% 保持不变」是不是又回到了看见自己？</b>不是。图 2 的泄漏是系统性的：每个被预测的词都在输入里，照抄就拿满分。这里原样保留的只占全部词元的 1.5%，而且模型不知道哪些位置要预测；同样被选中的位置里，另有 10% 是随机词，在那里照抄就是错的。所以照抄成不了稳定的捷径，只是对「实际观察到的词」的轻度偏置，原文的话是「使表示偏向实际观察到的词」。</p>
+<p><b>WordPiece。</b>和 004 里的 BPE 同类，把词切成常见的子词片段，词表 3 万。例：likes playing 变成 likes、play、##ing。遮盖在切分之后进行，不特别处理半个词，所以可能只盖住 play 而留着 ##ing。</p>
+<p><b>[CLS]、[SEP]、段嵌入。</b>GPT 的 [SEP]、[CLS] 只在微调时才引入，BERT 在预训练时就学了 [SEP]、[CLS] 和 A/B 段嵌入（原文附录 A.4）。用 [SEP] 和段嵌入两种方式区分两句，原文没解释为什么要两种。</p>
+<p><b>消融实验。</b>每次拿掉或替换一个部件、其他一切不变，看掉多少分，来证明部件有没有用。读消融表的关键是「其他一切不变」是不是真成立，Table 5 之所以有说服力，是因为数据、微调方案、超参数都和 BERT-BASE 一致。</p>
+<p><b>EM 和 F1。</b>EM 是预测答案和标准答案一字不差才算对；F1 把两者当作词的集合，算重合程度（精确率和召回率的调和平均），部分对也给分。示意：标准答案 Eiffel Tower，预测 Eiffel Tower in Paris。预测 4 个词、2 个命中，精确率 0.5；标准答案 2 个词全命中，召回率 1；F1 = 2 × 0.5 × 1 / (0.5 + 1) ≈ 0.667，EM = 0。</p>
+<p><b>本文用到的任务。</b>前 8 个加上被排除的 WNLI 合称 GLUE。训练样本数从 39 万到 2500，跨度很大，数据越少的任务越依赖预训练。</p>
+<div class="tbl"><table>
+  <thead><tr><th>任务</th><th>类型</th><th>做什么</th><th>指标</th></tr></thead>
+  <tbody>
+    <tr><td>MNLI</td><td>句对分类</td><td>前提和假设：蕴含 / 矛盾 / 中性</td><td>准确率</td></tr>
+    <tr><td>QQP</td><td>句对分类</td><td>两个 Quora 问题是否同义</td><td>F1</td></tr>
+    <tr><td>QNLI</td><td>句对分类</td><td>句子是否含有问题的答案（由 SQuAD 改造）</td><td>准确率</td></tr>
+    <tr><td>SST-2</td><td>单句分类</td><td>电影评论情感正负</td><td>准确率</td></tr>
+    <tr><td>CoLA</td><td>单句分类</td><td>一句话语法上是否可接受</td><td>原文表注写 accuracy（GLUE 官方指标是 Matthews 相关，是否原文笔误，待核实）</td></tr>
+    <tr><td>STS-B</td><td>句对回归</td><td>两句语义相似度打 1 到 5 分</td><td>Spearman 相关</td></tr>
+    <tr><td>MRPC</td><td>句对分类</td><td>两句是否互为转述</td><td>F1</td></tr>
+    <tr><td>RTE</td><td>句对分类</td><td>类似 MNLI，但数据很少</td><td>准确率</td></tr>
+    <tr><td>SQuAD v1.1 / v2.0</td><td>问答</td><td>在维基百科段落里找答案片段；v2.0 可能没有答案</td><td>EM、F1</td></tr>
+    <tr><td>SWAG</td><td>常识推理选择</td><td>给一句话，四个续写里挑最合理的</td><td>准确率</td></tr>
+    <tr><td>CoNLL-2003 NER</td><td>词元标注</td><td>给每个词标记人名 / 地名 / 机构 / 其他</td><td>实体级 F1</td></tr>
+  </tbody>
+</table></div>
+<p>WNLI 被排除：原文附录 B.1 说它的构造有问题，所有提交的系统都比「总是猜多数类」的 65.1% 还差，BERT 提交时总是预测多数类。</p>
+<p><b>为什么没做 ELMo 式的实验。</b>原文 5.1 节末的三条理由：(a) 训练成本是两倍；(b) 对问答不自然，右向模型无法让答案以问题为条件；(c) 严格弱于深度双向，因为深度双向可以在每一层同时用左右上下文。</p>
+</details>
+
+<details class="ext"><summary>C · 当时的背景（原文第 2 节、2018 年）</summary>
+<p><b>三条脉络</b>（原文第 2 节）：(1) 预训练词向量（word2vec、GloVe），每个词一个固定向量，bank 在河岸和银行里是同一个向量；(2) ELMo（特征式），向量随上下文变化，前向、后向各一个 LSTM 再拼接，但任务专用架构要人工设计、双向是浅层的；(3) GPT（微调式），Transformer 解码器做左到右的语言模型，只加一个输出层，但只能单向。另外 context2vec 用左右两边的 LSTM 预测中间一个词，原文说它也是特征式、「也不是深度双向」。</p>
+<p><b>还有这些背景</b>（我补充，部分待核实）：计算机视觉里用 ImageNet 预训练再微调早已是标准做法，NLP 里的类似做法到 2018 年才走通（ELMo、ULMFiT、GPT 都用语言模型目标）。GLUE（2018）把多个理解任务放在一起；SQuAD（2016）是阅读理解的标准榜单；SWAG（2018）是新发布的常识推理数据集。Transformer（2017）刚满一年，此前 NLP 主流是 LSTM 加注意力（002、003）。BERT-BASE 特意定得和 GPT 一样大，就是为了做受控对比。</p>
+<p><b>004 的两半，各取一半：</b>只取解码器（带掩码、只看左边）加「预测下一个词」，是 GPT；只取编码器（不带掩码、左右都看）加完形填空，是 BERT。原文第 3 节脚注 4 点明：文献里「双向 Transformer」常被叫作「Transformer 编码器」，只看左边的叫「Transformer 解码器」，因为它可以用来生成文本。</p>
+</details>
+
+<details class="ext"><summary>D · 模型规格和参数量（原文第 3 节）</summary>
+<div class="tbl"><table>
+  <thead><tr><th></th><th class="num">层数 L</th><th class="num">隐藏维度 H</th><th class="num">头数 A</th><th class="num">FFN 宽度（4H）</th><th class="num">总参数</th></tr></thead>
+  <tbody>
+    <tr><td>BERT-BASE</td><td class="num">12</td><td class="num">768</td><td class="num">12</td><td class="num">3072</td><td class="num">110M</td></tr>
+    <tr><td>BERT-LARGE</td><td class="num">24</td><td class="num">1024</td><td class="num">16</td><td class="num">4096</td><td class="num">340M</td></tr>
+  </tbody>
+</table></div>
+<p>FFN 一律是 4H（原文脚注 3）。每个头 64 维（768 / 12 = 64，1024 / 16 = 64），和 004 一样。对照 004 的 base：L = 6、d_model = 512、h = 8、d_ff = 2048。</p>
+<p><b>参数量从哪来</b>（推算，原文只给总数）：BASE 的词元嵌入 30,000 × 768 ≈ 23M；每层自注意力（四个 768 × 768 矩阵）约 2.36M，FFN（768 到 3072 再回来）约 4.72M，合计约 7.09M，12 层约 85M；总计约 109M，与 110M 相符。LARGE 同法约 335M，与 340M 相符。约 77% 的参数在编码器的 12 层里，约 21% 在词元嵌入里。</p>
+<p><b>和 004 的架构相比：</b>没有解码器；自注意力无掩码；位置编码从 sin/cos 换成可学的位置嵌入；增加段嵌入；激活函数从 ReLU 换成 GELU；其余（多头、残差、层归一化、FFN 宽度为模型宽度的 4 倍）相同。</p>
+</details>
+
+<details class="ext"><summary>E · 预训练和微调的设置（原文 3.1、3.2 节、附录 A）</summary>
+<ul>
+  <li><b>数据</b>：BooksCorpus（8 亿词）加英文维基百科（25 亿词，只取正文段落），合计约 33 亿词。必须用文档级语料，才能抽出长的连续序列（NSP 也需要真正相邻的片段，这是我补充的）。</li>
+  <li><b>序列</b>：抽两段连续文本，各叫「句子」，但通常远长于真正的一句；合计不超过 512 个词元。遮盖率统一 15%。</li>
+  <li><b>规模</b>：批大小 256 条序列（原文写 256 × 512 = 128,000 词元 / 批，严格算是 131,072，原文取整），训练 100 万步，原文称约 40 个 epoch。我核了一下：128,000 × 10<sup>6</sup> ÷ 3.3 × 10<sup>9</sup> ≈ 38.8，与约 40 相符，但这是按全程 512 长度算的。前 90% 的步数只用长度 128，若批大小一直是 256 条序列，实际处理的词元约 4.3 × 10<sup>10</sup>，只有约 13 个 epoch。原文没说短序列阶段是否加大了批，所以「约 40」我不照单全收（待核实）。</li>
+  <li><b>优化</b>：Adam，学习率 1e-4，β<sub>1</sub> = 0.9，β<sub>2</sub> = 0.999，L2 权重衰减 0.01，前 10,000 步线性预热，之后线性衰减；所有层 dropout 0.1；GELU。（004 用 β<sub>2</sub> = 0.98，Adam 见 <a href="../005-adam/index.html">005</a>。）</li>
+  <li><b>长度技巧</b>：注意力随序列长度平方增长，所以前 90% 的步数用长度 128，最后 10% 才用 512 来学位置嵌入。长度变 4 倍，注意力矩阵的元素数是 16 倍。</li>
+  <li><b>硬件</b>：BASE 4 个 Cloud TPU（共 16 块芯片），LARGE 16 个（共 64 块），各预训练 4 天。</li>
+  <li><b>微调</b>：批大小 16 或 32，学习率（Adam）5e-5、3e-5、2e-5 里选，轮数 2 到 4；10 万条以上标注的大数据集对超参不敏感；因为微调快，可以穷举这些值、按开发集选最好的。GLUE 用批 32、3 个 epoch，学习率在 5e-5、4e-5、3e-5、2e-5 里按开发集选。</li>
+  <li><b>和 GPT 的其他差别</b>（原文附录 A.4 自己列的）：数据 GPT 8 亿词、BERT 33 亿词；GPT 的 [SEP]/[CLS] 只在微调时引入；批大小 GPT 3.2 万词、BERT 12.8 万词，步数都是 100 万；微调学习率 GPT 统一 5e-5，BERT 按任务选。原文的主张是，双向性和两个预训练任务贡献了绝大部分提升，Table 5 的消融就是为了把这些差别隔离出来。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>F · 完整的结果表（原文 Table 1 到 Table 7、附录 Table 8）</summary>
+<p><b>Table 1：GLUE 测试集</b>（评测服务器打分；BERT 和 GPT 为单模型、单任务；排除了以 BERT 为组件的条目；QQP、MRPC 用 F1，STS-B 用 Spearman，其余是准确率）</p>
+<div class="tbl"><table>
+  <thead><tr><th>系统</th><th class="num">MNLI-m/mm</th><th class="num">QQP</th><th class="num">QNLI</th><th class="num">SST-2</th><th class="num">CoLA</th><th class="num">STS-B</th><th class="num">MRPC</th><th class="num">RTE</th><th class="num">平均</th></tr></thead>
+  <tbody>
+    <tr><td>训练样本数</td><td class="num">392k</td><td class="num">363k</td><td class="num">108k</td><td class="num">67k</td><td class="num">8.5k</td><td class="num">5.7k</td><td class="num">3.5k</td><td class="num">2.5k</td><td class="num">-</td></tr>
+    <tr><td>Pre-OpenAI SOTA</td><td class="num">80.6/80.1</td><td class="num">66.1</td><td class="num">82.3</td><td class="num">93.2</td><td class="num">35.0</td><td class="num">81.0</td><td class="num">86.0</td><td class="num">61.7</td><td class="num">74.0</td></tr>
+    <tr><td>BiLSTM+ELMo+Attn</td><td class="num">76.4/76.1</td><td class="num">64.8</td><td class="num">79.8</td><td class="num">90.4</td><td class="num">36.0</td><td class="num">73.3</td><td class="num">84.9</td><td class="num">56.8</td><td class="num">71.0</td></tr>
+    <tr><td>OpenAI GPT</td><td class="num">82.1/81.4</td><td class="num">70.3</td><td class="num">87.4</td><td class="num">91.3</td><td class="num">45.4</td><td class="num">80.0</td><td class="num">82.3</td><td class="num">56.0</td><td class="num">75.1</td></tr>
+    <tr><td>BERT-BASE</td><td class="num">84.6/83.4</td><td class="num">71.2</td><td class="num">90.5</td><td class="num">93.5</td><td class="num">52.1</td><td class="num">85.8</td><td class="num">88.9</td><td class="num">66.4</td><td class="num">79.6</td></tr>
+    <tr><td>BERT-LARGE</td><td class="num">86.7/85.9</td><td class="num">72.1</td><td class="num">92.7</td><td class="num">94.9</td><td class="num">60.5</td><td class="num">86.5</td><td class="num">89.3</td><td class="num">70.1</td><td class="num">82.1</td></tr>
+  </tbody>
+</table></div>
+<p><b>Table 2：SQuAD v1.1</b>（排行榜截至 2018 年 12 月 10 日；集成是 7 个不同预训练检查点和微调种子的模型）</p>
+<div class="tbl"><table>
+  <thead><tr><th>系统</th><th class="num">开发 EM</th><th class="num">开发 F1</th><th class="num">测试 EM</th><th class="num">测试 F1</th></tr></thead>
+  <tbody>
+    <tr><td>人类</td><td class="num">-</td><td class="num">-</td><td class="num">82.3</td><td class="num">91.2</td></tr>
+    <tr><td>#1 集成 nlnet</td><td class="num">-</td><td class="num">-</td><td class="num">86.0</td><td class="num">91.7</td></tr>
+    <tr><td>#2 集成 QANet</td><td class="num">-</td><td class="num">-</td><td class="num">84.5</td><td class="num">90.5</td></tr>
+    <tr><td>BiDAF+ELMo（单）</td><td class="num">-</td><td class="num">85.6</td><td class="num">-</td><td class="num">85.8</td></tr>
+    <tr><td>R.M. Reader（集成）</td><td class="num">81.2</td><td class="num">87.9</td><td class="num">82.3</td><td class="num">88.5</td></tr>
+    <tr><td>BERT-BASE（单）</td><td class="num">80.8</td><td class="num">88.5</td><td class="num">-</td><td class="num">-</td></tr>
+    <tr><td>BERT-LARGE（单）</td><td class="num">84.1</td><td class="num">90.9</td><td class="num">-</td><td class="num">-</td></tr>
+    <tr><td>BERT-LARGE（集成）</td><td class="num">85.8</td><td class="num">91.8</td><td class="num">-</td><td class="num">-</td></tr>
+    <tr><td>BERT-LARGE（单 + TriviaQA）</td><td class="num">84.2</td><td class="num">91.1</td><td class="num">85.1</td><td class="num">91.8</td></tr>
+    <tr><td>BERT-LARGE（集成 + TriviaQA）</td><td class="num">86.2</td><td class="num">92.2</td><td class="num">87.4</td><td class="num">93.2</td></tr>
+  </tbody>
+</table></div>
+<p>TriviaQA 增广：先在 TriviaQA 上微调再在 SQuAD 上微调，因为榜上的系统可以用任何公开数据。去掉它只损失 0.1 到 0.4 F1（原文 4.2 节）。原文说「最好的系统比榜首集成高 1.5 F1，单系统高 1.3 F1」，但没说单系统对照的是谁；按数字反推，91.8 − 90.5 = 1.3 恰好对上榜上的 QANet，而 QANet 其实是集成系统。</p>
+<p><b>Table 3：SQuAD v2.0</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>系统</th><th class="num">开发 EM</th><th class="num">开发 F1</th><th class="num">测试 EM</th><th class="num">测试 F1</th></tr></thead>
+  <tbody>
+    <tr><td>人类</td><td class="num">86.3</td><td class="num">89.0</td><td class="num">86.9</td><td class="num">89.5</td></tr>
+    <tr><td>#1 单模型 MIR-MRC (F-Net)</td><td class="num">-</td><td class="num">-</td><td class="num">74.8</td><td class="num">78.0</td></tr>
+    <tr><td>#2 单模型 nlnet</td><td class="num">-</td><td class="num">-</td><td class="num">74.2</td><td class="num">77.1</td></tr>
+    <tr><td>unet（集成）</td><td class="num">-</td><td class="num">-</td><td class="num">71.4</td><td class="num">74.9</td></tr>
+    <tr><td>SLQA+（单）</td><td class="num">-</td><td class="num">-</td><td class="num">71.4</td><td class="num">74.4</td></tr>
+    <tr><td>BERT-LARGE（单）</td><td class="num">78.7</td><td class="num">81.9</td><td class="num">80.0</td><td class="num">83.1</td></tr>
+  </tbody>
+</table></div>
+<p><b>Table 4：SWAG</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>系统</th><th class="num">开发集</th><th class="num">测试集</th></tr></thead>
+  <tbody>
+    <tr><td>ESIM+GloVe</td><td class="num">51.9</td><td class="num">52.7</td></tr>
+    <tr><td>ESIM+ELMo</td><td class="num">59.1</td><td class="num">59.2</td></tr>
+    <tr><td>OpenAI GPT</td><td class="num">-</td><td class="num">78.0</td></tr>
+    <tr><td>BERT-BASE</td><td class="num">81.6</td><td class="num">-</td></tr>
+    <tr><td>BERT-LARGE</td><td class="num">86.6</td><td class="num">86.3</td></tr>
+    <tr><td>人类（专家）</td><td class="num">-</td><td class="num">85.0</td></tr>
+    <tr><td>人类（5 个标注）</td><td class="num">-</td><td class="num">88.0</td></tr>
+  </tbody>
+</table></div>
+<p>验算：86.3 − 59.2 = 27.1，86.3 − 78.0 = 8.3。</p>
+<p><b>Table 6：模型尺寸</b>（5 次随机重启的开发集平均；LM 是留出训练数据上的 MLM 困惑度）</p>
+<div class="tbl"><table>
+  <thead><tr><th class="num">L</th><th class="num">H</th><th class="num">A</th><th class="num">困惑度</th><th class="num">MNLI-m</th><th class="num">MRPC</th><th class="num">SST-2</th></tr></thead>
+  <tbody>
+    <tr><td class="num">3</td><td class="num">768</td><td class="num">12</td><td class="num">5.84</td><td class="num">77.9</td><td class="num">79.8</td><td class="num">88.4</td></tr>
+    <tr><td class="num">6</td><td class="num">768</td><td class="num">3</td><td class="num">5.24</td><td class="num">80.6</td><td class="num">82.2</td><td class="num">90.7</td></tr>
+    <tr><td class="num">6</td><td class="num">768</td><td class="num">12</td><td class="num">4.68</td><td class="num">81.9</td><td class="num">84.8</td><td class="num">91.3</td></tr>
+    <tr><td class="num">12</td><td class="num">768</td><td class="num">12</td><td class="num">3.99</td><td class="num">84.4</td><td class="num">86.7</td><td class="num">92.9</td></tr>
+    <tr><td class="num">12</td><td class="num">1024</td><td class="num">16</td><td class="num">3.54</td><td class="num">85.7</td><td class="num">86.9</td><td class="num">93.3</td></tr>
+    <tr><td class="num">24</td><td class="num">1024</td><td class="num">16</td><td class="num">3.23</td><td class="num">86.6</td><td class="num">87.8</td><td class="num">93.7</td></tr>
+  </tbody>
+</table></div>
+<p>规模背景：004 里试过的最大 Transformer 是 (L=6, H=1024, A=16)；原文找到的文献里最大的是 Al-Rfou 等 2018 的 (L=64, H=512, A=2)，2.35 亿参数。前人对 ELMo 的双向 LM 从两层加到四层，好坏参半。</p>
+<p><b>Table 7：CoNLL-2003 NER</b>（5 次随机重启平均；NER 当作标注任务，不用 CRF 层，取每个词第一个子词的表示）</p>
+<div class="tbl"><table>
+  <thead><tr><th>系统</th><th class="num">开发 F1</th><th class="num">测试 F1</th></tr></thead>
+  <tbody>
+    <tr><td>ELMo</td><td class="num">95.7</td><td class="num">92.2</td></tr>
+    <tr><td>CVT</td><td class="num">-</td><td class="num">92.6</td></tr>
+    <tr><td>CSE</td><td class="num">-</td><td class="num">93.1</td></tr>
+    <tr><td>BERT-LARGE（微调）</td><td class="num">96.6</td><td class="num">92.8</td></tr>
+    <tr><td>BERT-BASE（微调）</td><td class="num">96.4</td><td class="num">92.4</td></tr>
+    <tr><td>特征式（BASE）：只用嵌入层</td><td class="num">91.0</td><td class="num">-</td></tr>
+    <tr><td>倒数第二层</td><td class="num">95.6</td><td class="num">-</td></tr>
+    <tr><td>最后一层</td><td class="num">94.9</td><td class="num">-</td></tr>
+    <tr><td>最后四层加权和</td><td class="num">95.9</td><td class="num">-</td></tr>
+    <tr><td><b>最后四层拼接</b></td><td class="num"><b>96.1</b></td><td class="num">-</td></tr>
+    <tr><td>全 12 层加权和</td><td class="num">95.5</td><td class="num">-</td></tr>
+  </tbody>
+</table></div>
+<p><b>Table 8（附录 C.2）：遮盖策略</b>（开发集；MNLI 微调、NER 微调、NER 特征式）</p>
+<div class="tbl"><table>
+  <thead><tr><th>MASK / SAME / RND</th><th class="num">MNLI</th><th class="num">NER 微调</th><th class="num">NER 特征式</th></tr></thead>
+  <tbody>
+    <tr><td>80% / 10% / 10%（BERT 采用）</td><td class="num">84.2</td><td class="num">95.4</td><td class="num">94.9</td></tr>
+    <tr><td>100% / 0% / 0%</td><td class="num">84.3</td><td class="num">94.9</td><td class="num">94.0</td></tr>
+    <tr><td>80% / 0% / 20%</td><td class="num">84.1</td><td class="num">95.2</td><td class="num">94.6</td></tr>
+    <tr><td>80% / 20% / 0%</td><td class="num">84.4</td><td class="num">95.2</td><td class="num">94.7</td></tr>
+    <tr><td>0% / 20% / 80%</td><td class="num">83.7</td><td class="num">94.8</td><td class="num">94.6</td></tr>
+    <tr><td>0% / 0% / 100%</td><td class="num">83.6</td><td class="num">94.9</td><td class="num">94.6</td></tr>
+  </tbody>
+</table></div>
+<p>微调时几乎没差别（原文：对不同遮盖策略出奇地稳健）；特征式 NER 差别最明显，因为这个不一致在特征式里会被放大，模型没机会调整表示。原文没说是单次还是多次平均，也没给置信区间。</p>
+</details>
+
+<details class="ext"><summary>G · 一个三个词的 SQuAD 算例（原文 4.2、4.3 节）</summary>
+<p>示意：段落只有 3 个词，直接给点积。起点得分 S·T<sub>i</sub> = [1, 3, 0.5]：e<sup>1</sup> = 2.718，e<sup>3</sup> = 20.086，e<sup>0.5</sup> = 1.649，总和 24.453，起点概率 = [0.111, 0.821, 0.067]，词 2 最可能是起点。终点得分 E·T<sub>j</sub> = [0.2, 1.0, 2.5]。候选片段分数（j ≥ i）：(1,1) = 1.2；(1,2) = 2.0；(1,3) = 3.5；(2,2) = 4.0；(2,3) = 5.5；(3,3) = 3.0。最高是 (2,3) = 5.5，预测答案是词 2 到词 3。</p>
+<p>SQuAD v2.0：若 s<sub>null</sub> = 4.0，τ = 2，则 5.5 &lt; 6.0，预测「无答案」；若 τ = 0，5.5 &gt; 4.0，预测有答案。</p>
+</details>
+
+<details class="ext"><summary>H · 后来的发展和前后篇衔接（原文之外，细节待核实）</summary>
+<p><b>继承自</b>：<a href="../004-transformer/index.html">004 Transformer</a>（整个编码器原样使用，加规模放大和三个小改动：可学位置嵌入、段嵌入、GELU）；<a href="../006-gpt-1/index.html">006 GPT-1</a>（预训练加微调的范式；BASE 定到和 GPT 一样大以做受控对比）；<a href="../003-bahdanau-attention/index.html">003 注意力</a>、<a href="../002-seq2seq/index.html">002 Seq2Seq</a>（双向思想的来源，但那里的双向是因为源句已知）；<a href="../001-nplm/index.html">001 NPLM</a>（词向量、softmax 输出层、最大化对数似然，MLM 的输出层和损失是直接沿用）；<a href="../005-adam/index.html">005 Adam</a>（优化器）。</p>
+<p><b>对 006 的推进</b>：从单向到深度双向，用完形填空破解「看见自己」；加了句对关系的预训练目标和统一的输入格式；预训练数据扩到 33 亿词、模型扩到 3.4 亿参数，并第一次令人信服地展示「更大的模型对很小的任务也有益」。</p>
+<p><b>被继承或被改进的零件</b>：后续一批沿 BERT 改进的模型，如 RoBERTa（去掉 NSP、动态遮盖、更多数据）、ALBERT、ELECTRA、DistilBERT，细节待核实；NSP 被后续研究质疑，我推测这并不矛盾，因为后来的工作用了不同的输入构造；MLM 每批只学 15% 的位置，后来有让每个位置都产生训练信号的做法；512 的长度限制催生了长文本模型。多语言版本和面向特定领域的变体，以及 Google 把 BERT 用于搜索，我没有核对具体时间和范围（待核实）。</p>
+<p><b>路线分叉</b>：之后的大语言模型主要沿 GPT 的解码器路线发展（<a href="../007-gpt-2/index.html">007</a>、<a href="../011-gpt-3/index.html">011</a>、<a href="../018-instructgpt/index.html">018</a>），BERT 类编码器长期用于分类、检索、句向量。常见的后见之明是：「预测下一个词」既能预训练又能直接生成，足够大时还能只靠提示做任务，所以在规模上走得更远。但 BERT 作者当时的目标是微调后在理解任务上拿最好成绩，他们做到了。</p>
+<p><b>留下的问题</b>：单向路线能否靠规模取胜还能生成（→ 007、011）；「越大越好」只是个观察，要定量研究（→ <a href="../009-scaling-laws/index.html">009 Scaling Laws</a>、<a href="../010-chinchilla/index.html">010 Chinchilla</a>，那里研究的是解码器语言模型，这个联系是我建的）；每个任务整体微调、各存一份（→ <a href="../014-lora/index.html">014 LoRA</a>）；模型会「理解」，但不一定按人的意图做事（→ <a href="../015-human-preferences/index.html">015</a>、<a href="../016-ppo/index.html">016</a>、018，原文本身没涉及）。</p>
+</details>
+
+<details class="ext"><summary>I · 疑点和没有核实的地方</summary>
+<ul>
+  <li><b>发表处</b>：PDF 里没有标注，通常记为 NAACL 2019，待核实。</li>
+  <li><b>CoLA 的指标</b>：原文 Table 1 表注把它归入准确率，GLUE 官方指标是 Matthews 相关，待核实。</li>
+  <li><b>约 40 个 epoch</b>：按全程 512 长度算才成立，短序列阶段批大小不明（附录 E），我只能说实际 epoch 数原文没有交代清楚。</li>
+  <li><b>1.3 的单系统对照对象</b>：原文没说对照谁（附录 F）。</li>
+  <li><b>ELMo 式没做实验</b>：深度双向严格强于浅层拼接，只是论点，没有直接验证。</li>
+  <li><b>人类水平</b>：SWAG 的人类数字只测了 100 个样本；SQuAD 上「超过人类」只在该数据集的测量方式下成立。</li>
+  <li><b>为什么 SST-2 几乎不掉、NotNext 可能只靠话题判断、MLM 为什么是 15%</b>：都是我的推测，原文没讨论。</li>
+  <li><b>统计</b>：消融多为单次或 5 次平均，没有显著性检验；学习率和重启在开发集上挑，报告的「最好重启」可能略偏乐观。</li>
+</ul>
+</details>
+
+<footer>
+  AI 论文解读 · 008 · 原文：Jacob Devlin, Ming-Wei Chang, Kenton Lee, Kristina Toutanova. <i>BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding.</i> Google AI Language, 2018（arXiv 1810.04805，v2）。<br>
+  图中标「示意」的数字是为了讲清机制设定的例子，都验算过；标「推算」的是我按原文规格估算的，原文没给。实验数字出自原文 Table 1 到 Table 8，逐格对过；原文 Figure 1、Figure 2、Table 5 的图源为原文。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="概率比曲线：在 1 附近上升，超过上限后被削平，不再奖励；赭色虚线是不裁剪时会一直往上">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <path class="ln" d="M24 140 H216"/>
+  <path d="M120 36 V140" style="fill:none;stroke:var(--line);stroke-width:1.5;stroke-dasharray:5 4"/>
+  <path d="M168 72 L212 40" style="fill:none;stroke:var(--old);stroke-width:2.5;stroke-dasharray:6 5"/>
+  <path d="M26 132 L120 100 L168 72 L212 72" style="fill:none;stroke:var(--new);stroke-width:4"/>
+  <circle class="new" cx="120" cy="100" r="5"/>
+  <text x="120" y="160" class="sm m" text-anchor="middle">比率 r = 1</text>
+  <text x="212" y="90" class="sm" text-anchor="end" style="fill:var(--new)">裁剪：削平</text>
+  <text x="208" y="32" class="sm" text-anchor="end" style="fill:var(--old)">不裁剪</text>
+</svg>

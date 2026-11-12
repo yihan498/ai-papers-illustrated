@@ -1,0 +1,12 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="一个问题，两个候选回答，进入打分框，得到分数">
+  <rect class="soft" x="0" y="0" width="240" height="180"/>
+  <rect class="ln" x="20" y="18" width="200" height="30" rx="6" style="fill:none"/>
+  <text class="sm m" x="120" y="38" text-anchor="middle">问题</text>
+  <rect class="mutF" x="20" y="66" width="90" height="30" rx="6"/>
+  <text class="sm tn" x="65" y="86" text-anchor="middle">回答 A</text>
+  <rect class="mutF" x="130" y="66" width="90" height="30" rx="6"/>
+  <text class="sm tn" x="175" y="86" text-anchor="middle">回答 B</text>
+  <rect class="new" x="40" y="116" width="160" height="34" rx="8"/>
+  <text class="sm" x="120" y="138" text-anchor="middle" style="fill:var(--on)">打分 r</text>
+  <text class="sm mo m" x="120" y="168" text-anchor="middle">A &gt; B</text>
+</svg>

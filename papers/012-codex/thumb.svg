@@ -1,0 +1,16 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg">
+  <rect class="soft" x="0" y="0" width="240" height="180"/>
+  <rect class="soft" x="22" y="16" width="196" height="34" rx="6" stroke="var(--line)" style="stroke-width:1.5"/>
+  <text class="sm mo" x="34" y="38">def f(x):  """ ... """</text>
+  <g class="mo" text-anchor="middle">
+    <rect class="soft" x="22" y="68" width="40" height="44" rx="5" style="stroke:var(--mut);stroke-width:1.5"/>
+    <text class="sm m" x="42" y="94">×</text>
+    <rect class="soft" x="68" y="68" width="40" height="44" rx="5" style="stroke:var(--mut);stroke-width:1.5"/>
+    <text class="sm m" x="88" y="94">×</text>
+    <rect class="new" x="114" y="68" width="40" height="44" rx="5"/>
+    <text class="sm" x="134" y="96" style="fill:#fff;font-weight:700">✓</text>
+    <rect class="soft" x="160" y="68" width="40" height="44" rx="5" style="stroke:var(--mut);stroke-width:1.5"/>
+    <text class="sm m" x="180" y="94">×</text>
+  </g>
+  <text class="sm" x="120" y="146" text-anchor="middle" style="fill:var(--new);font-weight:700">多写几个，跑测试</text>
+</svg>

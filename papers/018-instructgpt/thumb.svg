@@ -1,0 +1,17 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="三个蓝色方块依次相连：人写示范、人排序给 RM 打分、PPO 用分数改模型；下方一条灰线表示 1.3B 的结果比 175B 的 GPT-3 更常被选中">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <rect class="softS" x="14" y="40" width="58" height="62" rx="6" style="fill:var(--soft);stroke:var(--line)"/>
+  <text x="43" y="66" class="sm" text-anchor="middle">人写</text>
+  <text x="43" y="82" class="sm" text-anchor="middle">示范</text>
+  <path class="mutF" d="M76 66 L86 71 L76 76 Z"/>
+  <rect class="newT" x="90" y="40" width="58" height="62" rx="6"/>
+  <text x="119" y="66" class="sm" text-anchor="middle">人排序</text>
+  <text x="119" y="82" class="sm tn" text-anchor="middle" style="fill:var(--new)">打分器</text>
+  <path class="mutF" d="M152 66 L162 71 L152 76 Z"/>
+  <rect class="new" x="166" y="40" width="60" height="62" rx="6"/>
+  <text x="196" y="66" class="sm" text-anchor="middle" style="fill:var(--on);font-weight:700">PPO</text>
+  <text x="196" y="82" class="sm" text-anchor="middle" style="fill:var(--on)">改模型</text>
+  <path class="ln" d="M20 122 H220"/>
+  <text x="120" y="144" class="sm" text-anchor="middle" style="fill:var(--new)">1.3B 胜过 175B</text>
+  <text x="120" y="162" class="sm m" text-anchor="middle">让模型听人话</text>
+</svg>

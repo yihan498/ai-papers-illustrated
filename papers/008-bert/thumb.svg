@@ -1,0 +1,16 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="一句话里盖住一个词，左右两边的词都向它指过来，填回被盖住的词">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <rect class="softS" x="18" y="62" width="40" height="30" rx="5"/>
+  <rect class="softS" x="64" y="62" width="40" height="30" rx="5"/>
+  <rect class="new" x="110" y="62" width="40" height="30" rx="5"/>
+  <text x="130" y="82" class="sm" text-anchor="middle" style="fill:var(--on);font-weight:700">[MASK]</text>
+  <rect class="softS" x="156" y="62" width="40" height="30" rx="5"/>
+  <rect class="softS" x="202" y="62" width="24" height="30" rx="5"/>
+  <path class="ln" d="M38 54 Q84 24 124 54 M180 54 Q150 30 136 54"/>
+  <path class="mutF" d="M120 56 L128 50 L130 60 Z"/>
+  <path class="ln" d="M130 98 V122"/>
+  <path class="mutF" d="M124 120 L136 120 L130 130 Z"/>
+  <rect class="newT" x="100" y="134" width="60" height="22" rx="5"/>
+  <text x="130" y="150" class="sm tn" text-anchor="middle" style="fill:var(--new)">填回原词</text>
+  <text x="120" y="28" class="sm m" text-anchor="middle">左右都看</text>
+</svg>

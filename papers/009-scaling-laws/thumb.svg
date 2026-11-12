@@ -1,0 +1,9 @@
+<svg class="d" viewBox="0 0 240 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="双对数坐标里一条向右下的直线：模型越大，损失越低">
+  <rect class="soft" x="0" y="0" width="240" height="180" rx="10"/>
+  <path class="ln" d="M28 156 H220 M28 156 V20"/>
+  <path class="new" d="M40 40 L206 128" style="fill:none"/>
+  <circle class="new" cx="48" cy="44" r="4"/><circle class="new" cx="82" cy="62" r="4"/><circle class="new" cx="118" cy="81" r="4"/><circle class="new" cx="152" cy="98" r="4"/><circle class="new" cx="190" cy="119" r="4"/>
+  <path class="newT" d="M206 128 L226 138.6" style="stroke-dasharray:4 3;fill:none"/>
+  <text x="212" y="40" class="mo sm m" text-anchor="end">L ∝ N^-0.076</text>
+  <text x="124" y="174" class="sm m" text-anchor="middle">规模</text>
+</svg>

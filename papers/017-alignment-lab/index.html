@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>对齐实验室 图解</title>
+<meta name="description" content="Askell 等 2021《A General Language Assistant as a Laboratory for Alignment》图解：把让大模型有用、诚实、无害当成能做实验的问题，先量最便宜的提示词办法，再比较三种训练目标，发现给回答排序的偏好模型远胜模仿学习，并用公开数据预训练偏好模型来省人工标注。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文的办法（提示词、上下文蒸馏、偏好模型、偏好模型预训练），赭 = 作为对照的旧办法（直接微调示范、只学好答案的模仿学习）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;min-width:520px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th:first-child,td:first-child{white-space:nowrap}
+th:first-child,td:first-child{padding-right:20px}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+<main class="wrap">
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　017</nav>
+  <h1 style="margin-top:14px">先试最便宜的办法，再教模型给回答打分</h1>
+  <p class="lede">Askell 等人 2021 年在 Anthropic 写的《A General Language Assistant as a Laboratory for Alignment》。它把「让大模型有用、诚实、无害」当成一个<b>可以直接做实验的问题</b>：先量一量最便宜的办法（在前面放一段提示词）能走多远，再比较三种教模型分辨好坏的训练目标，发现<b>给回答排名次的偏好模型，在好坏有高低之分的任务上远胜「照着好答案模仿」</b>，而且可以先用公开网络数据预训练偏好模型，省下大量人工标注。它没有做强化学习，但把后来 RLHF 流水线里「奖励模型」这一半的设计选择先试了一遍。</p>
+  <div class="meta">
+    <span>Amanda Askell、Yuntao Bai、Jared Kaplan 等 22 人（Anthropic）· 2021 年 · arXiv 2112.00861（v3，预印本）</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的办法（提示词、上下文蒸馏、偏好模型、偏好模型预训练）</span>
+    <span class="key"><i class="sw o"></i>赭色：作为对照的旧办法（直接微调示范、只学好答案的模仿学习）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · 三步摸底：最便宜的办法，教模型打分，再把打分的成本压低</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 256" role="img" aria-label="上排三个蓝色方框依次连接。第一步：提示词基线，在前面放一段约 4600 词的助手对话，不需要训练。第二步：偏好模型，比较模仿学习、二元判别、排序偏好三种训练目标。第三步：偏好模型预训练，先在公开数据上学打分，再用少量人工偏好微调。每个方框下面写着它回答的问题。最下面一个灰色虚线框说明本文没有做强化学习，只训练了奖励模型这一半。">
+      <rect class="newT" x="20" y="14" width="200" height="92" rx="8"/>
+      <text class="b tn" x="120" y="40" text-anchor="middle">① 提示词基线</text>
+      <text class="sm" x="120" y="62" text-anchor="middle">前面放 4600 词的助手对话</text>
+      <text class="sm" x="120" y="80" text-anchor="middle">不需要训练</text>
+      <text class="sm" x="120" y="98" text-anchor="middle">再蒸馏进参数</text>
+      <line class="mutS" x1="222" y1="60" x2="238" y2="60" marker-end="url(#ah)"/>
+      <rect class="newT" x="240" y="14" width="200" height="92" rx="8"/>
+      <text class="b tn" x="340" y="40" text-anchor="middle">② 教模型打分</text>
+      <text class="sm" x="340" y="62" text-anchor="middle">模仿学习 · 二元判别</text>
+      <text class="sm" x="340" y="80" text-anchor="middle">排序偏好建模</text>
+      <text class="sm" x="340" y="98" text-anchor="middle">三种目标比一比</text>
+      <line class="mutS" x1="442" y1="60" x2="458" y2="60" marker-end="url(#ah)"/>
+      <rect class="new" x="460" y="14" width="200" height="92" rx="8"/>
+      <text class="b on" x="560" y="40" text-anchor="middle">③ 偏好模型预训练</text>
+      <text class="sm on" x="560" y="62" text-anchor="middle">先在公开数据上学打分</text>
+      <text class="sm on" x="560" y="80" text-anchor="middle">再用少量人工偏好微调</text>
+      <text class="sm on" x="560" y="98" text-anchor="middle">PMP</text>
+      <text class="sm m" x="120" y="134" text-anchor="middle">最便宜的办法能走多远？</text>
+      <text class="sm m" x="120" y="152" text-anchor="middle">会不会让模型变笨？</text>
+      <text class="sm m" x="340" y="134" text-anchor="middle">哪种训练目标教得好？</text>
+      <text class="sm m" x="340" y="152" text-anchor="middle">什么时候值得做偏好模型？</text>
+      <text class="sm m" x="560" y="134" text-anchor="middle">人工偏好数据很贵，</text>
+      <text class="sm m" x="560" y="152" text-anchor="middle">能不能少用一些？</text>
+      <rect class="softS dash" x="20" y="182" width="640" height="56" rx="8" style="stroke-dasharray:5 4"/>
+      <text class="sm" x="340" y="206" text-anchor="middle">本文没有做强化学习，也没有用 PPO，只把奖励模型这一半先试了一遍</text>
+      <text class="sm m" x="340" y="224" text-anchor="middle">把它接上强化学习，是后来 018 InstructGPT 的事</text>
+    </svg>
+    </div>
+    <figcaption>三步各回答一个问题，顺序也是下面正文的顺序。横轴贯穿全文的是「模型有多大」：作者用同一族 7 个规模的模型（13M 到 52B），把每个结果画成模型大小的函数。</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>要解决的问题</a>
+    <a href="#s2"><span>2</span>第一步：先写一段提示词当基线</a>
+    <a href="#s3"><span>3</span>把提示词蒸馏进模型</a>
+    <a href="#s4"><span>4</span>证据一：提示词有用，大模型几乎不付税</a>
+    <a href="#s5"><span>5</span>第二步：教模型给回答打分</a>
+    <a href="#s6"><span>6</span>证据二：好坏有阶梯时，偏好模型远胜模仿</a>
+    <a href="#s7"><span>7</span>第三步：先在公开数据上预训练</a>
+    <a href="#s8"><span>8</span>证据三：预训练省下人工标注</a>
+    <a href="#s9"><span>9</span>局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>正文只走一条线</b>：对齐这件事为什么难做实验 → 第一步最便宜的办法（提示词）和它的证据 → 第二步教模型打分和它的证据 → 第三步压低数据成本和它的证据。只读每节的标题和每段第一句，也能串起来。</li>
+      <li>公式（KL 散度、偏好损失、互信息）、评测集和数据集的细节、模型规格表、完整的补充结果、当时的背景，都在页尾的<b>附录</b>里，默认折叠，标明对应原文第几节。</li>
+      <li>本文大多数结论是曲线图，正文很少给具体读数。我只写原文文字明说的数字；示意图标「示意」，不画原文没有的读数。</li>
+      <li>零件在前面几篇讲过：提示词能让模型「现学现用」是 <a href="../011-gpt-3/index.html">011 GPT-3</a> 的上下文学习，代码评测来自 <a href="../012-codex/index.html">012 Codex</a>，「画成模型大小的函数」的研究方法来自 <a href="../009-scaling-laws/index.html">009 缩放定律</a>，偏好模型的损失来自 <a href="../015-human-preferences/index.html">015 人类偏好</a>。本篇为 <a href="../018-instructgpt/index.html">018 InstructGPT</a> 备料，也没有用到 <a href="../016-ppo/index.html">016 PPO</a>。</li>
+    </ul>
+  </div>
+</header>
+
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>要解决的问题</h2>
+<p>2021 年的大语言模型已经很能干（<a href="../011-gpt-3/index.html">011</a>、<a href="../012-codex/index.html">012</a>），但能干不等于听话、靠谱、不害人。当时的对齐研究大多是三类：只针对很窄的专用系统（比如用人类偏好训练 Atari 智能体，或只做摘要的模型），只拿一个子问题试一种技术（比如只降毒性），或者是纯理论的推测。作者的立场是：能直接试的问题，就该直接试。他们拿一个<b>通用的文字助手</b>开刀，先后碰到两个毛病。</p>
+
+<h3>毛病一：「要什么」都说不清</h3>
+<p>作者没有去争「对齐」到底是什么，直接给了一个工作定义：一个 AI 如果<b>有帮助（helpful）、诚实（honest）、无害（harmless）</b>，就算对齐，简称 HHH。这三条主观，依场景而变，还会互相冲突：用户要你帮忙做坏事时，对他有帮助就会对别人有害。更麻烦的是，回答有没有帮助，没有测试可以跑，不像翻译有参考译文、代码有单元测试。所以本文几乎所有评测都是<b>成对比较</b>：给两个回答，选更好的。</p>
+
+<figure class="fig">
+  <span class="tag">图 1 · HHH 三条，以及为什么它们没法用一个数来量</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="上面并排三张卡片。Helpful 有帮助：明确尝试完成任务，信息不足时追问，对不明智的请求改道建议。Honest 诚实：给出准确信息，自称 80% 把握时应对 80%，对自己的能力局限诚实。Harmless 无害：不冒犯不歧视，被要求做危险事时礼貌拒绝，对敏感建议保持审慎。下面一个赭色框写着三条会互相冲突，帮人做坏事对他有帮助但对别人有害。再下面一行写着没有标准答案，所以评测靠成对比较。">
+    <rect class="softS" x="20" y="14" width="200" height="124" rx="8"/>
+    <text class="b" x="120" y="38" text-anchor="middle">Helpful 有帮助</text>
+    <text class="sm" x="120" y="62" text-anchor="middle">明确尝试完成任务</text>
+    <text class="sm" x="120" y="80" text-anchor="middle">信息不足时追问</text>
+    <text class="sm" x="120" y="98" text-anchor="middle">对不明智的请求，</text>
+    <text class="sm" x="120" y="116" text-anchor="middle">能改道给建议</text>
+    <rect class="softS" x="240" y="14" width="200" height="124" rx="8"/>
+    <text class="b" x="340" y="38" text-anchor="middle">Honest 诚实</text>
+    <text class="sm" x="340" y="62" text-anchor="middle">给出准确的信息</text>
+    <text class="sm" x="340" y="80" text-anchor="middle">校准：自称 80% 把握，</text>
+    <text class="sm" x="340" y="98" text-anchor="middle">就该对 80%</text>
+    <text class="sm" x="340" y="116" text-anchor="middle">对自己的局限诚实</text>
+    <rect class="softS" x="460" y="14" width="200" height="124" rx="8"/>
+    <text class="b" x="560" y="38" text-anchor="middle">Harmless 无害</text>
+    <text class="sm" x="560" y="62" text-anchor="middle">不冒犯、不歧视</text>
+    <text class="sm" x="560" y="80" text-anchor="middle">被要求做危险的事，</text>
+    <text class="sm" x="560" y="98" text-anchor="middle">礼貌拒绝</text>
+    <text class="sm" x="560" y="116" text-anchor="middle">对敏感建议保持审慎</text>
+    <line class="oldS" x1="120" y1="142" x2="120" y2="166" marker-end="url(#ahO)"/>
+    <line class="oldS" x1="340" y1="142" x2="340" y2="166" marker-end="url(#ahO)"/>
+    <line class="oldS" x1="560" y1="142" x2="560" y2="166" marker-end="url(#ahO)"/>
+    <rect class="oldT" x="20" y="170" width="640" height="38" rx="8"/>
+    <text class="to b" x="340" y="194" text-anchor="middle">三条互相拉扯：对用户有帮助的事，可能对别人有害；实话也可能伤人</text>
+    <rect class="softS" x="20" y="216" width="640" height="34" rx="8"/>
+    <text class="sm" x="340" y="238" text-anchor="middle">没有标准答案可对照，所以评测只能让模型或人在两个回答之间选更好的</text>
+  </svg>
+  </div>
+  <figcaption>三条的具体含义取自原文 1.1 节的摘要。原文明说这三条「有一定主观性」，选它们是因为简单、好记，又大致覆盖了对对齐 AI 的期望。</figcaption>
+</figure>
+
+<h3>毛病二：直接的办法，每一条都不够直接</h3>
+<div class="tbl"><table>
+  <thead><tr><th>直接的想法</th><th>为什么不够</th></tr></thead>
+  <tbody>
+    <tr><td>收集一批好的助手对话，直接微调</td><td>好示范数量很少。微调还会把模型对整个文本分布的预期，拉向这批示范本身，数据少时容易过拟合、损失别的能力，也学不到「什么不该做」</td></tr>
+    <tr><td>只靠提示词</td><td>便宜有效，但占上下文窗口，每次采样都要重复计算，作者也不认为它能走到头。所以只当基线</td></tr>
+    <tr><td>模仿学习：只学好答案</td><td>好坏有高低之分的数据，它只能丢掉大部分，或者把平庸的也学进去</td></tr>
+    <tr><td>直接收大量人类偏好，再上强化学习</td><td>数据贵，而且做之前不知道偏好建模比模仿学习强多少、强在哪，没法预估值不值</td></tr>
+  </tbody>
+</table></div>
+<p>再加一个商业上很关键的担心：让模型听话，会不会让它变笨？这笔代价叫<b>对齐税</b>，税太重，开发者就没有动力对齐。所以作者分三步摸底：最便宜的办法（提示词）能走多远，有没有税；偏好建模比模仿学习值不值；怎么压低人工偏好数据的成本。下面三节各是一步，每步后面紧跟它的证据。</p>
+
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>第一步：先写一段提示词当基线</h2>
+<p><b>做什么。</b>每次对话前面放一段固定的长文本：14 段虚构的人和助手的对话，共约 4600 词，里面的助手始终礼貌、有帮助、准确。模型靠 011 讲过的上下文学习，自动进入角色，接着按这个人设说话。不改任何参数，也不需要标注数据。</p>
+<p><b>怎么比。</b>对话是开放的：人类可以输入任意内容，模型用同样自由的形式回答。每轮给人看两个回答，让他选更有帮助、更诚实的那个。同一个界面既用来做 A/B 测试，也用来收集人类反馈。</p>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 1 · 和助手对话、在两个回答里选一个的界面</span>
+  <img class="orig" src="orig-fig1.png" alt="原文 Figure 1：对话界面截图。左边是任务说明，右边是人类和助手的多轮对话，底部蓝色区域写着选择最有帮助且诚实的回答，给出 A 和 B 两个回答，下面是从 A 更好到 B 更好的八档按钮。" loading="lazy">
+  <figcaption>这张图在说什么：<b>收集反馈的方式就是让人在两个回答里选一个</b>。怎么看：蓝色区域是 A、B 两个候选回答，底部八档按钮表示偏向哪边。后面所有训练和评测用的偏好数据，都是这种成对比较。图源：Askell 等 2021 原文。</figcaption>
+</figure>
+
+<p>评测题也是同一种形式。作者自己写了约 200 道成对比较题（有帮助、诚实、有害行为、其他，各约 50 道）。判断模型选了哪个，看它对哪个回答给出的互信息更高；公式见附录 A。诚实这一项还用了专门诱导模型说出常见谬误的 TruthfulQA 来检验。</p>
+
+<figure class="fig">
+  <span class="tag">图 2 · 提示词基线：只改输入，不改参数</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 272" role="img" aria-label="左边一列是模型的输入：最上面一个蓝色方框是 HHH 提示词，14 段虚构对话，约 4600 词；下面一个灰框是 Human 加新问题；再下面一个灰框是 Assistant 冒号。箭头指向中间一个模型方框，标注不改参数。箭头再指向右边的输出：接着写出助手的回答。下方有两条注记：提示词是两位作者在构造任何评测之前随手写的，没有针对评测优化；提示词里没有一条示范拒绝有害请求。">
+    <text class="sm m" x="20" y="20">模型每次看到的输入</text>
+    <rect class="newT" x="20" y="30" width="270" height="86" rx="8"/>
+    <text class="b tn" x="155" y="56" text-anchor="middle">HHH 提示词</text>
+    <text class="sm" x="155" y="78" text-anchor="middle">14 段虚构的人和助手对话</text>
+    <text class="sm" x="155" y="96" text-anchor="middle">共约 4600 词，固定不变</text>
+    <rect class="softS" x="20" y="124" width="270" height="34" rx="6"/>
+    <text class="mo sm" x="34" y="146">Human: 用户的新问题 ……</text>
+    <rect class="softS" x="20" y="166" width="270" height="34" rx="6"/>
+    <text class="mo sm" x="34" y="188">Assistant:</text>
+    <line class="mutS" x1="294" y1="115" x2="338" y2="115" marker-end="url(#ah)"/>
+    <rect class="new" x="342" y="82" width="120" height="66" rx="8"/>
+    <text class="b on" x="402" y="110" text-anchor="middle">语言模型</text>
+    <text class="sm on" x="402" y="130" text-anchor="middle">参数不改</text>
+    <line class="mutS" x1="466" y1="115" x2="510" y2="115" marker-end="url(#ah)"/>
+    <rect class="newT" x="514" y="82" width="146" height="66" rx="8"/>
+    <text class="tn b" x="587" y="110" text-anchor="middle">接着写出</text>
+    <text class="tn b" x="587" y="130" text-anchor="middle">助手的回答</text>
+    <text class="sm m" x="20" y="226">两位作者在造任何评测之前，随手写的，没有针对评测集优化</text>
+    <text class="sm m" x="20" y="246">提示词里没有一条示范拒绝有害请求，但模型常常仍会主动避免有害行为（作者归因于提示词给的 AI 人格）</text>
+  </svg>
+  </div>
+  <figcaption>图只讲提示词怎么用。提示词到底是不是只让模型模仿训练分布里已有的东西，作者自己也有保留：预计它的局限会很显著。</figcaption>
+</figure>
+
+<p><b>提示词不等于微调。</b>提示词是在回答「已经看到这段话的前提下，下一个词是什么」；在这段话上微调，是改模型对「世界上的文本长什么样」的预期。原文用一个极端的例子说明：把 1 到 63 放在前面，模型会接着写 64；但在 1 到 63 上微调之后，让它从头生成新文本，它并不会认为开头该是 64。数据很少的时候，提示词给的是先验，微调改的是分布，对齐数据又偏偏少而贵。这一点的精确写法见附录 A。</p>
+<p>这一步对着毛病二里的「没有数据怎么办」：不训练、不标注，先拿到一个能当助手的模型和一条参照线。但提示词占窗口、每次重复计算，下一节处理这个。</p>
+
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>把提示词蒸馏进模型</h2>
+<p><b>做什么。</b>让一个「学生」模型，在<b>不带提示词</b>的情况下，模仿同一个初始模型在<b>带着提示词</b>时的输出分布。老师是冻结的原模型加提示词，学生是同一个模型的副本；用来训练的文本不是提示词本身，而是大量普通文本，老师每次在它前面拼上提示词再给出预测，学生只看文本。损失是两个分布之间的 KL 散度（公式和小数字例子见附录 A 式 1）。</p>
+
+<figure class="fig">
+  <span class="tag">图 3 · 上下文蒸馏：学提示词的效果，不是提示词的内容</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 286" role="img" aria-label="上面一行是老师：冻结的原模型，输入是提示词 C 加普通文本 X，输出是带着提示词时的预测分布 p0 括号 X 竖线 C。下面一行是学生：同一个模型的副本，输入只有普通文本 X，没有提示词，输出是学生的预测分布 p theta 括号 X。右边一个蓝色方框是 KL 损失，把学生的分布拉向老师的分布。最下面两个对照：赭色框写着直接在提示词上微调，把分布拉向提示词文本本身，容易过拟合到那几段话；蓝色框写着蒸馏，用大量普通文本，学到提示词的效果。">
+    <rect class="softS" x="20" y="22" width="160" height="56" rx="8"/>
+    <text class="sm" x="100" y="46" text-anchor="middle">提示词 C + 普通文本 X</text>
+    <text class="sm m" x="100" y="64" text-anchor="middle">喂给老师</text>
+    <line class="mutS" x1="184" y1="50" x2="208" y2="50" marker-end="url(#ah)"/>
+    <rect class="new" x="212" y="22" width="130" height="56" rx="8"/>
+    <text class="b on" x="277" y="46" text-anchor="middle">老师</text>
+    <text class="sm on" x="277" y="64" text-anchor="middle">冻结的原模型</text>
+    <line class="mutS" x1="346" y1="50" x2="370" y2="50" marker-end="url(#ah)"/>
+    <rect class="newT" x="374" y="22" width="120" height="56" rx="8"/>
+    <text class="sm tn b" x="434" y="46" text-anchor="middle">p₀( X | C )</text>
+    <text class="sm m" x="434" y="64" text-anchor="middle">带着提示词的预测</text>
+    <rect class="softS" x="20" y="106" width="160" height="56" rx="8"/>
+    <text class="sm" x="100" y="130" text-anchor="middle">只有普通文本 X</text>
+    <text class="sm m" x="100" y="148" text-anchor="middle">喂给学生，没有提示词</text>
+    <line class="mutS" x1="184" y1="134" x2="208" y2="134" marker-end="url(#ah)"/>
+    <rect class="new" x="212" y="106" width="130" height="56" rx="8"/>
+    <text class="b on" x="277" y="130" text-anchor="middle">学生</text>
+    <text class="sm on" x="277" y="148" text-anchor="middle">同一模型的副本</text>
+    <line class="mutS" x1="346" y1="134" x2="370" y2="134" marker-end="url(#ah)"/>
+    <rect class="newT" x="374" y="106" width="120" height="56" rx="8"/>
+    <text class="sm tn b" x="434" y="130" text-anchor="middle">p_θ( X )</text>
+    <text class="sm m" x="434" y="148" text-anchor="middle">不带提示词的预测</text>
+    <path class="newS" d="M500 50 H548 V134 H500" marker-end="url(#ahN)"/>
+    <rect class="new" x="560" y="68" width="100" height="52" rx="8"/>
+    <text class="b on" x="610" y="92" text-anchor="middle">KL 损失</text>
+    <text class="sm on" x="610" y="110" text-anchor="middle">学生向老师靠</text>
+    <rect class="oldT" x="20" y="196" width="310" height="74" rx="8"/>
+    <text class="b to" x="175" y="220" text-anchor="middle">直接在提示词上微调</text>
+    <text class="sm" x="175" y="240" text-anchor="middle">把分布拉向提示词文本本身，</text>
+    <text class="sm" x="175" y="258" text-anchor="middle">数据极少，容易过拟合到那几段话</text>
+    <rect class="newT" x="350" y="196" width="310" height="74" rx="8"/>
+    <text class="b tn" x="505" y="220" text-anchor="middle">上下文蒸馏</text>
+    <text class="sm" x="505" y="240" text-anchor="middle">用大量普通文本，对齐老师</text>
+    <text class="sm" x="505" y="258" text-anchor="middle">带着提示词时的行为</text>
+  </svg>
+  </div>
+  <figcaption>蒸馏确实改变了学生的无条件分布，让它去逼近老师的条件分布；和微调的区别是往哪里拉。「为什么这样更不容易过拟合」这一句，原文没有展开，是对原文说法的转述。</figcaption>
+</figure>
+
+<p><b>实现上的两个省空间的办法。</b>老师是 52B 带提示词的模型，只存每个位置概率最高的 50 个词，所以每个位置的 KL 实际是 51 类的比较：50 个已存的词，加上「其余所有词合并成的一类」。所有规模的学生都用同一份 52B 老师的输出来训练。训练文本一半是通用文本，一半是 Stack Exchange 的问答。</p>
+<p>这一步对着上一节留下的缺点：提示词占窗口、每次要重算。它的效果怎么样，下一节一并看。</p>
+
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>证据一：提示词有用，大模型几乎不付税</h2>
+<p>结论先说：一段随手写的提示词，让对齐评测随模型变大而变好；而小模型会被它「弄糊涂」，大模型几乎不受影响，有的任务还变好。下面按「有没有用、会不会变笨、人怎么看」三个问题看。</p>
+
+<h3>有用吗：对齐评测随规模上升，没有拒绝示范也变得更无害</h3>
+<p>横轴是模型参数量，纵轴是 HHH 评测里选对更好回答的准确率。<b>有提示词的曲线随规模上升，整体高于无提示词的曲线</b>（具体差距要从图上读，原文文字没有给）。按类别拆开，模型在「诚实」一类做得最好，作者自己觉得有点讽刺，因为实际互动时这些模型明显会编造信息；他们的解释是诚实题与模型的能力最相关。「无害」一类也提高了，尽管提示词里没有一条拒绝示范，作者看作一种泛化。</p>
+<p>TruthfulQA 本来是为了「越大的模型越差」而构造的对抗数据集。上下文蒸馏后的模型，比不加任何干预的语言模型略微改善了最大模型的成绩。作者在脚注里提醒：如果用 TruthfulQA 的例子本身当提示词，效果比 HHH 提示词好得多，这说明它揭示的现象本身并不是一个困难的对齐挑战，所以这点进步别读得太重。</p>
+<p>毒性（从 RealToxicityPrompts 抽 1000 个提示，每个采样 25 条续写，用 Detoxify 打分）有三个发现：不做任何干预时，毒性随规模单调上升；对非毒性提示，提示词和蒸馏都明显降低毒性，两者相近；对毒性提示，降幅随规模变大，在约 12B 参数处变得明显，此时蒸馏和提示词效果相近。作者的推论是：提示词式的干预在模型变大后可能效果更明显，在小模型上更难评价。</p>
+
+<h3>会变笨吗：对齐税</h3>
+<figure class="fig">
+  <span class="tag">图 4 · 加了提示词之后，得分怎么变（只画方向，不画数值）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 266" role="img" aria-label="一个两列的方向表。列：小模型，13B 和 52B 大模型。第一行代码评测 Codex HumanEval 和 QuixBugs：小模型加了提示词后得分明显下降，付税，赭色；13B 和 52B 加了提示词后得分明显上升，是补贴，蓝色。第二行 Lambada：提示词和蒸馏都带来一点小税，得分略低，且与模型规模没有显著关系，灰色，横跨两列。">
+    <text class="sm m" x="20" y="20">有提示词 相对 无提示词 的得分变化（示意，方向出自原文 Figure 2、7、10，不画读数）</text>
+    <text class="b" x="330" y="50" text-anchor="middle">小模型</text>
+    <text class="b" x="540" y="50" text-anchor="middle">13B、52B 大模型</text>
+    <text class="b" x="100" y="102" text-anchor="middle">代码</text>
+    <text class="sm m" x="100" y="122" text-anchor="middle">HumanEval、QuixBugs</text>
+    <rect class="oldT" x="210" y="62" width="240" height="80" rx="8"/>
+    <text class="b to" x="330" y="92" text-anchor="middle">得分明显下降</text>
+    <text class="sm" x="330" y="114" text-anchor="middle">付税：大概是被提示词弄糊涂</text>
+    <text class="sm m" x="330" y="130" text-anchor="middle">（作者的推测，没有验证）</text>
+    <rect class="newT" x="456" y="62" width="204" height="80" rx="8"/>
+    <text class="b tn" x="558" y="92" text-anchor="middle">得分明显上升</text>
+    <text class="sm" x="558" y="114" text-anchor="middle">「补贴」：反而更好</text>
+    <text class="b" x="100" y="198" text-anchor="middle">Lambada</text>
+    <text class="sm m" x="100" y="218" text-anchor="middle">零样本补全句末词</text>
+    <rect class="softS" x="210" y="158" width="450" height="80" rx="8"/>
+    <text class="b" x="435" y="190" text-anchor="middle">提示词和蒸馏都带来一点小税，得分略低</text>
+    <text class="sm" x="435" y="212" text-anchor="middle">与模型规模没有显著关系</text>
+  </svg>
+  </div>
+  <figcaption>代码题用代码微调过的模型，评 pass@1、pass@10，温度 0.6，top-p 0.95；有提示词时，题目被包装成人和助手的对话。这个结论只适用于提示词这种最轻的干预，原文自己强调：它不代表更重的对齐干预也不付代价。</figcaption>
+</figure>
+
+<p>作者选代码来量税有两个理由：代码有「对错」的客观标准，不受评测者主观影响；代码又复杂，提示词若引起混乱，会很快反映在得分上。Lambada 上还发现一件事：它的得分对格式极其敏感，三种格式之间的差别远大于提示词造成的差别，作者认为这种敏感本身可以看作一种对齐失败。</p>
+
+<h3>人怎么看：人类 A/B 测试</h3>
+<p>让承包工人（美国的 master 级 MTurk 工人，只给了简单指令）与两个模型对话，选哪个更有帮助、更诚实，共收集约 6000 次成对比较，再拟合出每个模型的 Elo 分数。参与的是完整提示词的 200M、800M、3B、13B、52B 模型。</p>
+
+<figure class="fig">
+  <span class="tag">图 5 · 人类 A/B：Elo 随规模上升，到 13B 之后不再变（示意，不标刻度）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 252" role="img" aria-label="左边是一张示意折线图：横轴是模型参数量，五个点依次是 200M、800M、3B、13B、52B，纵轴是 Elo 分数。前四个点大致沿一条上升的直线，第五个点 52B 与 13B 几乎持平。标注：197M 到 13B 近似随参数量的对数线性上升，13B 到 52B 几乎不变。右边是一个条形：蒸馏模型对完整提示词模型，工人偏好完整提示词的比例约 53%，一条竖线标出 50%。">
+    <line class="ln" x1="50" y1="30" x2="50" y2="200"/>
+    <line class="ln" x1="50" y1="200" x2="430" y2="200"/>
+    <text class="sm m" x="14" y="26">Elo</text>
+    <text class="sm m" x="430" y="244" text-anchor="end">模型参数量（对数轴）</text>
+    <path class="newS" d="M90 176 L170 138 L250 100 L330 62 L410 58"/>
+    <circle class="new ring" cx="90" cy="176" r="6"/>
+    <circle class="new ring" cx="170" cy="138" r="6"/>
+    <circle class="new ring" cx="250" cy="100" r="6"/>
+    <circle class="new ring" cx="330" cy="62" r="6"/>
+    <circle class="new ring" cx="410" cy="58" r="6"/>
+    <text class="sm mo" x="90" y="218" text-anchor="middle">200M</text>
+    <text class="sm mo" x="170" y="218" text-anchor="middle">800M</text>
+    <text class="sm mo" x="250" y="218" text-anchor="middle">3B</text>
+    <text class="sm mo" x="330" y="218" text-anchor="middle">13B</text>
+    <text class="sm mo" x="410" y="218" text-anchor="middle">52B</text>
+    <text class="sm tn" x="110" y="90">近似线性上升</text>
+    <text class="sm to" x="300" y="40" text-anchor="middle" style="paint-order:stroke;stroke:var(--card);stroke-width:5px">几乎持平</text>
+    <text class="b" x="470" y="40">蒸馏版 对 完整提示词版</text>
+    <rect class="soft" x="470" y="64" width="180" height="22" rx="3"/>
+    <rect class="new" x="470" y="64" width="95" height="22" rx="3"/>
+    <text class="sm" x="470" y="122">53% 选完整提示词</text>
+    <line class="ink dash" x1="560" y1="56" x2="560" y2="94"/>
+    <text class="sm m" x="560" y="102" text-anchor="middle">50%</text>
+    <text class="sm" x="470" y="148">原文称这是「弱证据」，</text>
+    <text class="sm" x="470" y="166">说明蒸馏略有退化</text>
+    <text class="sm" x="470" y="186">只有一个例子的短提示词，</text>
+    <text class="sm" x="470" y="204">看起来更差</text>
+  </svg>
+  </div>
+  <figcaption>折线是示意，形状按原文 Figure 9 估画，没有数值。13B 到 52B 不变，作者不认为是两个模型能力相同，而归因于评测者的局限：指令简单，又有尽快做完的激励。解读者的理解：要分辨大模型之间的差别，标注者本身要经过培训。</figcaption>
+</figure>
+
+<p><b>小结。</b>蒸馏在多数评测上与带提示词差不多（毒性上两者相近），但略逊一点：工人更常偏好完整提示词。在提示词上直接微调通常不如蒸馏。对着毛病二：最便宜的办法确实能当起点，税在大模型上很小；但它只是最轻的干预，不能指望靠它走到头。要走得更远，得真的训练，下一节开始。</p>
+
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>第二步：教模型给回答打分</h2>
+<p>提示词是最轻的干预。要走得更远，就得真的训练。作者比较三种目标，它们都从「好」「坏」的样本里学，区别在于学到的是什么。</p>
+
+<figure class="fig">
+  <span class="tag">图 6 · 三种训练目标，学到的东西不一样</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 280" role="img" aria-label="三列卡片。模仿学习，赭色：只拿好样本，用普通语言模型损失训练，学的是该怎么做，类比是看优秀作文照着写，示意图是一根代表好的柱子。二元判别，灰色：拿一个对的和一个错的，学着把它们分开，学的是对和错的边界，类比是判卷老师，示意图是一根高的对柱子和一根矮的错柱子，中间一条虚线。排序偏好建模，蓝色：给质量有高低的一批回答打分，使排在前面的分更高，学的是好坏的程度，类比是给作文打一到五分，示意图是四根从高到低的柱子。">
+    <rect class="oldT" x="20" y="14" width="210" height="252" rx="8"/>
+    <text class="b to" x="125" y="40" text-anchor="middle">模仿学习</text>
+    <text class="sm" x="125" y="62" text-anchor="middle">只拿「好」样本</text>
+    <text class="sm" x="125" y="80" text-anchor="middle">用普通语言模型损失训练</text>
+    <line class="mutS" x1="50" y1="196" x2="200" y2="196"/>
+    <rect class="old" x="110" y="136" width="30" height="60" rx="3"/>
+    <text class="sm" x="125" y="214" text-anchor="middle">好</text>
+    <text class="sm m" x="125" y="236" text-anchor="middle">学的是：该怎么做</text>
+    <text class="sm m" x="125" y="254" text-anchor="middle">类比：看优秀作文，照着写</text>
+    <rect class="softS" x="235" y="14" width="210" height="252" rx="8"/>
+    <text class="b" x="340" y="40" text-anchor="middle">二元判别</text>
+    <text class="sm" x="340" y="62" text-anchor="middle">一个「对」，一个「错」</text>
+    <text class="sm" x="340" y="80" text-anchor="middle">学着把它们分开</text>
+    <line class="mutS" x1="265" y1="196" x2="415" y2="196"/>
+    <rect class="new" x="290" y="116" width="30" height="80" rx="3"/>
+    <rect class="mutF" x="360" y="166" width="30" height="30" rx="3"/>
+    <line class="ink dash" x1="340" y1="104" x2="340" y2="196"/>
+    <text class="sm" x="305" y="214" text-anchor="middle">对</text>
+    <text class="sm" x="375" y="214" text-anchor="middle">错</text>
+    <text class="sm m" x="340" y="236" text-anchor="middle">学的是：对和错的边界</text>
+    <text class="sm m" x="340" y="254" text-anchor="middle">类比：判卷老师</text>
+    <rect class="newT" x="450" y="14" width="210" height="252" rx="8"/>
+    <text class="b tn" x="555" y="40" text-anchor="middle">排序偏好建模</text>
+    <text class="sm" x="555" y="62" text-anchor="middle">给有高低之分的回答打分</text>
+    <text class="sm" x="555" y="80" text-anchor="middle">排前面的分更高</text>
+    <line class="mutS" x1="480" y1="196" x2="630" y2="196"/>
+    <rect class="new" x="486" y="116" width="22" height="80" rx="3"/>
+    <rect class="new" x="518" y="136" width="22" height="60" rx="3"/>
+    <rect class="new" x="550" y="156" width="22" height="40" rx="3"/>
+    <rect class="new" x="582" y="176" width="22" height="20" rx="3"/>
+    <text class="sm" x="497" y="214" text-anchor="middle">1</text>
+    <text class="sm" x="529" y="214" text-anchor="middle">2</text>
+    <text class="sm" x="561" y="214" text-anchor="middle">3</text>
+    <text class="sm" x="593" y="214" text-anchor="middle">4</text>
+    <text class="sm m" x="555" y="236" text-anchor="middle">学的是：好坏的程度</text>
+    <text class="sm m" x="555" y="254" text-anchor="middle">类比：给作文打 1 到 5 分</text>
+  </svg>
+  </div>
+  <figcaption>示意图里的柱子只表示高低，不代表任何数值。模仿学习学有高低之分的数据，只有两种选择：只训练最好的少数样本（数据被砍掉），或者把参差不齐的都模仿（把平庸的也学进去）。偏好模型好的坏的都能用，也学到「什么不该做」。</figcaption>
+</figure>
+
+<p><b>偏好模型怎么做。</b>在预训练好的语言模型的最后一个 token 上，接一个小的线性层（值头），输出<b>一个分数 r</b>，越大越受偏好。对一对「好」和「坏」，让模型把「好胜过坏」的概率定为 σ(r<sub>好</sub> − r<sub>坏</sub>)，再最大化它。这个损失直接取自 <a href="../015-human-preferences/index.html">015</a>，成对比较的概率模型在 015 讲过，精确写法见附录 A 式 2。这就是后来说的奖励模型。</p>
+
+<figure class="fig">
+  <span class="tag">图 7 · 偏好模型：最后一个 token 上读出一个分数，损失把好坏的分数拉开</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="左边：一排 token 方框，最后一个是上下文结束标记，蓝色。它们进入一个预训练好的语言模型方框，从最后一个 token 的位置接一个值头，输出一个分数 r。右边是损失的小数字例子，损失等于 log 括号 1 加 e 的 r 坏减 r 好次方，三根横条：好减坏等于正 1.5，排对了，损失 0.201；等于 0，损失 0.693；等于负 1.5，打反了，损失 1.701。底部一句：分数只有相对意义，所有分数同时加 10，损失不变。">
+    <rect class="softS" x="20" y="24" width="48" height="28" rx="5"/><text class="mo sm" x="44" y="43" text-anchor="middle">…</text>
+    <rect class="softS" x="76" y="24" width="48" height="28" rx="5"/><text class="mo sm" x="100" y="43" text-anchor="middle">回</text>
+    <rect class="softS" x="132" y="24" width="48" height="28" rx="5"/><text class="mo sm" x="156" y="43" text-anchor="middle">答</text>
+    <rect class="newT" x="188" y="24" width="62" height="28" rx="5"/><text class="mo sm tn" x="219" y="43" text-anchor="middle">EOC</text>
+    <line class="mutS" x1="135" y1="56" x2="135" y2="78" marker-end="url(#ah)"/>
+    <rect class="new" x="20" y="80" width="230" height="44" rx="8"/>
+    <text class="b on" x="135" y="107" text-anchor="middle">预训练好的语言模型</text>
+    <line class="newS" x1="219" y1="128" x2="219" y2="150" marker-end="url(#ahN)"/>
+    <rect class="newT" x="130" y="154" width="120" height="34" rx="6"/>
+    <text class="sm tn b" x="190" y="176" text-anchor="middle">值头（线性层）</text>
+    <line class="newS" x1="190" y1="192" x2="190" y2="210" marker-end="url(#ahN)"/>
+    <rect class="card" x="130" y="214" width="120" height="30" rx="6"/>
+    <text class="sm b" x="190" y="234" text-anchor="middle">分数 r</text>
+    <text class="sm m" x="20" y="152">EOC：文本结束</text>
+    <text class="sm m" x="20" y="170">标记，分数取</text><text class="sm m" x="20" y="188">在它上面</text>
+    <text class="sm b" x="300" y="30">损失 = log( 1 + e^( r坏 − r好 ) )</text>
+    <text class="sm" x="300" y="64">好 − 坏 = +1.5，排对了</text>
+    <rect class="new" x="300" y="70" width="18" height="24" rx="3"/>
+    <text class="sm mo" x="326" y="87">0.201</text>
+    <text class="sm" x="300" y="120">好 − 坏 = 0，分不出</text>
+    <rect class="mutF" x="300" y="126" width="62" height="24" rx="3"/>
+    <text class="sm mo" x="370" y="143">0.693</text>
+    <text class="sm" x="300" y="176">好 − 坏 = −1.5，打反了</text>
+    <rect class="old" x="300" y="182" width="153" height="24" rx="3"/>
+    <text class="sm mo" x="461" y="199">1.701</text>
+    <text class="sm m" x="300" y="232">打反的惩罚远大于打对的奖励，梯度把两个分数拉向正确的顺序</text>
+    <text class="sm m" x="300" y="250">分数只有相对意义：所有分数同时加 10，损失不变</text>
+  </svg>
+  </div>
+  <figcaption>三个损失值是按式子算出来的：log(1 + e^{−1.5}) = 0.201，log 2 = 0.693，log(1 + e^{1.5}) = 1.701。条的长度按损失值等比例画。</figcaption>
+</figure>
+
+<p><b>三种目标用同一套架构。</b>二元判别可以看成排序的特例：「对 &gt; 错」当一对比较。所以作者把二元数据也格式化成成对比较，用同样的偏好模型和损失来训练，便于公平比较和研究迁移。模仿学习则只拿每一对里「好」的那条，用语言模型损失训练，并且只对回答部分的 token 计损失，这一点提升显著，所以所有模仿学习的结果都加了这个掩码。评测时统一看「成对比较的准确率」。</p>
+<p>这一步对着毛病二里「模仿只学好答案」的缺点。它的实际效果，下一节看。</p>
+
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>证据二：好坏有阶梯时，偏好模型远胜模仿</h2>
+<p>这是全文最核心的结论。作者把评测集分成两类：<b>二元</b>（只有对错两个标签）和<b>排序</b>（质量有高低之分），然后看「偏好建模的准确率 − 模仿学习的准确率」随模型大小怎么变。</p>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 3 · 偏好建模比模仿学习多出的准确率</span>
+  <img class="orig" src="orig-fig3.png" alt="原文 Figure 3：横轴是模型参数量，从 10 的 7 次方到 10 的 10 次方以上，纵轴是准确率之差，从 0 到 0.30。浅蓝色的几条线是各个排序评测，深蓝色是它们的均值，均值从约 0.13 上升到 0.22 左右，最大两档略回落；浅橙色的几条线是各个二元评测，深橙色是均值，全程贴着 0 附近。" loading="lazy">
+  <figcaption>这张图在说什么：<b>排序任务上偏好建模明显好于模仿学习，二元任务上两者几乎没有差别</b>。怎么看：纵轴大于 0 表示偏好建模更准；蓝色是 Learn to Summarize、HellaSwag、Utilitarianism，橙色是 Code Correctness、Lambada 和四个 Ethics（52B 的 Code Correctness 因生成代码太费算力被排除）。我从图上读：蓝色均值大约从 0.13 升到 0.22 左右，最大的两档略回落，原文只说「往往随规模增大更有利」。图源：Askell 等 2021 原文。</figcaption>
+</figure>
+
+<p>原文摘要的说法是：排序偏好建模远好于模仿学习，且往往随规模扩大更有利；二元判别的表现和缩放，通常与模仿学习非常相近。「往往」不是「处处」，作者说在每一类至少三个独立数据集上结果相当干净、一致，但进一步工作可能改进理解。逐个评测看：</p>
+
+<div class="tbl"><table>
+  <thead><tr><th>评测</th><th>类型</th><th>偏好模型 对 模仿学习</th><th>好坏怎么来的</th></tr></thead>
+  <tbody>
+    <tr><td>Learn to Summarize</td><td>排序</td><td>好得多</td><td>人类对摘要成对排序，没有唯一正确的摘要</td></tr>
+    <tr><td>HellaSwag</td><td>排序</td><td>好得多，差距随规模变大</td><td>选「最合理」的后续，不是唯一对的</td></tr>
+    <tr><td>Ethics：Utilitarianism</td><td>排序</td><td>明显更好</td><td>两个场景比较哪个更愉快</td></tr>
+    <tr><td>Code Correctness</td><td>二元</td><td>重排序后很相近；有些曲线不单调，作者称「鲁棒性失败」</td><td>代码是否通过单元测试</td></tr>
+    <tr><td>Lambada</td><td>二元</td><td>大致持平</td><td>补全的词对不对</td></tr>
+    <tr><td>Ethics 其余 4 个</td><td>二元</td><td>差不多</td><td>带二元标签</td></tr>
+  </tbody>
+</table></div>
+
+<p><b>为什么会这样。</b>作者的直觉只涉及模仿学习一侧：有高低之分的数据，模仿学习要么丢数据，要么学平庸，而偏好模型好坏的信号都能用。二元任务上为什么没有差距，原文没有统一的解释，只在个别数据集上给了「模仿学习的基线本来就强」的理由：Lambada 与语言模型的预训练目标高度一致；代码模型预训练时见过数百万个 Python 文件。</p>
+<p><b>一个反例和作者的处理。</b>同期的数学应用题工作（Cobbe 等 2021）发现，二元的「验证器」比模仿学习缩放得更好，和本文代码上的结果不同。作者的解释是对方只用了几千道题，数据极少，而本文的代码模型见过数百万个 Python 文件，模仿学习基线强得多。这是作者的假说，两篇论文处在不同的数据体制。</p>
+<p><b>为什么要做这个。</b>作者说研究偏好建模的缩放，动机之一是为强化学习设定预期：模型如果难以<em style="font-style:normal"><b>识别</b></em>好结果，也难以学会<em style="font-style:normal"><b>产生</b></em>好结果，所以奖励模型的表现应能预示策略的表现。这是论证，不是实验，本文没有做任何强化学习。</p>
+<p>这一步的结论回答了毛病二里的第三条：排序式的偏好，比只学好答案更适合教「好坏的程度」。但偏好模型要靠人类偏好数据，而这种数据贵又少，下一节处理。</p>
+
+
+<!-- ================= 7 ================= -->
+<h2 id="s7"><span class="no">7</span>第三步：先在公开数据上预训练偏好模型</h2>
+<p><b>做什么。</b>在语言模型预训练和最后的微调之间，加一站<b>偏好模型预训练（PMP）</b>：先用大量便宜的、天然带有「好于」信号的公开数据，让模型学会「打分」这件事本身；再用少量真正的人工偏好数据微调。和 <a href="../006-gpt-1/index.html">006</a> 的「预训练加微调」相比，多了中间这一站。</p>
+
+<figure class="fig">
+  <span class="tag">图 8 · 偏好模型预训练 PMP：中间多加一站，用公开数据学「打分」</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="上排三个方框依次连接：语言模型预训练，400B token，灰色；偏好模型预训练 PMP，公开数据，百万级对，蓝色浅底；偏好模型微调，人工偏好，千到万级对，蓝色实底。下排三张卡片是 PMP 用的三种数据：Stack Exchange，同一问题的两个答案，点赞多的为好，约 5.8M 对；Reddit，同一帖下只差最后一条评论的两条序列，点赞多的为好，约 1.1M 对；维基百科，被回退的疑似破坏性编辑，回退后的版本为好，约 1.4M 对。">
+    <rect class="softS" x="20" y="14" width="200" height="66" rx="8"/>
+    <text class="b" x="120" y="40" text-anchor="middle">语言模型预训练</text>
+    <text class="sm m" x="120" y="62" text-anchor="middle">400B token</text>
+    <line class="mutS" x1="222" y1="47" x2="238" y2="47" marker-end="url(#ah)"/>
+    <rect class="newT" x="240" y="14" width="200" height="66" rx="8"/>
+    <text class="b tn" x="340" y="40" text-anchor="middle">偏好模型预训练 PMP</text>
+    <text class="sm" x="340" y="62" text-anchor="middle">公开数据 · 百万级对</text>
+    <line class="mutS" x1="442" y1="47" x2="458" y2="47" marker-end="url(#ah)"/>
+    <rect class="new" x="460" y="14" width="200" height="66" rx="8"/>
+    <text class="b on" x="560" y="40" text-anchor="middle">偏好模型微调</text>
+    <text class="sm on" x="560" y="62" text-anchor="middle">人工偏好 · 千到万级对</text>
+    <text class="sm m" x="340" y="110" text-anchor="middle">PMP 用的数据：天然带着好坏信号，不用人专门标注</text>
+    <rect class="softS" x="20" y="124" width="210" height="122" rx="8"/>
+    <text class="b" x="125" y="148" text-anchor="middle">Stack Exchange</text>
+    <text class="sm" x="125" y="170" text-anchor="middle">同一个问题的两个答案</text>
+    <text class="sm" x="125" y="188" text-anchor="middle">点赞多的为好</text>
+    <text class="sm mo m" x="125" y="228" text-anchor="middle">约 5.8M 对</text>
+    <rect class="softS" x="235" y="124" width="210" height="122" rx="8"/>
+    <text class="b" x="340" y="148" text-anchor="middle">Reddit</text>
+    <text class="sm" x="340" y="170" text-anchor="middle">同一帖下，只差最后一条</text>
+    <text class="sm" x="340" y="188" text-anchor="middle">评论的两条序列，点赞多的为好</text>
+    <text class="sm mo m" x="340" y="228" text-anchor="middle">约 1.1M 对</text>
+    <rect class="softS" x="450" y="124" width="210" height="122" rx="8"/>
+    <text class="b" x="555" y="148" text-anchor="middle">维基百科</text>
+    <text class="sm" x="555" y="170" text-anchor="middle">被回退的疑似破坏性编辑</text>
+    <text class="sm" x="555" y="188" text-anchor="middle">回退后的版本为好</text>
+    <text class="sm mo m" x="555" y="228" text-anchor="middle">约 1.4M 对</text>
+  </svg>
+  </div>
+  <figcaption>三个数据源的训练对数取自原文附录 C.1，各有约 1 万到 6 万对测试集；另有把三者合并的 Mix，每个数据集只训练一个 epoch。点赞的计分规则、过滤细节见附录 D。</figcaption>
+</figure>
+
+<p><b>二元化：PMP 里最反直觉的一步。</b>对每一对「好 A &gt; 坏 B」，把它拆成两条独立的二元比较：同一段文本，一次标 GOOD，一次标 BAD，要求模型认出标签对的那条更好。文本没变，变的是前面的标签；任务从「A 和 B 哪个更好」变成「这段文本配这个标签对不对」，数据量翻倍。</p>
+
+<figure class="fig">
+  <span class="tag">图 9 · 二元化：把一对排序拆成两条二元比较</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 244" role="img" aria-label="左边一个灰色方框：一对排序数据，A 好于 B，例如同一问题下点赞更多的答案。两个箭头指向右边两个蓝色方框：GOOD 冒号 A 大于 BAD 冒号 A，和 BAD 冒号 B 大于 GOOD 冒号 B。下面一行说明：文本不变，变的是前面的标签，数据量翻倍；排序预训练是比较 A 和 B 谁更好，二元预训练是判断这段文本配这个标签对不对。">
+    <rect class="softS" x="20" y="46" width="210" height="76" rx="8"/>
+    <text class="b" x="125" y="72" text-anchor="middle">一对排序数据</text>
+    <text class="sm" x="125" y="94" text-anchor="middle">A 好于 B</text>
+    <text class="sm m" x="125" y="110" text-anchor="middle">（如点赞更多的答案）</text>
+    <line class="newS" x1="234" y1="70" x2="290" y2="52" marker-end="url(#ahN)"/>
+    <line class="newS" x1="234" y1="98" x2="290" y2="116" marker-end="url(#ahN)"/>
+    <rect class="newT" x="294" y="26" width="366" height="46" rx="8"/>
+    <text class="mo" x="477" y="55" text-anchor="middle">GOOD:A  &gt;  BAD:A</text>
+    <rect class="newT" x="294" y="96" width="366" height="46" rx="8"/>
+    <text class="mo" x="477" y="125" text-anchor="middle">BAD:B  &gt;  GOOD:B</text>
+    <rect class="softS" x="20" y="164" width="310" height="62" rx="8"/>
+    <text class="sm b" x="175" y="188" text-anchor="middle">排序预训练</text>
+    <text class="sm" x="175" y="208" text-anchor="middle">比较 A 和 B 谁更好，要把文本排成一条线</text>
+    <rect class="newT" x="350" y="164" width="310" height="62" rx="8"/>
+    <text class="sm b tn" x="505" y="188" text-anchor="middle">二元预训练</text>
+    <text class="sm" x="505" y="208" text-anchor="middle">判断这段文本配这个标签对不对</text>
+  </svg>
+  </div>
+  <figcaption>写法取自原文 4.1 节。GOOD、BAD 是加在文本前面的标签。</figcaption>
+</figure>
+
+<p><b>为什么二元化反而迁移得更好？这是作者的假说。</b>排序预训练会让模型学到一套僵硬的「全局排名」，比如 Stack Exchange 里好答案怎么排。下游任务的排名标准如果很不同（比如摘要的好坏），模型要先把已有的排名「解开重来」（原文用 unscramble）。二元预训练只教模型「什么特征是好的」，不在样本之间建立强顺序，所以更容易改成新的排名。作者自己说这个结果让一些作者感到意外，解释是事后想出来的，并用一个合成实验支持（下一节）。</p>
+<p><b>两个让 PMP 有效的小技巧。</b>一是 PMP 阶段除了偏好损失，再加一个普通语言模型损失（权重都取 1）：只用偏好损失，小样本时有帮助，数据变多后最终不如不做 PMP；只用语言模型损失，和不做 PMP 差不多；两者合用才明显有效。二是在每条序列末尾加一个「上下文结束」标记（EOC），分数取在它上面。两处的解释（偏好损失单用会学到上下文长度、词频这类平凡特征；EOC 能消除结尾位置的歧义）都是作者的假说，原文用对比实验显示效果。这样做对着毛病二的最后一条：人工偏好数据贵。</p>
+
+
+<!-- ================= 8 ================= -->
+<h2 id="s8"><span class="no">8</span>证据三：预训练省下人工标注</h2>
+<p>设置：先在 PMP 数据上预训练一族偏好模型，再在下游任务（Learn to Summarize、HellaSwag 和 5 个 Ethics）上，用不同数量的偏好对微调，比较有无 PMP 的准确率。</p>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 4 · PMP 在微调数据很少时带来的准确率增益（52B）</span>
+  <img class="orig" src="orig-fig4.png" alt="原文 Figure 4：横轴是微调序列对的数量，从 10 的 2 次方到 4 万多，纵轴是有 PMP 比没有 PMP 的准确率增益，从 0 到 0.12。四条曲线分别是 PMP Mix、StackExch、Reddit、Wiki，都在小数据时增益最大，约 0.08 到 0.12，随微调数据增多逐渐降到接近 0.01。" loading="lazy">
+  <figcaption>这张图在说什么：<b>微调数据越少，PMP 的帮助越大</b>。怎么看：纵轴是有 PMP 与没有 PMP 的准确率之差，对所有下游评测取平均；四条线是不同的 PMP 数据，每一条在小数据区间都是正的。原文文字明说的是收益「在不超过约 1 万对时尤其明显」，单调下降的形状是我从图上读的。其他规模的模型也有类似结果。图源：Askell 等 2021 原文。</figcaption>
+</figure>
+
+<p><b>注意这些 PMP 数据和下游任务看上去并不相似</b>（比如从 Stack Exchange 迁移到摘要），仍然有效，每个数据源都能迁移到各种下游任务。同样的准确率，有 PMP 所需的人工标注对数要少很多。</p>
+<p><b>模型越大，PMP 越有用。</b>在 500 对微调数据时，PMP（Mix）对大于约 1B 参数的模型有明显帮助，小模型几乎没有受益；在 5000 对时，大模型仍受益，但幅度更小。</p>
+
+<h3>二元预训练比排序预训练迁移得更好</h3>
+<figure class="fig">
+  <span class="tag">图 10 · 二元 PMP 比排序 PMP 多出的微调准确率，以及作者的检验</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 252" role="img" aria-label="左边两根横条：微调 500 对时，二元预训练比排序预训练平均高约 5%，条较长；微调 5000 对时高约 2%，条较短。右边是作者设计的合成实验：造 676 个符号并给它们随机排名，对排名分别施加 10、40、160、640 次随机交换得到打乱程度递增的四个版本，再加一个只分好坏两类的二元版本，先分别预训练，再到原排名上微调。结果：打乱得越厉害，样本效率越差，打乱到一定程度后甚至比不预训练还差；二元版本的效率与中等程度打乱相当。">
+    <text class="sm m" x="20" y="24">二元 PMP 相对排序 PMP，平均多出的准确率</text>
+    <text class="sm" x="20" y="64">微调 500 对</text>
+    <rect class="new" x="20" y="72" width="200" height="26" rx="3"/>
+    <text class="sm on b" x="30" y="90">约 +5%</text>
+    <text class="sm" x="20" y="136">微调 5000 对</text>
+    <rect class="new" x="20" y="144" width="80" height="26" rx="3"/>
+    <text class="sm on b" x="30" y="162">约 +2%</text>
+    <text class="sm m" x="20" y="204">数据越少，二元化的好处越大</text>
+    <rect class="newT" x="300" y="14" width="360" height="224" rx="8"/>
+    <text class="b tn" x="480" y="38" text-anchor="middle">合成实验：检验「僵硬的排名」这个假说</text>
+    <text class="sm" x="316" y="64">676 个符号（两个大写字母），随机指定一个全局排名</text>
+    <text class="sm" x="316" y="84">T1 到 T4：对排名随机交换 10、40、160、640 次</text>
+    <text class="sm" x="316" y="104">Tb：排名前一半标 GOOD，后一半标 BAD</text>
+    <text class="sm" x="316" y="124">各自预训练，再到原排名 T0 上微调</text>
+    <text class="sm b" x="316" y="154">结果（作者的归纳）</text>
+    <text class="sm" x="316" y="174">打乱得越厉害，样本效率越差</text>
+    <text class="sm" x="316" y="192">打乱到一定程度，甚至比不预训练还差</text>
+    <text class="sm" x="316" y="210">二元版本 Tb 的效率与中等打乱相当</text>
+    <text class="sm m" x="316" y="228">玩具实验，只说明机理可能成立</text>
+  </svg>
+  </div>
+  <figcaption>5% 与 2% 是原文 4.3 节文字给出的平均数。合成实验与假说相符，但它是构造出来的，不能证明真实数据上就是这个原因。作者还说，最好的 PMP 数据应与最终微调数据定性相似，但通常拿不到；二元化是折衷，不保证最佳，但对新的偏好分布更稳健。</figcaption>
+</figure>
+
+<p><b>结论。</b>在小数据区间，用便宜的公开数据「垫底」，再用少量人工数据「定调」，能少用很多人工偏好；这个好处随模型变大更明显；预训练用二元数据，比用排序数据迁移得更好。到此，三步摸底都有了答案。</p>
+
+
+<!-- ================= 9 ================= -->
+<h2 id="s9"><span class="no">9</span>局限和后来</h2>
+<ul>
+  <li><b>只测了「成对比较的准确率」，没测优化后的行为。</b>偏好模型被拿去优化策略时会出现什么问题（被钻空子、过度优化），本文看不到，因为没做强化学习。从奖励模型推到策略的缩放结论是外推，不是实验。这一条是我补充的。</li>
+  <li><b>偏好模型和模仿学习的比较没有控制数据利用量。</b>偏好模型用到好坏两条，模仿学习只用好的一条，部分差距可能来自「见到更多信息」。原文没有设计让模仿学习也用上全部排序信息的更强基线。这一条也是我补充的。</li>
+  <li>作者承认的：提示词只能内插，诚实可能只是外表；评测集没把对齐和能力分开；众包工人分不出 13B 与 52B；二元与排序的界限可能模糊；二元 PMP 更好只有假说加合成实验。作者还提醒：同样的技术也能训练做坏事的系统，谁提供反馈决定模型对齐到谁。</li>
+  <li><b>后来：</b>本文把奖励模型的结构与损失、「比较比示范更适合教好坏的程度」这个选择、以及 HHH 目标先试了一遍。把它们接上 PPO、做成完整流水线的，是 <a href="../018-instructgpt/index.html">018 InstructGPT</a>；它们共同的源头是 <a href="../015-human-preferences/index.html">015</a>。作者自己指出的下一步包括用偏好模型当奖励做强化学习、迭代地做上下文蒸馏、更好的评测者培训。</li>
+</ul>
+
+
+<!-- ================= 附录 ================= -->
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块都默认折叠，标题里写明了对应的原文章节；正文用不到它们。标「我补充」的，是原文之外我加的说明；标「待核实」的，是我没有核对清楚的。</p>
+
+<details class="ext"><summary>A · 公式和小数字例子（原文第 1、2、3 节）</summary>
+<p><b>式 1：上下文蒸馏的损失</b>（原文式 2.1）</p>
+<div class="formula">L(θ) = D<sub>KL</sub>( p<sub>0</sub>(X | C) ‖ p<sub>θ</sub>(X) )　　D<sub>KL</sub>(p ‖ q) = Σ<sub>x</sub> p(x) · ln( p(x) / q(x) )</div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>是什么</th></tr></thead>
+  <tbody>
+    <tr><td>p<sub>0</sub></td><td>最初的、冻结的模型</td></tr>
+    <tr><td>C</td><td>固定的 HHH 提示词</td></tr>
+    <tr><td>p<sub>0</sub>(X | C)</td><td>老师：带着提示词时，对下一个词的预测分布</td></tr>
+    <tr><td>p<sub>θ</sub>(X)</td><td>学生：不带提示词，参数 θ 在训练中变化</td></tr>
+    <tr><td>X</td><td>来自大语料的普通文本，不是提示词本身</td></tr>
+  </tbody>
+</table></div>
+<p>KL 度量「如果老师是对的，按学生的预测去打赌，比按老师自己的预测亏多少」。每个词的权重是老师自己给它的概率，所以老师看重的词，学生错了罚得重。相等时为 0，永远非负，不对称：老师在前。</p>
+<p>示意（已验算）：3 个词，p = [0.7, 0.2, 0.1]，q = [0.4, 0.4, 0.2]。0.7·ln(0.7/0.4) = 0.392，0.2·ln(0.2/0.4) = −0.139，0.1·ln(0.1/0.2) = −0.069，合计 <b>0.184 nats</b>。训练就是把 q 朝 p 挪，直到趋近 0。最小化 KL 与最小化交叉熵等价，因为两者只差老师分布自身的熵，它与学生参数无关。平时的语言模型损失，是老师为 one-hot 的特例；这里的老师给的是整个分布，信息丰富得多。</p>
+
+<p><b>条件化和微调：P(X | C) 与 P(X)</b>（原文 2.1 节与附录 B 的玩具实验）</p>
+<p>设 C = 「1, 2, 3, …, 63」。把 C 放在输入前面，模型问的是 P(X | C)：看到 1 到 63 之后，下一个是什么，它会以很高的概率说 64。在 C 上微调，改的是它对数据本身的预期 P(X)：以后它觉得世界上的文本该长这样。微调充分后，它对计数文本非常有信心，但让它从头生成，并不会认为开头该是 64。原文 1.2 节：数据很少的极限下，提示词可能优于微调，因为提示词给的是先验，微调是在改变模型对数据分布的预期。</p>
+
+<p><b>式 2：偏好模型的损失</b>（原文式 3.1，引 Christiano 等 2017，即 015）</p>
+<div class="formula">L<sub>PM</sub> = log( 1 + e<sup>r<sub>坏</sub> − r<sub>好</sub></sup> ) = − log σ( r<sub>好</sub> − r<sub>坏</sub> )</div>
+<p>r 是值头在末位 token 上输出的标量分数；σ 是 sigmoid。验算：分差 +1.5 时 0.201，分差 0 时 0.693（= log 2），分差 −1.5 时 1.701。分数只有相对意义。原文 3.1 节承认这个损失「对某些应用并不是最自然的」：对二元正确性，直接预测对不对更合适；对多选题，最大化正确选项在全部选项里的似然更合适。选它是因为主要动机是偏好建模。</p>
+<p>训练时对 token 的负对数概率求和，评测做成对比较时取平均（「好」样本的平均负对数概率是否比「坏」样本更低），因为两者长度不同，求平均才公平。</p>
+
+<p><b>互信息打分</b>（原文 2.2.1 节）：评测题是「给定问题 q，从两个回答里选更好的」。给一个回答 a 打分，原文用互信息，取代平均 token 概率，并说它在回答长度差别很大时有用：</p>
+<div class="formula">I(a, q) = log [ P(a | q) / P(a) ]</div>
+<p>示意（我自编的小数字，已验算）：A =「是的」，P(a|q) = 0.30，P(a) = 0.20，I = ln 1.5 ≈ 0.41；B 是 20 词的完整解释，P(b|q) = 1e−8，P(b) = 1e−10，I = ln 100 ≈ 4.6。用总概率，A 远大于 B，明显不公平；按互信息，B 对问题的针对性更强。我的理解（原文只说「长度差别大时有用」）：互信息把「这个回答本来就常见」这一项除掉了，所以不会偏爱「是的」「不知道」这类万能短句。</p>
+
+<p><b>k 个样本里按排序挑第一名的准确率</b>（原文 3.2 节、附录 B.6）：示意：某题有 3 个候选，1 个正确。随机抽 k = 2 个（共 3 种抽法），不排序时随便取一个，平均正确率 1/3；有理想排序器，抽到含正确答案的 2 种抽法都能选对，正确率 2/3。真实排序器的成绩落在两者之间。实验里让代码模型对每道题生成 100 个候选，用排序器给随机抽出的 k 个排序，取第一名看是否正确，用 pass@k 的无偏估计法算期望。图中的参照线：Oracle（理想排序）、Average（不排序）、模仿学习和偏好模型两种排序器。</p>
+
+<p><b>Elo</b>（原文 2.2.3 节）：只看两两对战的胜率，反推每个模型的相对分。差 100 分对应胜率 64%（标准公式 1/(1 + 10<sup>−100/400</sup>) = 0.640，验算吻合）。本文用与式 2 相同的损失去拟合胜率表（原文附录 Table 2）。</p>
+</details>
+
+<details class="ext"><summary>B · 评测集、毒性实验和数据集分类（原文 2.2 节、第 3 节、附录 B）</summary>
+<p><b>HHH 评测集与 TruthfulQA</b>（2.2.1 节）：作者自己写的约 200 道成对比较题，helpfulness、honesty、harms、other 各约 50 道，原文称「即将公开在 BIG-bench」（最终位置待核实）。判断标准是模型给哪个回答的互信息更高。局限：评测集是作者自己写的，没有花力气把对齐和能力分开，所以即使没有对齐提示，大模型整体也做得更好；「诚实」依赖模型实际知道什么，评测没有考虑 AI 的专业程度（原文脚注 5）。TruthfulQA 用 MC1。脚注 6：若用 TruthfulQA 的例子本身当提示词，效果比 HHH 提示词好得多。换用互信息、平均对数概率度量（Figure 21），趋势类似，绝对值差别很大。</p>
+<p><b>毒性实验</b>（2.2.2 节、附录 B.2）：从 RealToxicityPrompts 抽 1K 个提示（毒性与非毒性各 500 个），每个提示采样 25 条最多 20 token 的续写，用开源的 Detoxify 打分（0 到 1，越高越毒），报告平均毒性。评测陷阱（Figure 22）：若允许模型续写后继续生成「Human: 谢谢！」之类的模拟人类回复，毒性分数会显著下降，这个效应比对齐干预本身还大，所以最终实验禁止采样「Human:」。自动毒性检测本身有已知偏差，专门降毒性的方法能降得多得多，这里只是基线。</p>
+<p><b>对齐税实验的格式</b>（2.2.4 节、附录 B.1）：有提示词时，把题目套进人和助手的对话格式，例如 Lambada 被包装成「Human: 能给我讲个故事吗？Assistant: 好的，这是一份草稿：……」；代码题被包装成要写函数、助手回答「我已经自己测试过，这个函数是正确的：……」。Lambada 的得分对格式极其敏感（附录 B.4，Figure 25）：原始版本的奇怪标点和空格、OpenAI 整理的版本、GPT-3 用的填空版，三种格式的得分差别远大于提示词造成的差别。</p>
+<p><b>人类 A/B 的细节</b>（2.2.3 节）：随机排左右位置；把流式输出速度钉到较慢的模型上，部分遮掩身份。另比较了 13B 和 52B 的蒸馏版，以及只有一个例子的短提示词版本。</p>
+<p><b>评测集怎么分二元与排序</b>（第 3 节）：</p>
+<div class="tbl"><table>
+  <thead><tr><th>类型</th><th>评测集</th><th>好坏怎么来的</th></tr></thead>
+  <tbody>
+    <tr><td>二元</td><td>Code Correctness（作者构造：约 50 万个有测试覆盖的 GitHub Python 函数，用代码模型各生成样本）</td><td>通过 / 不通过单元测试</td></tr>
+    <tr><td>二元</td><td>Lambada</td><td>补全的词对不对</td></tr>
+    <tr><td>二元</td><td>Ethics 的 4 个：Commonsense Morality、Justice、Deontology、Virtue（Hendrycks 等 2021）</td><td>带二元标签</td></tr>
+    <tr><td>排序</td><td>Learn to Summarize（Stiennon 等 2020 的数据，作者自己重新划分：训练 64k 对、测试 29k 对）</td><td>人类对摘要成对排序</td></tr>
+    <tr><td>排序</td><td>HellaSwag（三选一，选最合理的后续）</td><td>正确项是「最合理」；训练时把正确项和随机一个错误项配成对</td></tr>
+    <tr><td>排序</td><td>Ethics：Utilitarianism</td><td>两个场景比较哪个更愉快</td></tr>
+  </tbody>
+</table></div>
+<p>作者承认二元与排序的界限可能模糊：代码是否通过测试是二元，但代码质量似乎是个连续体。Code Correctness 的偏好模型训练数据只用模型生成的代码，避免偏好模型学到的是「人写还是模型写」而不是「对还是错」。</p>
+</details>
+
+<details class="ext"><summary>C · 一族模型和训练设置（原文 1.2 节、附录 A、Table 1）</summary>
+<p>全篇曲线的横轴都是非嵌入参数。模型是解码器 Transformer，上下文窗口 8192 token，BPE 词表 2<sup>16</sup> = 65536；宽深比固定 d<sub>model</sub> = 128 × n<sub>layer</sub>（来自 009 的结论，原文附录 A 引 KMH+20），前馈维度 d<sub>ff</sub> = 4·d<sub>model</sub>。</p>
+<div class="tbl"><table>
+  <thead><tr><th class="num">n<sub>layer</sub></th><th class="num">d<sub>model</sub></th><th>非嵌入参数 N</th><th>预训练算力</th></tr></thead>
+  <tbody>
+    <tr><td class="num">4</td><td class="num">512</td><td>13M</td><td>3.0e19 FLOPs</td></tr>
+    <tr><td class="num">6</td><td class="num">768</td><td>42M</td><td>1.0e20</td></tr>
+    <tr><td class="num">10</td><td class="num">1280</td><td>197M</td><td>4.7e20</td></tr>
+    <tr><td class="num">16</td><td class="num">2048</td><td>810M</td><td>1.9e21</td></tr>
+    <tr><td class="num">24</td><td class="num">3072</td><td>2.7B</td><td>6.5e21</td></tr>
+    <tr><td class="num">40</td><td class="num">5120</td><td>13B</td><td>3.0e22</td></tr>
+    <tr><td class="num">64</td><td class="num">8192</td><td>52B</td><td>1.2e23</td></tr>
+  </tbody>
+</table></div>
+<p>验算：N = 12·n<sub>layer</sub>·d<sub>model</sub><sup>2</sup>。4 层：12 × 4 × 512² ≈ 12.6M，约等于表中 13M；64 层：12 × 64 × 8192² ≈ 51.5B，约等于 52B。算力 ≈ 6·N·D：6 × 52e9 × 400e9 ≈ 1.25e23，与表中 1.2e23 一致。每层注意力约 4d²，前馈约 8d²，合计 12d²。</p>
+<p>语言模型预训练共 400B token：90% 自然语言（其中 55% 严格过滤的 Common Crawl 约 220B token、32% 网络书籍约 128B token，其余是 OpenWebText、维基百科、Stack Exchange 等）加 10% Python 代码；全部全局模糊去重，每个子集只训练一个 epoch。代码模型再对 Python 代码微调 100B token（约 45B 唯一 token）。</p>
+</details>
+
+<details class="ext"><summary>D · PMP 的数据、设置和两个小技巧的消融（原文第 4 节、附录 C）</summary>
+<div class="tbl"><table>
+  <thead><tr><th>数据源</th><th>怎么造「好 / 坏」对</th><th>训练对 / 测试对</th></tr></thead>
+  <tbody>
+    <tr><td>Stack Exchange</td><td>同一问题下的两个答案；得分 = log<sub>2</sub>(1 + 点赞数) 四舍五入，被提问者采纳再 +1，点赞为负记 −1；只取得分不同的两个</td><td>约 5.8M / 59k</td></tr>
+    <tr><td>Reddit</td><td>同一帖下，两条只在最后一条评论不同的评论序列；最后评论点赞多的算好；去除机器人和删除评论，只用白名单中的高质量板块（并刻意排除了和下游 Commonsense Morality 重叠的 AmItheAsshole）</td><td>约 1.1M / 11k</td></tr>
+    <tr><td>维基百科</td><td>编辑历史中「回退疑似破坏」的编辑：回退后的版本为好，被破坏的版本为坏；只取被编辑的小节</td><td>约 1.4M / 14k</td></tr>
+    <tr><td>Mix</td><td>以上三者的并集，每个数据集各训练一个 epoch</td><td>。</td></tr>
+  </tbody>
+</table></div>
+<p><b>设置：</b>PMP 阶段上下文 1024 token，批大小 512 对，学习率为语言模型预训练的 0.1 倍，常数学习率，每个数据集精确训练 1 个 epoch；微调阶段批大小 32 对，学习率为预训练的 0.01 倍，Learn to Summarize 与 HellaSwag 训 1 个 epoch，Ethics 各训 4 个 epoch，两个损失的权重 (λ, μ) 都取 (1, 1)。</p>
+<p><b>PM + LM 联合损失的消融</b>（附录 C.3，Figure 29）：只用偏好损失，小样本时提高样本效率，但数据变多后最终不如不做 PMP；只用语言模型损失，和不做 PMP 差不多（它只是语言模型预训练的延长）；两者合用才明显有效，且好于只用语言模型损失，说明收益不是单纯来自多训了一些语言建模。原文 1.2 节还说 PMP 往往也能提高数据充足时的最终准确率。作者的假说：纯偏好损失倾向于学到偏向性的或平凡的特征（比如上下文长度、词频），换个任务就不管用；语言模型损失逼模型学到更实质的和语言相关的特征。这与 006 的「辅助语言模型目标有助于泛化」一致。</p>
+<p><b>EOC 标记</b>（附录 C.4，Figure 31）：作者的两条解释：一是一两个词就可能让一句话的情感完全反转，知道「句子到这里结束」有助于给出合理分数；二是没有 EOC 时，模型不仅要打分，还要预测「这条文本到哪里结束」，在多个可能的结尾位置都要给分，增加了歧义。原文用有无 EOC 的对比实验显示明显提高。</p>
+<p><b>PMP 对模型规模的补充</b>（Figure 5、16、27、28）：所有下游任务都是大模型更好，有时接近干净的幂律，常有偏离。Figure 27 图注提到 52B 的 PMP 损失「偏离趋势」，原因不明（可能是数据受限、受预训练分布熵限制、或超参不佳），但 52B 的迁移效果仍明显好于更小的模型。</p>
+</details>
+
+<details class="ext"><summary>E · 其他实验结果（原文 2.1、4.4 节、附录 C.5、D）</summary>
+<ul>
+  <li><b>在提示词上微调：</b>通常不如蒸馏；但蒸馏或微调之后再补一小段提示词（两段人和助手的对话），差距会缩小（Figure 20 右）。这支持「蒸馏确实保留了条件化的好处」，也说明它没有完全等价于提示词。作者设想未来可以迭代地做上下文蒸馏，类似给模型装上一种长期记忆或伪身份。</li>
+  <li><b>人和模型对比的 PMP 数据</b>（4.4 节，Figure 19）：把「差」的那条换成模型生成的文本。结果对 HellaSwag 迁移明显更好，对 Learn to Summarize 略好，对 Ethics 有好有坏、较随机。作者推测原因：HellaSwag 的错误选项和 Learn to Summarize 的部分摘要本身就是模型生成的，而 Ethics 全是人写的。这种数据极易大量生成，是有前景但需进一步研究的方向。</li>
+  <li><b>GAN 式的逐 token 判别器</b>（附录 D）：直接拿来给 Lambada 答案重排序，不如原语言模型；与语言模型集成之后才更好。</li>
+  <li><b>多个 PMP 的集成</b>（附录 C.5）：只带来约 0.5% 的准确率提升。</li>
+  <li><b>实现细节：</b>上下文蒸馏的训练数据，一半是通用预训练文本，一半是 Stack Exchange 问题，其中答案前加「Assistant:」标签；每条序列约 1500 token（扣去提示词长度）。给老师的输入依次拼上 HHH 提示词和「Human:」。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>F · 当时的背景（原文第 1、5 节）</summary>
+<p><b>能力侧：</b>GPT-3（2020）已证明大模型可以上下文学习；Codex（2021）展示了代码生成；缩放定律（2020）提供了「画成规模的函数」的研究方法。作者名单里有多位 GPT-3 和缩放定律论文的作者。Anthropic 的成立时间与背景待核实。</p>
+<p><b>对齐侧：</b>015（2017）把人类偏好用于强化学习；Stiennon 等（2020）把它用到语言模型摘要，并证明偏好建模加强化学习显著优于模仿学习，这是本文反复引用的最近亲。同期相关工作还有 PALMS（用小规模价值导向数据集微调）、多任务指令微调（FLAN、T0 等，原文归入 PMP 的相近想法）、Delphi（训练通用伦理判断，PMP 的最相近先例）。</p>
+<p><b>评测侧：</b>TruthfulQA（2021）、RealToxicityPrompts（2020）、Ethics（2021）刚出现；本文把它们放到同一族模型上一起测。</p>
+<p><b>算力与数据：</b>最大 52B、400B token 预训练；<a href="../010-chinchilla/index.html">010 Chinchilla</a> 后来指出这类模型训练得「不够久」，这是同期的共性。</p>
+</details>
+
+<details class="ext"><summary>G · 后来的发展和前后篇衔接（原文之外，多处待核实）</summary>
+<p><b>继承自：</b><a href="../004-transformer/index.html">004 Transformer</a>（模型就是解码器 Transformer）；<a href="../006-gpt-1/index.html">006</a>、<a href="../007-gpt-2/index.html">007</a>、<a href="../011-gpt-3/index.html">011</a> 的 GPT 系（预训练加微调、BPE、上下文学习；提示词基线能成立靠的是 011 的 few-shot 能力）；<a href="../009-scaling-laws/index.html">009 缩放定律</a>（一族模型、横轴为参数量，宽深比取自该篇）；<a href="../012-codex/index.html">012 Codex</a>（代码模型、HumanEval、pass@k，以及「能力不足」与「对齐失败」的区分）；<a href="../015-human-preferences/index.html">015 人类偏好</a>（式 2 的成对偏好损失，和「人类比较行为、学奖励」的整个范式）。</p>
+<p><b>对 015 的推进：</b>把偏好学习从游戏和机械臂搬到通用语言助手；系统回答了偏好建模何时优于模仿学习（排序有效，二元不明显）；给出降低偏好数据成本的方案 PMP；给出「提示词这种轻干预在大模型上付税很小」的证据。本文没有用 <a href="../016-ppo/index.html">016 PPO</a>，也没有评估任何强化学习优化。</p>
+<p><b>由 018 接着解决的问题</b>（018 的做法我还没有对照核实，只列问题）：怎么真正用偏好模型去优化语言模型；标注者质量（图 5 里普通众包工人分不出 13B 与 52B）；对齐税能否主动压低；对齐到谁。<a href="../018-instructgpt/index.html">018 InstructGPT</a> 把监督微调、奖励模型、PPO 拼成完整流水线。</p>
+<p><b>后世事实</b>（来自我对后续文献的了解，待核实）：Anthropic 后来的 RLHF 工作（Bai 等 2022）沿用了 HHH 目标、人类 A/B 对比的收集界面和偏好模型的思路，并真正做了强化学习训练；Constitutional AI 用 AI 依据一套原则给回答排序，替代部分人类标注，延续了「人类反馈贵，要想办法省」的动机；「上下文蒸馏」的名称和思路被后续工作采用（例如 Llama 2 的安全对齐，待核实）；「值头加末位 token 打分加成对损失」似乎成为奖励模型的常见做法。另有后世观察：PMP 在后来的主流流水线里并不总出现，常见做法是用监督微调后的模型直接初始化奖励模型；「HHH 三项互相冲突」后来成为实际问题，过度拒绝与有害输出之间的取舍长期是难题。</p>
+</details>
+
+<details class="ext"><summary>H · 疑点和没有核实的地方</summary>
+<ul>
+  <li><b>「读图」的数字：</b>图 5 的折线形状、原文 Figure 3 里蓝色均值的升降，都是我从图上看出的趋势，原文文字没有给具体读数。</li>
+  <li><b>「显著更好」的力度：</b>摘要说偏好建模「远好于」模仿学习且「往往」随规模更有利；1.2 节用词是 somewhat better；Figure 3 图注用 significantly better。三处力度不一，我取了保守的。</li>
+  <li><b>12B 与 13B：</b>毒性实验中降幅变明显的位置，原文写 12B，模型族里最接近的是 13B 那一档。</li>
+  <li><b>二元任务为什么没有差距：</b>原文没有统一解释；「二元标签两边信息等价，偏好模型没有额外优势」是我的理解，不是作者的说法。</li>
+  <li><b>互信息的机制：</b>原文只说「在回答长度差别很大时有用」，「除掉本来就常见这一项」是我的理解。</li>
+  <li><b>蒸馏为什么更不易过拟合：</b>原文 2.1 节没有展开，我写的是转述。</li>
+  <li><b>HHH 评测集的最终位置、Anthropic 成立的背景、018 的具体做法：</b>待核实。</li>
+  <li><b>HHH 的权衡曲线：</b>本文把三个维度拆开测，没测有帮助与无害之间的取舍，而这是后来工作的主要难题（后世观察，不是本文结论）。这一条是我补充的。</li>
+</ul>
+</details>
+
+
+<footer>
+  AI 论文解读 · 017 · 原文：Amanda Askell, Yuntao Bai, Anna Chen, Dawn Drain, Deep Ganguli, Tom Henighan, Andy Jones, Nicholas Joseph, Ben Mann, Nova DasSarma, Nelson Elhage, Zac Hatfield-Dodds, Danny Hernandez, Jackson Kernion, Kamal Ndousse, Catherine Olsson, Dario Amodei, Tom Brown, Jack Clark, Sam McCandlish, Chris Olah, Jared Kaplan. <i>A General Language Assistant as a Laboratory for Alignment.</i> Anthropic, 2021（arXiv 2112.00861，v3）.<br>
+  图中标「示意」的数字是为了讲清机制设定的例子，都验算过。实验数字出自原文正文与附录 Table 1；原文 Figure 1、Figure 3、Figure 4 的图源为原文。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>

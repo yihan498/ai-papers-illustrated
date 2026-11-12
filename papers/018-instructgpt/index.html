@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>InstructGPT 图解</title>
+<meta name="description" content="Ouyang 等 2022《Training language models to follow instructions with human feedback》图解：先让人写示范，再让人排序训练打分器，最后用 PPO 改模型，把只会续写的 GPT-3 调成听人话的 InstructGPT。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文的做法（人类反馈 + 打分器 + PPO），赭 = 要补上的缺口（只会续写的 GPT-3、没有约束的优化）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;min-width:520px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th:first-child,td:first-child{white-space:nowrap}
+th:first-child,td:first-child{padding-right:20px}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+<main class="wrap">
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　018</nav>
+  <h1 style="margin-top:14px">让只会续写的模型，学会听人的话</h1>
+  <p class="lede">Ouyang 等人 2022 年在 OpenAI 写的《Training language models to follow instructions with human feedback》，就是 InstructGPT。GPT-3 被训练成「接着写网页上的文字」，不是「照用户的话办事」，所以它会编造、会跑题、会把你的指令当成题目列表的开头。他们补上一环：<b>先让人写示范，再让人给多个回答排序并训练一个打分器，最后用 PPO 让模型朝高分方向改。</b>结果是 1.3B 的 InstructGPT 在人类偏好评测里被选中的次数，比 175B 的 GPT-3 还多。这条路线后来成了聊天助手的标准做法。</p>
+  <div class="meta">
+    <span>Long Ouyang、Jeff Wu、Xu Jiang 等（OpenAI）· 2022 年 · arXiv 2203.02155</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的做法（人类反馈 + 打分器 + PPO）</span>
+    <span class="key"><i class="sw o"></i>赭色：要被补上的缺口（只会续写的 GPT-3、没有约束的优化）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · 全篇一张图：同一个 GPT-3，经过三步变成 InstructGPT</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 262" role="img" aria-label="左边一个赭色方块 GPT-3，只会续写网页文字。向右依次三个蓝色步骤。第一步：人写示范，监督微调，得到 SFT 模型。第二步：人给同一提示词的 4 到 9 个回答排序，训练奖励模型，也就是打分器。第三步：用打分器的分数当奖励，用 PPO 继续训练模型，得到 InstructGPT。底部一行结果：1.3B 的 InstructGPT 被偏好的次数超过 175B 的 GPT-3。">
+      <rect class="oldT" x="14" y="46" width="104" height="92" rx="8"/>
+      <text class="b to" x="66" y="74" text-anchor="middle">GPT-3</text>
+      <text class="sm" x="66" y="94" text-anchor="middle">会续写</text>
+      <text class="sm" x="66" y="111" text-anchor="middle">不一定听话</text>
+      <line class="mutS" x1="120" y1="92" x2="140" y2="92" marker-end="url(#ah)"/>
+      <rect class="newT" x="144" y="30" width="150" height="124" rx="8"/>
+      <text class="sm m" x="219" y="24" text-anchor="middle">第 1 步</text>
+      <text class="b tn" x="219" y="58" text-anchor="middle">人写示范</text>
+      <text class="sm" x="219" y="80" text-anchor="middle">给提示词配一条</text>
+      <text class="sm" x="219" y="97" text-anchor="middle">理想回答，监督微调</text>
+      <text class="sm mo" x="219" y="130" text-anchor="middle">→ SFT 模型</text>
+      <line class="mutS" x1="296" y1="92" x2="316" y2="92" marker-end="url(#ah)"/>
+      <rect class="newT" x="320" y="30" width="170" height="124" rx="8"/>
+      <text class="sm m" x="405" y="24" text-anchor="middle">第 2 步</text>
+      <text class="b tn" x="405" y="58" text-anchor="middle">人给回答排序</text>
+      <text class="sm" x="405" y="80" text-anchor="middle">同一提示词 4 到 9 个</text>
+      <text class="sm" x="405" y="97" text-anchor="middle">回答排好，训练打分器</text>
+      <text class="sm mo" x="405" y="130" text-anchor="middle">→ 奖励模型 RM</text>
+      <line class="mutS" x1="492" y1="92" x2="512" y2="92" marker-end="url(#ah)"/>
+      <rect class="new" x="516" y="30" width="150" height="124" rx="8"/>
+      <text class="sm on" x="591" y="24" text-anchor="middle" style="fill:var(--mut)">第 3 步</text>
+      <text class="b on" x="591" y="58" text-anchor="middle">PPO 强化学习</text>
+      <text class="sm on" x="591" y="80" text-anchor="middle">RM 的分数当奖励</text>
+      <text class="sm on" x="591" y="97" text-anchor="middle">让模型朝高分改</text>
+      <text class="sm mo on" x="591" y="130" text-anchor="middle">→ InstructGPT</text>
+      <path class="ln" d="M20 186 H660"/>
+      <text class="sm m" x="20" y="210">结果（人类偏好评测，作者的提示词和标注员）：</text>
+      <text class="b tn" x="20" y="238">1.3B 的 InstructGPT，比 175B 的 GPT-3 更常被选中</text>
+      <text class="sm m" x="470" y="238">参数少了 100 多倍</text>
+    </svg>
+    </div>
+    <figcaption>三步的细节在第 2 到第 6 节，证据在第 8 节。原文 Figure 2 的原图在第 2 节。</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>要解决的问题：会写，但不听话</a>
+    <a href="#s2"><span>2</span>三步流程总览</a>
+    <a href="#s3"><span>3</span>第一步：让人写示范</a>
+    <a href="#s4"><span>4</span>第二步：让人排序，训练打分器</a>
+    <a href="#s5"><span>5</span>第三步：用打分器训练模型</a>
+    <a href="#s6"><span>6</span>补救：混入预训练，减少对齐税</a>
+    <a href="#s7"><span>7</span>数据从哪来，评分的人是谁</a>
+    <a href="#s8"><span>8</span>证据：它到底做到了多少</a>
+    <a href="#s9"><span>9</span>局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>正文只走一条线</b>：GPT-3 为什么不听话 → 三步怎么把它调听话 → 数据和标注员 → 每个结论对应哪个实验 → 作者承认的局限。只读每节的标题和每段第一句，也能串起来。</li>
+      <li>公式、符号表、概念解释（对齐、KL、PPO、评测口径）、训练设置、标注员筛选细节，都在页尾的<b>附录</b>里，默认折叠，标明对应原文第几节；正文里每一步末尾会指到对应的附录块。</li>
+      <li>小数字例子都验算过：为讲解设定的标「示意」。表格和百分数逐项对照过原文。</li>
+      <li>零件在前面各篇讲过：模型是 011 <a href="../011-gpt-3/index.html">GPT-3</a> 的架构，优化用 005 <a href="../005-adam/index.html">Adam</a>，「用人的比较训练打分器」是 015 <a href="../015-human-preferences/index.html">人类偏好</a>，算法是 016 <a href="../016-ppo/index.html">PPO</a>，「有益、诚实、无害」的框架来自 017 <a href="../017-alignment-lab/index.html">对齐实验室</a>。这一篇是把它们接到一起。</li>
+    </ul>
+  </div>
+</header>
+
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>要解决的问题：会写，但不听话</h2>
+<p>先看一个原文 Figure 8 里的例子。提示词是一句法语，意思是「请用法语写一个关于青蛙穿越回古希腊的短故事」。175B 的 GPT-3 接下去写的，是<b>又三条类似的指令</b>，没有写故事。InstructGPT 直接写出了故事。</p>
+
+<figure class="fig">
+  <span class="tag">图 1 · 同一句指令：GPT-3 续写题目，InstructGPT 写故事</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 270" role="img" aria-label="顶部是提示词：请用法语写一个关于青蛙穿越回古希腊的短故事。左下赭色框是 175B GPT-3 的输出：又给出三条类似的指令，比如写一个关于想知道众神游戏的孩子的故事，没有写故事本身。右下蓝色框是 InstructGPT 的输出：直接写出一个故事。底部说明：GPT-3 不是不会写，而是把提示词当成题目列表的开头。">
+    <rect class="softS" x="20" y="16" width="640" height="44" rx="8"/>
+    <text class="sm m" x="34" y="34">提示词（原文是法语，这里译成中文）</text>
+    <text x="34" y="52">请用法语写一个关于青蛙穿越回古希腊的短故事。</text>
+    <line class="oldS" x1="170" y1="62" x2="170" y2="88" marker-end="url(#ahO)"/>
+    <line class="newS" x1="510" y1="62" x2="510" y2="88" marker-end="url(#ahN)"/>
+    <rect class="oldT" x="20" y="92" width="300" height="112" rx="8"/>
+    <text class="b to" x="34" y="114">175B GPT-3 接着写</text>
+    <text class="sm" x="34" y="138">写一个关于想知道众神游戏的孩子的故事……</text>
+    <text class="sm" x="34" y="158">（又一条指令）……</text>
+    <text class="sm" x="34" y="178">（再一条指令）……</text>
+    <text class="sm to" x="34" y="196">三条新指令，没有故事</text>
+    <rect class="newT" x="360" y="92" width="300" height="112" rx="8"/>
+    <text class="b tn" x="374" y="114">InstructGPT 接着写</text>
+    <text class="sm" x="374" y="138">一个故事：青蛙怎样穿过时间，</text>
+    <text class="sm" x="374" y="158">来到古希腊……</text>
+    <text class="sm tn" x="374" y="196">直接完成了这件事</text>
+    <text class="sm m" x="20" y="232">GPT-3 不是不会写，而是把提示词当成「一份题目列表的开头」，接着续写题目列表。</text>
+    <text class="sm m" x="20" y="252">故事的措辞为示意；两种输出的行为是原文 Figure 8 的描述。</text>
+  </svg>
+  </div>
+  <figcaption>怎么看这张图：同一个提示词，两个模型的架构和预训练数据一样，差别只在 InstructGPT 多用了人类数据微调。</figcaption>
+</figure>
+
+<h3>病根：训练目标和用户想要的不是一回事</h3>
+<p>预训练的目标是<b>猜网页上的下一个词</b>，奖励的是「像网上出现过的文字」。用户想要的是<b>有益、诚实、无害</b>地完成这一次请求。原文把这个差距叫 <b>misaligned（错位）</b>，并说下一个词预测「只是我们真正想要的东西的一个代理」。能力有，倾向不对。</p>
+<p>所以摘要第一句就是：把模型做大，并不会让它更会遵循用户的意图。规模律（009）预测的是预训练损失随规模下降，目标选错了，再大也还是在逼近「网页文字的分布」。（这一句联系 009 是我补充的，原文没引它。）</p>
+
+<h3>为什么直接的办法都不够</h3>
+<figure class="fig">
+  <span class="tag">图 2 · 五个直接的想法，各自卡在哪</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 290" role="img" aria-label="五行。继续放大模型：目标没变，规模不能治错位；原文 Figure 1 里三个尺寸的 GPT 曲线都最低。给 GPT-3 写更好的前缀：有帮助但上限低，175B InstructGPT 对它的胜率是 71 加减 4%。在公开 NLP 数据集上做指令微调，如 FLAN、T0：任务偏分类和问答，比 SFT 还差。只做监督微调：只有正例没有好坏程度，示范比排序贵。直接优化打分器但不加约束：打分器有误差，会被钻空子，还会让其他任务退步。">
+    <text class="sm m" x="20" y="18">想法</text><text class="sm m" x="250" y="18">卡在哪</text>
+    <path class="ln" d="M20 26 H660"/>
+    <rect class="oldT" x="20" y="34" width="210" height="36" rx="6"/><text class="to b" x="32" y="57">继续放大模型</text>
+    <text class="sm" x="250" y="52">目标没变；原文 Figure 1 里三个尺寸的</text><text class="sm" x="250" y="66">GPT 曲线都最低</text>
+    <rect class="oldT" x="20" y="82" width="210" height="36" rx="6"/><text class="to b" x="32" y="105">给 GPT-3 写更好的前缀</text>
+    <text class="sm" x="250" y="100">有帮助，上限低；175B InstructGPT</text><text class="sm" x="250" y="114">对它的胜率仍有 71 ± 4%</text>
+    <rect class="oldT" x="20" y="130" width="210" height="36" rx="6"/><text class="to b" x="32" y="153">FLAN、T0 式指令微调</text>
+    <text class="sm" x="250" y="148">公开数据集偏分类和问答、输入不够多样；</text><text class="sm" x="250" y="162">效果比 SFT 还差</text>
+    <rect class="oldT" x="20" y="178" width="210" height="36" rx="6"/><text class="to b" x="32" y="201">只做监督微调（SFT）</text>
+    <text class="sm" x="250" y="196">只有正例，没有「哪个更好」的信号；</text><text class="sm" x="250" y="210">人写示范比排序贵得多（部分为我的推测）</text>
+    <rect class="oldT" x="20" y="226" width="210" height="36" rx="6"/><text class="to b" x="32" y="249">直接优化打分，不加约束</text>
+    <text class="sm" x="250" y="244">打分器有误差，会被钻空子；</text><text class="sm" x="250" y="258">还会让别的任务退步</text>
+    <text class="sm m" x="20" y="284">证据和出处：原文摘要、第 2 节、4.1 节、3.5 节、4.2 节。</text>
+  </svg>
+  </div>
+  <figcaption>最后两行对应本文的两个设计：第 2 步的比较数据（给「更好」的信号），第 3 步的 KL 惩罚和预训练混合（防钻空子、防退步）。</figcaption>
+</figure>
+
+<h3>用户真正在做的事，和学术基准不一样</h3>
+<p>训练要对准的是真实用户的需求。原文 Table 1 是 API 提示词的用途分布：生成占 45.6%，开放式问答 12.4%，头脑风暴 11.2%；分类只有 3.5%，封闭式问答只有 2.6%。原文 4.1 节的概括是：分类和问答只占客户用法的约 18%，开放式生成和头脑风暴合计约 57%（45.6 + 11.2 = 56.8）。现成的 NLP 数据集偏向容易自动评分的任务，恰好不是用户最常做的事。</p>
+<figure class="fig">
+  <span class="tag">原文 Table 1 · API 提示词的用途分布</span>
+  <img class="orig narrow" src="orig-tab1.png" alt="原文 Table 1：API 提示词数据集的用途分布。Generation 45.6%，Open QA 12.4%，Brainstorming 11.2%，Chat 8.4%，Rewrite 6.6%，Summarization 4.2%，Classification 3.5%，Other 3.5%，Closed QA 2.6%，Extract 1.9%。" loading="lazy">
+  <figcaption>这张表在说什么：<b>真实用户最常要的是「生成」类任务</b>。怎么看：百分比是标注员给 RM 数据集里 API 提示词标的用途。图源：Ouyang 等 2022 原文。</figcaption>
+</figure>
+<p class="punch">问题是：怎么让模型<em>稳定地倾向于</em>照人的意图办事，而不是每次靠提示词碰运气。</p>
+
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>三步流程总览</h2>
+<p>InstructGPT 不是新架构，也不是更大的模型。原文说所有模型都用 GPT-3 架构（1.3B、6B、175B 三个尺寸），InstructGPT 和 GPT-3 只差在是否用人类数据微调过。贡献是一整套「让模型听话」的流水线：</p>
+<ol>
+<li><b>第 1 步：示范 → SFT。</b>人写理想回答，监督微调 GPT-3。</li>
+<li><b>第 2 步：排序 → 奖励模型。</b>人给多个回答排好序，训练一个给回答打分的模型。</li>
+<li><b>第 3 步：PPO。</b>拿奖励模型的分数当奖励，继续训练模型。</li>
+</ol>
+<figure class="fig">
+  <span class="tag">原文 Figure 2 · 三步方法的示意图</span>
+  <img class="orig" src="orig-fig2.png" alt="原文 Figure 2：三栏。第 1 步，从提示词数据集取一个提示词，标注员写出期望的输出，用这些数据监督微调 GPT-3 得到 SFT。第 2 步，取一个提示词和若干模型输出 A 到 D，标注员从好到差排序，用这些数据训练奖励模型 RM。第 3 步，取一个新提示词，策略生成输出，奖励模型给输出计算奖励，用奖励通过 PPO 更新策略。" loading="lazy">
+  <figcaption>这张图在说什么：<b>三步里，人只出现在前两步，第三步是模型自己反复生成、由打分器自动评分</b>。怎么看：第 3 步右侧的蓝色箭头是闭环，奖励回到策略。图源：Ouyang 等 2022 原文。</figcaption>
+</figure>
+
+<figure class="fig">
+  <span class="tag">图 3 · 三步各用多少提示词，哪些有人工标签</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 232" role="img" aria-label="三根横条表示三套数据的训练集提示词数。SFT 共 12,725 条，其中标注员写的 11,295，客户的 1,430。RM 共 33,207 条，其中标注员写的 6,623，客户的 26,584。PPO 共 31,144 条，全部来自客户，没有人工标签，只提供提示词。">
+    <text class="sm m" x="20" y="18">训练集提示词数（条）。灰 = 标注员自己写的，蓝 = 客户在 Playground 提交的</text>
+    <text x="20" y="62">第 1 步　SFT</text><text class="sm m" x="20" y="80">有人写的示范</text>
+    <rect class="softS" x="140" y="44" width="112" height="34" rx="4"/>
+    <rect class="newT" x="252" y="44" width="14" height="34" rx="2"/>
+    <text class="sm mo" x="276" y="66">12,725（11,295 + 1,430）</text>
+    <text x="20" y="122">第 2 步　RM</text><text class="sm m" x="20" y="140">有人排的序</text>
+    <rect class="softS" x="140" y="104" width="66" height="34" rx="4"/>
+    <rect class="newT" x="206" y="104" width="264" height="34" rx="4"/>
+    <text class="sm mo" x="147" y="126">6,623</text>
+    <text class="sm mo tn" x="214" y="126">26,584</text>
+    <text class="sm mo" x="480" y="126">33,207</text>
+    <text x="20" y="182">第 3 步　PPO</text><text class="sm m" x="20" y="200">没有人工标签</text>
+    <rect class="newT" x="140" y="164" width="310" height="34" rx="4"/>
+    <text class="sm mo tn" x="214" y="186">31,144</text>
+    <text class="sm" x="460" y="186">全部来自客户</text>
+  </svg>
+  </div>
+  <figcaption>条长和提示词数成比例。出处：原文 3.2 节和附录 Table 6；两项相加我验算过。SFT 里标注员写的比客户的多，是因为早期让标注员写「一条总指令加几组示例」，再抽不同示例组合构造多条数据。</figcaption>
+</figure>
+
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>第一步：让人写示范</h2>
+<p><b>做什么：</b>数据是（提示词，标注员写的理想回答）成对。用它们监督微调 GPT-3，得到 SFT 模型。训练目标还是预训练时的「最大化对数似然」，只是文字换成了示范。也就是说，不改架构，不改损失的形式，只改「让模型最大化哪一批文字的概率」。</p>
+<p><b>为什么这样就行：</b>示范告诉模型，遇到「把 cat 翻成法文」这种提示词，该接的是翻译好的词，而不是更多的题目。它让模型至少大致像一个助手，成为后两步的起点。</p>
+
+<figure class="fig">
+  <span class="tag">图 4 · SFT 的一步：把示范里那个词的概率抬上去（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 230" role="img" aria-label="提示词：把 cat 翻成法文，示范回答是 chat。左边训练前：GPT-3 给 chat 的概率是 0.05，给 Dear 的概率是 0.3，因为它更想写信。这一步的损失是负的 ln 0.05，约等于 3.0。箭头指向右边训练后：chat 的概率被抬高，损失下降。">
+    <rect class="softS" x="20" y="14" width="640" height="40" rx="8"/>
+    <text class="sm m" x="34" y="31">提示词 + 示范（示意）</text>
+    <text x="34" y="48">把 cat 翻成法文　→　示范回答：<tspan class="b tn">chat</tspan></text>
+    <text class="b to" x="20" y="88">训练前：GPT-3 下一个词的概率</text>
+    <text class="sm" x="20" y="116">Dear</text>
+    <rect class="old" x="70" y="102" width="180" height="18" rx="3"/><text class="sm mo" x="258" y="116">0.30（它更想写信）</text>
+    <text class="sm" x="20" y="142">chat</text>
+    <rect class="new" x="70" y="128" width="30" height="18" rx="3"/><text class="sm mo" x="108" y="142">0.05</text>
+    <text class="sm to" x="70" y="170">损失 = −ln 0.05 ≈ 3.0</text>
+    <line class="mutS" x1="400" y1="124" x2="446" y2="124" marker-end="url(#ah)"/>
+    <text class="sm m" x="423" y="114" text-anchor="middle">反复训练</text>
+    <text class="b tn" x="460" y="88">训练后（示意）</text>
+    <text class="sm" x="460" y="116">Dear</text>
+    <rect class="old" x="504" y="102" width="40" height="18" rx="3"/>
+    <text class="sm" x="460" y="142">chat</text>
+    <rect class="new" x="504" y="128" width="150" height="18" rx="3"/>
+    <text class="sm tn" x="460" y="170">损失下降，chat 排到前面</text>
+    <text class="sm m" x="20" y="212">0.05、0.30 和 3.0 是为讲解设定的数；−ln 0.05 = 2.996，取 3.0。训练后的条长只表示方向。</text>
+  </svg>
+  </div>
+  <figcaption>怎么看这张图：损失越小说明模型给「示范里那个词」的概率越高，训练就是压低这个数。</figcaption>
+</figure>
+
+<p>一个反直觉的细节（原文 3.5 节）：SFT 模型在 <b>1 个 epoch 后验证损失就开始上升</b>，但继续训练到 16 个 epoch，对打分器分数和人类偏好评分都更好，所以作者用打分器在验证集上的分数选模型，不用验证损失。原文只给了观察。我推测：验证损失衡量的是逐词复现那一条示范，而同一个提示词的好回答有很多种。这是推测，原文没这样说。</p>
+<p><b>对着哪个毛病：</b>GPT-3 把指令当题目列表续写（第 1 节图 1）。但只有示范还不够，示范只给正例，不说「哪个更好」。精确写法见附录 A 式 0。</p>
+
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>第二步：让人排序，训练打分器</h2>
+<p><b>做什么：</b>对同一个提示词，让几个模型各生成回答，一共 K 个（K 在 4 到 9 之间），让标注员从好到差排序。再训练一个<b>奖励模型（RM）</b>：输入（提示词，回答），输出一个数，代表这条回答有多讨人喜欢。RM 的结构是 SFT 模型去掉最后的反嵌入层，换成输出一个标量。</p>
+<p><b>为什么用排序：</b>给一个回答打绝对分，人很难稳定（5 分和 6 分差在哪？）。比较两个回答哪个好，人容易得多，一致性也更高。K 个回答的排序，等价于 C(K,2) 对「赢家、输家」的比较：K=4 是 6 对，K=9 是 36 对。</p>
+<p><b>为什么这样就行：</b>训练目标是让赢家的分数比输家高。分数差被当作「人选这个而不选那个」的对数几率，损失就是标准的二分类交叉熵，标签永远是「赢家赢」。精确写法见附录 A 式 1。下面用 4 个回答的例子走一遍。</p>
+
+<figure class="fig">
+  <span class="tag">图 5 · 排序变成 6 对比较，RM 排反的那一对损失最大（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 300" role="img" aria-label="标注员把 4 个回答排成 A 大于 B 大于 C 大于 D。某一时刻 RM 的分数是 A 1.2、B 0.4、C 0.5、D 负 1.0。6 对比较的损失：A 对 B 0.371，A 对 C 0.403，A 对 D 0.105，B 对 C 0.744，B 对 D 0.220，C 对 D 0.201。其中 B 对 C 这一对 RM 排反了，分数差是负 0.1，损失最大。平均损失 0.341。训练好之后分数变成 A 3、B 1、C 0、D 负 2，平均损失降到 0.112。">
+    <text class="sm m" x="20" y="18">标注员排序 A &gt; B &gt; C &gt; D。RM 当前给的分：A = 1.2，B = 0.4，C = 0.5，D = −1.0</text>
+    <text class="sm m" x="20" y="42">比较（赢 &gt; 输）</text><text class="sm m" x="170" y="42">分数差</text><text class="sm m" x="240" y="42">σ（差）</text><text class="sm m" x="320" y="42">这一对的损失 = −ln σ</text>
+    <path class="ln" d="M20 48 H660"/>
+    <g class="mo">
+    <text x="20" y="72">A &gt; B</text><text x="170" y="72">0.8</text><text x="240" y="72">0.690</text><rect class="new" x="320" y="58" width="111" height="18" rx="3"/><text class="sm" x="440" y="72">0.371</text>
+    <text x="20" y="100">A &gt; C</text><text x="170" y="100">0.7</text><text x="240" y="100">0.668</text><rect class="new" x="320" y="86" width="121" height="18" rx="3"/><text class="sm" x="450" y="100">0.403</text>
+    <text x="20" y="128">A &gt; D</text><text x="170" y="128">2.2</text><text x="240" y="128">0.900</text><rect class="new" x="320" y="114" width="32" height="18" rx="3"/><text class="sm" x="361" y="128">0.105</text>
+    <text class="to" x="20" y="156">B &gt; C</text><text class="to" x="170" y="156">−0.1</text><text class="to" x="240" y="156">0.475</text><rect class="old" x="320" y="142" width="223" height="18" rx="3"/><text class="sm to" x="552" y="156">0.744（排反了）</text>
+    <text x="20" y="184">B &gt; D</text><text x="170" y="184">1.4</text><text x="240" y="184">0.802</text><rect class="new" x="320" y="170" width="66" height="18" rx="3"/><text class="sm" x="395" y="184">0.220</text>
+    <text x="20" y="212">C &gt; D</text><text x="170" y="212">1.5</text><text x="240" y="212">0.818</text><rect class="new" x="320" y="198" width="60" height="18" rx="3"/><text class="sm" x="389" y="212">0.201</text>
+    </g>
+    <path class="ln" d="M20 226 H660"/>
+    <text class="b" x="20" y="250">平均损失 = 0.341</text>
+    <text class="sm" x="20" y="272">训练后若分数变成 A=3，B=1，C=0，D=−2，6 对的平均损失降到 0.112。</text>
+    <text class="sm m" x="20" y="292">条长 = 损失 × 300。σ(z) = 1 / (1 + e^−z)，上表的数都已验算。</text>
+  </svg>
+  </div>
+  <figcaption>怎么看这张图：B &gt; C 这一对，RM 给 B 的分比 C 还低，损失最大，梯度（= 1 − σ(差)，这一对是 0.525，A &gt; D 只有 0.100）也最大，训练主要就在纠正它。RM 只看分数的「差」，所有分数同加一个常数，损失不变。</figcaption>
+</figure>
+
+<p>几个工程决定也影响结果（原文 3.5 节）：同一个提示词的 C(K,2) 对<b>作为一个批元素</b>一起算，而不是打散混进数据集，不然一个回答会参与 K−1 次更新，模型一遍数据就过拟合；只用 <b>6B 的 RM</b> 供所有尺寸的策略使用（175B 的 RM 训练不稳定）；只训 <b>1 个 epoch</b>。RM 能不能推广到没见过的标注员：5 折交叉验证，在没见过的那一组标注员上准确率 <b>69.6 ± 0.9%</b>，训练组内 72.4 ± 0.4%。</p>
+<p><b>对着哪个毛病：</b>给了「哪个更好」的信号，而且能用 RM 对大量没有人工标注的提示词自动打分，人的劳动被放大了。（后一点是我的补充，原文用的是 31k 个无标签的提示词。）</p>
+
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>第三步：用打分器训练模型</h2>
+<p><b>做什么：</b>随机取一个提示词，让当前模型（策略）生成一条回答，RM 给它打一个分，这个分就是奖励，用 PPO 更新模型，回合结束。原文把它叫「赌博机（bandit）环境」：回答一次就结算，没有多轮交互。</p>
+<p><b>为什么要用强化学习：</b>回答是模型逐词<b>采样</b>出来的，「抽了 chat 而不是 Dear」是离散随机的一步，梯度没法穿过去，RM 又是对整条回答打分。策略梯度绕开采样：奖励高的回答，把生成它各个词的概率往上推，奖励低的往下推。比如同一个提示词采 3 条回答，RM 给 +2、0、−2，第 1 条被抬高，第 3 条被压低（示意；真实算法还要减一个基线来降方差）。</p>
+<p><b>为什么要加 KL 惩罚：</b>RM 只是人类偏好的一个不完美的近似，它见过的回答大多来自 SFT 模型。让 PPO 无限制地追高分，模型会漂到 RM 没见过、打分不可靠的区域，找出骗分的怪回答，而人并不喜欢。所以奖励里每个词都减去一点「离 SFT 有多远」，这是一根拴住模型的绳子，强度 β = 0.02。</p>
+
+<figure class="fig">
+  <span class="tag">图 6 · 第 3 步的一个回合：生成、打分、扣掉漂移、更新</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 272" role="img" aria-label="一个回合从左到右：新提示词，取自 31k 个无人工标签的提示词；策略，也就是当前模型，生成一条回答；奖励模型 RM 给回答打分得到 r；同时拿回答对比 SFT 初始化模型，每个词计算对数比，乘以 β 等于 0.02 作为惩罚；奖励减去惩罚后用 PPO 更新策略，箭头回到策略。底部示意：漂移很小时惩罚约 0.029，每个词的概率都抬到 SFT 的 7.4 倍时惩罚约 0.16。">
+    <rect class="softS" x="14" y="40" width="100" height="56" rx="8"/><text class="sm" x="64" y="64" text-anchor="middle">新提示词</text><text class="sm m" x="64" y="82" text-anchor="middle">无人工标签</text>
+    <line class="mutS" x1="116" y1="68" x2="148" y2="68" marker-end="url(#ah)"/>
+    <rect class="new" x="152" y="40" width="108" height="56" rx="8"/><text class="b on" x="206" y="64" text-anchor="middle">策略</text><text class="sm on" x="206" y="82" text-anchor="middle">当前模型</text>
+    <line class="mutS" x1="262" y1="68" x2="294" y2="68" marker-end="url(#ah)"/>
+    <rect class="softS" x="298" y="40" width="84" height="56" rx="8"/><text class="sm" x="340" y="64" text-anchor="middle">一条回答</text><text class="sm m" x="340" y="82" text-anchor="middle">逐词采样</text>
+    <line class="mutS" x1="384" y1="56" x2="418" y2="56" marker-end="url(#ah)"/>
+    <rect class="newT" x="422" y="30" width="110" height="40" rx="8"/><text class="b tn" x="477" y="55" text-anchor="middle">RM 打分 r</text>
+    <line class="mutS" x1="384" y1="84" x2="418" y2="84" marker-end="url(#ah)"/>
+    <rect class="oldT" x="422" y="76" width="110" height="40" rx="8"/><text class="sm to" x="477" y="94" text-anchor="middle">对比 SFT：</text><text class="sm to" x="477" y="109" text-anchor="middle">逐词对数比</text>
+    <line class="mutS" x1="534" y1="50" x2="566" y2="64" marker-end="url(#ah)"/>
+    <line class="mutS" x1="534" y1="96" x2="566" y2="82" marker-end="url(#ah)"/>
+    <rect class="soft" x="570" y="42" width="100" height="52" rx="8"/><text class="sm mo" x="620" y="64" text-anchor="middle">r − β·对数比</text><text class="sm m" x="620" y="82" text-anchor="middle">β = 0.02</text>
+    <path class="newS dash" d="M620 96 V138 H206 V100" marker-end="url(#ahN)"/>
+    <text class="sm tn" x="413" y="132" text-anchor="middle">PPO 用这个奖励更新策略</text>
+    <path class="ln" d="M20 166 H660"/>
+    <text class="sm m" x="20" y="190">这根绳子有多紧（示意，回答长度固定为 4 个词，惩罚 = 0.02 × 对数比之和）：</text>
+    <text class="sm" x="20" y="214">漂移很小：4 个词的概率 0.20、0.50、0.40、0.60 变成 0.30、0.70、0.60、0.80，对数比之和 1.435</text>
+    <text class="sm mo tn" x="20" y="232">惩罚 ≈ 0.029，几乎看不出</text>
+    <text class="sm" x="330" y="232">漂移很大：每个词概率抬到 SFT 的 e² ≈ 7.4 倍，和 = 8，</text>
+    <text class="sm mo to" x="330" y="250">惩罚 = 0.16</text>
+    <text class="sm m" x="20" y="268">惩罚随每词漂移变大，也随回答变长变大；RM 分数的实际量级原文没给。</text>
+  </svg>
+  </div>
+  <figcaption>怎么看这张图：蓝色是新做法的主干，赭色是「拴绳」要对照的参照物（SFT 初始化模型）。一个回合只有一个提示词、一条回答、一个奖励，但 KL 惩罚是逐词累加的。精确写法见附录 A 式 2，PPO 和价值函数见附录 B。</figcaption>
+</figure>
+<p><b>对着哪个毛病：</b>不再依赖「让人写满所有示范」，也不再只模仿，而是朝「人更喜欢」的方向优化；KL 惩罚对着「钻 RM 空子」。</p>
+
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>补救：混入预训练，减少对齐税</h2>
+<p><b>问题：</b>纯 PPO 的模型在若干公开数据集上<b>比 GPT-3 还差</b>：SQuAD（阅读理解）、DROP（带数值推理的阅读理解）、HellaSwag（常识补全）、WMT 2015 法译英。让模型变听话的同时，其他能力退步了，这个退步叫<b>对齐税</b>。</p>
+<p><b>为什么会这样：</b>作者没有展开，下面是我的推测。PPO 的梯度全在推动「在客户提示词上拿高分」，没有任何一项在守护预训练学到的、与这些提示词无关的能力。KL 惩罚也守不住：它只衡量在 RL 提示词的回答上离 SFT 多远，不衡量预训练数据上的能力。</p>
+<p><b>做法（PPO-ptx）：</b>在目标里再加一项：从预训练数据取文本，最大化模型对它们的对数似然，也就是<b>继续做普通的语言建模</b>。γ 是这一项的权重，γ = 0 就是纯 PPO，γ &gt; 0 就是 PPO-ptx。原文约定「除非另有说明，本文的 InstructGPT 指 PPO-ptx」，所以头条结果用的都是它。</p>
+
+<figure class="fig">
+  <span class="tag">图 7 · 每个小批：两股梯度累加到同一个缓冲区</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 268" role="img" aria-label="左上：客户提示词，策略生成回答，经过 RM 奖励减去 KL，算出 PPO 梯度。左下：预训练语料，算语言建模梯度，乘以 γ 等于 27.8。两股梯度累加到同一个梯度缓冲区，更新模型。右侧对比：纯 PPO 在 SQuAD、DROP、HellaSwag、翻译上比 GPT-3 差；PPO-ptx 把大部分补回，HellaSwag 上超过 GPT-3，DROP、SQuADv2、翻译仍落后。">
+    <rect class="softS" x="20" y="22" width="130" height="50" rx="8"/><text class="sm" x="85" y="44" text-anchor="middle">客户提示词</text><text class="sm m" x="85" y="60" text-anchor="middle">策略生成回答</text>
+    <line class="mutS" x1="152" y1="47" x2="178" y2="47" marker-end="url(#ah)"/>
+    <rect class="newT" x="182" y="22" width="150" height="50" rx="8"/><text class="b tn" x="257" y="44" text-anchor="middle">PPO 梯度</text><text class="sm" x="257" y="60" text-anchor="middle">奖励 − KL 惩罚</text>
+    <rect class="softS" x="20" y="120" width="130" height="50" rx="8"/><text class="sm" x="85" y="142" text-anchor="middle">预训练语料</text><text class="sm m" x="85" y="158" text-anchor="middle">GPT-3 的那份数据</text>
+    <line class="mutS" x1="152" y1="145" x2="178" y2="145" marker-end="url(#ah)"/>
+    <rect class="newT" x="182" y="120" width="150" height="50" rx="8"/><text class="b tn" x="257" y="142" text-anchor="middle">语言建模梯度</text><text class="sm" x="257" y="158" text-anchor="middle">× γ = 27.8</text>
+    <line class="mutS" x1="334" y1="50" x2="366" y2="82" marker-end="url(#ah)"/>
+    <line class="mutS" x1="334" y1="142" x2="366" y2="110" marker-end="url(#ah)"/>
+    <rect class="new" x="370" y="72" width="120" height="48" rx="8"/><text class="b on" x="430" y="94" text-anchor="middle">同一个缓冲区</text><text class="sm on" x="430" y="110" text-anchor="middle">累加后更新</text>
+    <rect class="oldT" x="520" y="22" width="140" height="72" rx="8"/>
+    <text class="b to" x="590" y="44" text-anchor="middle">纯 PPO</text>
+    <text class="sm" x="590" y="62" text-anchor="middle">SQuAD、DROP、</text><text class="sm" x="590" y="78" text-anchor="middle">HellaSwag、翻译退步</text>
+    <rect class="newT" x="520" y="106" width="140" height="84" rx="8"/>
+    <text class="b tn" x="590" y="128" text-anchor="middle">PPO-ptx</text>
+    <text class="sm" x="590" y="146" text-anchor="middle">大部分补回；</text><text class="sm" x="590" y="162" text-anchor="middle">HellaSwag 超过 GPT-3</text><text class="sm" x="590" y="178" text-anchor="middle">DROP 等仍落后</text>
+    <path class="ln" d="M20 206 H660"/>
+    <text class="sm m" x="20" y="228">预训练样本数是 RL 回合数的 8 倍（附录 C.4）。把 KL 系数调到 2.0（默认 0.02 的 100 倍）</text>
+    <text class="sm m" x="20" y="246">也补不回 DROP、SQuAD，验证奖励还大幅下降：混入预训练比调大 KL 有效。</text>
+  </svg>
+  </div>
+  <figcaption>怎么看这张图：γ 把预训练那一股梯度放大，才能和 PPO 那一股抗衡；扫 γ（1.3B）时 γ ≥ 20 回退被补回，27.8 在 1.3B 到 175B 都不错。代价是验证奖励略降，但人类 Likert 评分对 γ 不敏感。出处：原文第 1、4.2 节、附录 C.4、E.6。精确写法见附录 A 式 2 的第二行。</figcaption>
+</figure>
+<p><b>对着哪个毛病：</b>对着对齐税。它降低了税，没有把税归零：DROP、SQuADv2 和翻译仍落后。</p>
+
+
+<!-- ================= 7 ================= -->
+<h2 id="s7"><span class="no">7</span>数据从哪来，评分的人是谁</h2>
+<p>前面三步的「人」不是一句话能带过的，它们本身就是方法的一部分。</p>
+<p><b>提示词主要来自真实用户。</b>主要来源是 OpenAI API Playground 上的提交，具体是用户在 Playground 里使用更早版本的 InstructGPT（只用示范数据监督训练过的）时提交的，界面反复提示「数据可能被用于训练新模型」。不使用生产环境 API 用户的数据。训练、验证、测试按用户 ID 划分，每个用户最多 200 条。最早 API 上几乎没有指令式提示词，所以又让标注员自己写三类（任意任务、少样本、按候补名单申请里的用例）。数据约 96% 是英文。</p>
+<p><b>约 40 名外包标注员，经过筛选和长期对齐口径。</b>通过 Upwork 和 ScaleAI 招募，先做筛选测试（敏感言论标记、排序一致率、敏感提示词的示范写作、自述能判断的话题），再有入职培训、详细的书面说明和共享聊天室答疑。训练标注员之间一致率 <b>72.6 ± 1.5%</b>，另招的、没做过训练数据的标注员之间 77.3 ± 1.3%。</p>
+<p>有一个容易看漏的细节：训练时让标注员把「<b>对用户有益</b>」放第一，最终评测时让他们把「<b>真实、无害</b>」放前面。作者在 5.4 节说，若用户要求有害或不诚实的回答，他们允许模型生成，理由是有害与否取决于部署语境。后果见第 8 节。</p>
+<p>这两点都会回到第 9 节：这些数据决定了「对齐」到底是对齐给谁。</p>
+
+
+<!-- ================= 8 ================= -->
+<h2 id="s8"><span class="no">8</span>证据：它到底做到了多少</h2>
+
+<h3>最大的一条：1.3B 的 InstructGPT 胜过 175B 的 GPT-3</h3>
+<p>评测方法：让标注员对同一个提示词，比较两个模型的输出，统计「A 被选中」的比例，叫胜率，0.5 是打平。原文所有主图都用「对 175B SFT 的胜率」做基线，因为它的表现大致居中。先看原文 Figure 1：从下到上依次是 GPT &lt; GPT（带少样本前缀） &lt; SFT &lt; PPO ≈ PPO-ptx，三个尺寸都是这个次序。</p>
+<figure class="fig">
+  <span class="tag">原文 Figure 1 · 各模型对 175B SFT 的胜率</span>
+  <img class="orig" style="max-width:min(100%,520px)" src="orig-fig1.png" alt="原文 Figure 1：横轴是模型尺寸 1.3B、6B、175B，纵轴是对 175B SFT 的胜率。从下到上五条线：GPT 约 0.14 到 0.24，GPT（带提示）约 0.23 到 0.41，SFT 约 0.35 到 0.50，PPO 约 0.52 到 0.63，PPO-ptx 约 0.53 到 0.66。1.3B 的 PPO-ptx 和 PPO 已经高于 175B 的 GPT 和 GPT（带提示）。" loading="lazy">
+  <figcaption>这张图在说什么：<b>最左边 1.3B 的 PPO-ptx 和 PPO，高于最右边 175B 的 GPT 和 GPT（带提示）</b>。怎么看：每条线是一种训练方式，误差棒是 95% 置信区间。图源：Ouyang 等 2022 原文。</figcaption>
+</figure>
+
+<figure class="fig">
+  <span class="tag">图 8 · 175B InstructGPT 对各基线的胜率</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 236" role="img" aria-label="四根横条，表示 175B InstructGPT 对不同基线的被偏好比例，50% 处有竖线表示打平。对 175B GPT-3：85 加减 3%。对带少样本前缀的 175B GPT-3：71 加减 4%。对 FLAN：78 加减 4%。对 T0：79 加减 4%。">
+    <text class="sm m" x="20" y="18">被偏好的比例（%），误差为原文 ± 值（95% 置信区间）</text>
+        <line class="mutS dash" x1="400" y1="30" x2="400" y2="196"/>
+    <text class="sm m" x="400" y="214" text-anchor="middle">50% = 打平</text>
+    <text x="20" y="62">对 175B GPT-3</text><rect class="new" x="200" y="46" width="340" height="24" rx="3"/><text class="sm mo tn" x="550" y="63">85 ± 3</text>
+    <text x="20" y="104">对 GPT-3（少样本前缀）</text><rect class="new" x="200" y="88" width="284" height="24" rx="3"/><text class="sm mo tn" x="494" y="105">71 ± 4</text>
+    <text x="20" y="146">对 FLAN</text><rect class="new" x="200" y="130" width="312" height="24" rx="3"/><text class="sm mo tn" x="522" y="147">78 ± 4</text>
+    <text x="20" y="188">对 T0</text><rect class="new" x="200" y="172" width="316" height="24" rx="3"/><text class="sm mo tn" x="526" y="189">79 ± 4</text>
+  </svg>
+  </div>
+  <figcaption>横轴从 0 到 100，条长 = 比例 × 4。数字出自原文 4.1 节和第 1 节。「1.3B 胜过 175B」原文正文没给具体胜率数字，只在摘要、第 1 节和 Figure 1 里说，所以这里不画。</figcaption>
+</figure>
+
+<p><b>这条「1.3B 胜过 175B」该怎么读：</b>它是在作者的提示词分布上、由作者的标注员评出来的，不是「1.3B 在所有任务上都比 175B 强」。两者的架构和预训练数据相同，差别只在是否用人类数据微调。所以它说明的是：<b>倾向的差距，可以大到压过 100 倍的参数量差距</b>。能力（比如知识量）的差距并没有被抹平。（后一句是我补充的。）</p>
+<p>两个公平性检查：①训练提示词是为 InstructGPT 设计的，可能对 GPT-3 不利，所以另外在「提交给 GPT-3 模型的提示词」上也评，结果没有明显变化；②没参与训练数据的标注员（held-out）的偏好与训练标注员相似，InstructGPT 仍大幅胜过 GPT-3，说明不是只记住了训练标注员的口味。</p>
+
+<h3>公开 NLP 数据集的指令微调不够：FLAN、T0</h3>
+<p>FLAN、T0 比默认 GPT-3 好，和「挑了好前缀的 GPT-3」差不多，<b>比 SFT 还差</b>（InstructGPT 对它们的胜率见图 8）。作者给的两个原因：公开数据集偏向容易自动评分的任务，而这类任务在真实提示词里只占小头；公开数据集也很难做到真实用户输入的多样性。他们也提醒：最全面的指令跟随模型会把两类数据结合起来。</p>
+
+<h3>真实性有改善，毒性和偏见没有同样的好消息</h3>
+<figure class="fig">
+  <span class="tag">图 9 · 编造变少；礼貌时毒性变少；要求「有毒」时更听话</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 262" role="img" aria-label="左侧两根竖条表示封闭域任务里的幻觉率：GPT-3 是 41%，InstructGPT 是 21%。右侧三行是毒性结果。指令要求尊重地回答：InstructGPT 的毒性比 GPT-3 低，约少 25%。不加指令：优势消失，与 GPT-3 差不多。指令要求有毒：InstructGPT 比 GPT-3 毒得多。底部一行：偏见指标 Winogender 和 CrowS-Pairs 上没有显著改善。">
+    <text class="sm m" x="20" y="18">封闭域任务里「编造输入里没有的信息」的比例</text>
+    <path class="ln" d="M30 190 H270"/>
+    <rect class="old" x="60" y="70" width="60" height="120" rx="3"/><text class="b mo to" x="90" y="62" text-anchor="middle">41%</text><text class="sm" x="90" y="208" text-anchor="middle">GPT-3</text>
+    <rect class="new" x="170" y="130" width="60" height="60" rx="3"/><text class="b mo tn" x="200" y="122" text-anchor="middle">21%</text><text class="sm" x="200" y="208" text-anchor="middle">InstructGPT</text>
+    <text class="sm m" x="320" y="18">毒性（RealToxicityPrompts）</text>
+    <rect class="newT" x="320" y="30" width="340" height="40" rx="6"/><text class="sm b tn" x="332" y="48">指令要求「尊重地回答」</text><text class="sm" x="332" y="63">InstructGPT 比 GPT-3 约少 25% 的毒性输出</text>
+    <rect class="softS" x="320" y="80" width="340" height="40" rx="6"/><text class="sm b" x="332" y="98">不加指令</text><text class="sm" x="332" y="113">优势消失，和 GPT-3 差不多</text>
+    <rect class="oldT" x="320" y="130" width="340" height="40" rx="6"/><text class="sm b to" x="332" y="148">指令要求「有毒」</text><text class="sm" x="332" y="163">InstructGPT 比 GPT-3 毒得多（更听话）</text>
+    <rect class="oldT" x="320" y="180" width="340" height="40" rx="6"/><text class="sm b to" x="332" y="198">偏见（Winogender、CrowS-Pairs）</text><text class="sm" x="332" y="213">没有显著改善；PPO-ptx 与 GPT-3 相近</text>
+    <text class="sm m" x="20" y="250">21% 对 41% 出自原文第 1 节；约 25% 出自原文摘要；其余是 4.2 节、5.3 节和附录 E 的描述，不是数值。</text>
+  </svg>
+  </div>
+  <figcaption>怎么看这张图：左边是「它被奖励不要编造」之后学到的习惯，不是学会了新的事实知识，它还是同一个 GPT-3 的知识库（我补充的）。右边最重要的读法是<b>对齐不等于无害</b>：本文的对齐是对齐到「用户指令加标注员偏好」，用户指令有害时，更对齐的模型会更好地执行它。</figcaption>
+</figure>
+<p>TruthfulQA 上，原文第 1 节说「又真实又有信息」的比例约为 GPT-3 的两倍，4.2 节则说人评下是「小而显著的改善」，两处措辞不同。原文致谢还说，Owain Evans 和 Stephanie Lin 指出自动的 TruthfulQA 指标夸大了 PPO 模型的提升，所以不宜把「约两倍」当稳妥读数，以 Figure 6 的人评为准。例外：1.3B 的 PPO-ptx 比同规模 GPT-3 略差。</p>
+
+<h3>对齐税：补回大部分，没补回全部</h3>
+<p>第 6 节已经讲过机制：纯 PPO 在 SQuAD、DROP、HellaSwag、翻译上退步，PPO-ptx 补回大部分，HellaSwag 上超过 GPT-3，DROP、SQuADv2、翻译仍落后。怎么读：对齐可以做到低税，但不是零税。</p>
+<p><b>三个结论收在这里：</b>人类反馈比单纯放大更能让模型听话；改善集中在「指令遵循」和「少编造」，不包括偏见；纯 PPO 会退步，要靠预训练混合补。</p>
+
+
+<!-- ================= 9 ================= -->
+<h2 id="s9"><span class="no">9</span>局限和后来</h2>
+<p><b>对齐给谁：这是全文最重要的反思（原文 5.2 节）。</b>所谓「人类偏好」，在本文里被实现成：①约 40 名标注员的示范和偏好，主要是住在美国或东南亚、说英语的外包人员，他们彼此在很多例子上不一致（一致率约 73%）；②研究者的偏好，因为是研究者写了标注说明并在聊天室里回答边界问题；③API 客户的偏好，因为训练提示词来自客户；④而 OpenAI 的客户并不代表所有用户。作者的原话大意：本文「不是在声称研究者、标注员或客户是偏好的正确来源」，「不可能训练出一个同时对齐所有人偏好的系统」。</p>
+<p><b>更听话也包括听坏话。</b>5.3 节说，最大的局限也许是模型大多数时候会遵循用户指令，即使可能导致现实中的伤害（图 9 右）。<b>模型仍会犯简单错误：</b>顺着带假前提的指令说，简单问题也过度含糊，多约束指令表现下降。作者推测前两点来自标注员奖励「认知上的谦逊」和训练集里假前提的提示词太少，这是推测，不是已证。另外大多数比较只由 1 名标注员标注。</p>
+
+<figure class="fig">
+  <span class="tag">图 10 · 对齐的算力账：和预训练比，按真实比例画（175B）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 186" role="img" aria-label="三根横条按真实比例，单位是 petaflops/s-days。GPT-3 预训练 3,640，最长。175B PPO-ptx 训练 60，约为预训练的 1.6%，条很短。175B SFT 训练 4.9，约为 0.13%，几乎看不见。">
+    <text class="sm m" x="20" y="18">训练 175B 模型的算力（petaflops/s-days），条长按真实比例</text>
+    <text x="20" y="56">GPT-3 预训练</text><rect class="old" x="150" y="40" width="460" height="22" rx="3"/><text class="sm mo" x="620" y="56" style="font-size:10px">3,640</text>
+    <text x="20" y="100">PPO-ptx</text><rect class="new" x="150" y="84" width="7.6" height="22" rx="1"/><text class="sm mo tn" x="168" y="100">60（约 1.6%）</text>
+    <text x="20" y="144">SFT</text><rect class="new" x="150" y="128" width="1.5" height="22" rx="0.5"/><text class="sm mo tn" x="162" y="144">4.9（约 0.13%）</text>
+    <text class="sm m" x="20" y="176">占比是我验算的：60 / 3,640 = 0.0165；4.9 / 3,640 = 0.00135。</text>
+  </svg>
+  </div>
+  <figcaption>怎么看这张图：对齐比预训练便宜得多。作者的结论带限定语：对我们客户的自然语言任务分布而言，增加对现有语言模型的对齐投入，比训练更大的模型更划算；「RLHF 比把模型放大 100 倍更有效」。我补充：原文只给了算力，没给标注费用，所以「数据成本也很小」没法核对，这个比较也不含推理成本。</figcaption>
+</figure>
+
+<p><b>后来：</b>作者自己指出的方向包括对抗式数据收集、让模型有时拒绝请求、更高效的反馈形式（编辑回答、写自然语言批评）、可以按特定群体偏好调整的模型。后世的情况，以下是我凭一般知识的说法，部分待核实：这套「SFT → 偏好数据 → 奖励模型 → 强化学习」的骨架成了聊天助手后训练的常见做法；也出现了绕开显式强化学习的变体（如 DPO，2023）、用 AI 代替人产生偏好标注的做法；「对齐给谁」今天仍是开放问题。</p>
+
+
+<!-- ================= 附录 ================= -->
+<h2 id="after">附录 · 想深入再看</h2>
+<p>下面每一块都默认折叠，标题里写明了对应的原文章节；正文用不到它们。其中标「我补充」的，是原文之外我加的说明，标「待核实」的是我没有核对清楚的。</p>
+
+<details class="ext"><summary>A · 公式和符号表（原文 3.5 节 Eq. 1、Eq. 2）</summary>
+<p><b>式 0：监督微调的损失</b>（和预训练同一种形式，只是数据换成示范）：</p>
+<div class="formula">loss = −Σ<sub>t</sub> log P<sub>θ</sub>( 示范回答的第 t 个词 | 提示词, 前面的词 )</div>
+<p><b>式 1：奖励模型的成对损失</b></p>
+<div class="formula">loss(θ) = − (1 / C(K,2)) · E<sub>(x, y<sub>w</sub>, y<sub>l</sub>) ~ D</sub> [ log σ( r<sub>θ</sub>(x, y<sub>w</sub>) − r<sub>θ</sub>(x, y<sub>l</sub>) ) ]<span class="fsrc">（原文 Eq. 1）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>是什么</th></tr></thead>
+  <tbody>
+    <tr><td>y<sub>w</sub>、y<sub>l</sub></td><td>同一提示词下，被标注员排得更靠前（winner）和更靠后（loser）的两个回答</td></tr>
+    <tr><td>r<sub>θ</sub>(x, y<sub>w</sub>) − r<sub>θ</sub>(x, y<sub>l</sub>)</td><td>赢家与输家的分数差；差越大，RM 越肯定赢家更好</td></tr>
+    <tr><td>σ(z) = 1 / (1 + e<sup>−z</sup>)</td><td>sigmoid，把实数变成 (0,1) 的概率，σ(0) = 0.5</td></tr>
+    <tr><td>1 / C(K,2) 与 E</td><td>对这个提示词下的所有 C(K,2) 对取平均</td></tr>
+  </tbody>
+</table></div>
+<p>分数差被当作「人选赢家」的对数几率，P(赢家被选中) = σ(分数差)；损失是标准的二分类交叉熵（与统计学里的 Bradley–Terry 模型相同，见 015、017，原文本篇未用此名）。RM 只关心差，所以分数没有零点；原文加了一个偏置，使标注员示范的平均得分为 0。</p>
+<p><b>式 2：带 KL 惩罚和预训练混合的 RL 目标</b></p>
+<div class="formula">objective(φ) = E<sub>(x,y) ~ D<sub>π_RL</sub></sub> [ r<sub>θ</sub>(x,y) − β · log( π<sub>RL</sub>(y|x) / π<sub>SFT</sub>(y|x) ) ]<br>　　　　　　 + γ · E<sub>x ~ D_pretrain</sub> [ log π<sub>RL</sub>(x) ]<span class="fsrc">（原文 Eq. 2）</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>是什么</th></tr></thead>
+  <tbody>
+    <tr><td>φ</td><td>RL 策略 π<sub>RL</sub> 的参数（被优化的对象）</td></tr>
+    <tr><td>D<sub>π_RL</sub></td><td>（提示词 x，回答 y）的分布：x 取自 RL 提示词集，y 由当前策略采样</td></tr>
+    <tr><td>D_pretrain</td><td>预训练语料（训练 GPT-3 的那份数据，附录 C.4）</td></tr>
+    <tr><td>log π<sub>RL</sub>(x)</td><td>策略对整段预训练文本的对数似然，就是普通语言建模损失的相反数</td></tr>
+    <tr><td>π<sub>SFT</sub></td><td>PPO 的初始化模型（2 个 epoch 的 SFT 加 10% 预训练混合），不是 16 个 epoch 的对比基线</td></tr>
+    <tr><td>r<sub>θ</sub></td><td>固定不动的 RM</td></tr>
+    <tr><td>β = 0.02，γ = 27.8</td><td>KL 惩罚强度与预训练梯度的系数；γ = 0 就是纯 PPO</td></tr>
+  </tbody>
+</table></div>
+<p>实现（附录 C.4）：每个小批先算 PPO 梯度，再算预训练梯度，两者累加到同一个梯度缓冲区，预训练梯度乘以 γ。我补充（示意，非原文）：若每股梯度按样本数取平均，预训练梯度的权重是 PPO 的 27.8 倍；若按样本数求和，则约 8 × 27.8 ≈ 222 倍。原文没说是哪一种，也没解释为什么 γ 这么大。我推测是预训练文本上模型已经拟合得好，那一项梯度本来很小，需要放大才能与 PPO 抗衡，待核实。</p>
+</details>
+
+<details class="ext"><summary>B · 概念注解（对齐、强化学习、KL、PPO、评测口径；原文第 1、3.5、3.6 节）</summary>
+<p><b>对齐与 HHH。</b>原文借用 Askell 等（2021，017 篇）的三条标准。<b>有益</b>：帮用户完成任务，指令不清时从示例或格式推断意图，主指标是标注员偏好评分。<b>诚实</b>：不编造、不误导；但原文承认无法测模型的「信念」，退而测真实性（封闭域任务里的编造率、TruthfulQA）。<b>无害</b>：不对人或环境造成身体、心理、社会伤害，用一组代理指标：客服场景是否恰当、是否贬低受保护群体、是否含性或暴力内容，再加 RealToxicityPrompts、CrowS-Pairs。</p>
+<p><b>为什么不能把分数直接当损失。</b>回答是逐词采样出来的，采样这一步离散、随机，梯度传不过去，RM 又是对整条回答打分。策略梯度只需要能算 log π(y|x)：奖励高的回答，把生成它各个词的概率往上推；奖励低的往下推。原文说环境是 bandit，是从奖励一侧看；从 PPO 的实现一侧看，每个 token 是一步，KL 惩罚逐 token 扣，价值函数逐 token 估（我补充，两种说法不矛盾）。</p>
+<p><b>KL 惩罚里的「每个 token」。</b>回答的对数概率是各词对数概率之和，所以对数比也是逐词的和，每生成一个词就扣一点。β = 0.02 下，扣掉 1 分奖励需要总对数比约 50，是一根在近处几乎不拉、对又长又漂得远的回答才明显收紧的绳子（示意）。KL 系数取 0 或 2 都很差，最佳值约在 0.01 到 0.02（附录 E.7）。</p>
+<p><b>PPO 与价值函数。</b>PPO 的「近端」是每次更新不让新策略离旧策略太远，clip ratio = 0.2 就是这个限度；价值函数估计「这一步之后平均能拿多少奖励」，当基线降方差，本文从 6B RM 初始化它。细节见 016 篇。</p>
+<p><b>评测口径。</b>胜率：两个模型的输出让标注员比较，统计「A 被选中」的比例。Likert：标注员对输出打 1 到 7 分。幻觉：本文特指封闭域任务（摘要、封闭域问答）里输出包含输入里没有的信息。TruthfulQA：专门设计成人们常有误解、模型容易模仿错误答案的问题。RealToxicityPrompts：一批可能引出毒性续写的开头，用 Perspective API 自动打分，也让人评。Winogender、CrowS-Pairs：成对的句子，一句带刻板印象、一句不带，比较模型给两句的概率；熵越低，越肯定地偏向某一句，也就越有偏（完全无偏时二选一的熵是 1 比特，90% 偏向某一句时是 0.469 比特）。</p>
+</details>
+
+<details class="ext"><summary>C · 前面各篇的概念，在本篇用到了哪里（原文第 1、2、3 节）</summary>
+<ul>
+<li><b>Transformer、解码器、掩码</b>（004、006）：每个模型都是 GPT-3 架构；RM 只是把最后一层换成输出标量。</li>
+<li><b>预训练加微调</b>（006）：整套框架；PPO-ptx 里「混入语言模型目标」的思路在 006 的辅助目标里出现过，作用对象不同（那里是任务文本，这里是原始预训练语料）。</li>
+<li><b>提示词与少样本</b>（007、011）：本文的「GPT-3（prompted）」基线；前缀由作者之一在「前缀竞赛」里挑出。</li>
+<li><b>规模律、Chinchilla</b>（009、010）：本文用「对齐算力对预训练算力」的对比，原文没有引用 Kaplan 或 Hoffmann，1.6% 是我算的。</li>
+<li><b>Adam</b>（005）：附录 C 写明所有模型都用 Adam，β1 = 0.9，β2 = 0.95。</li>
+<li><b>能力不足与对齐失败的区别</b>（012）：本文的「错位」属于后者。</li>
+<li><b>人类偏好、强化学习、成对比较</b>（015、016、017）：强化学习的词汇与 Bradley–Terry 模型见 015；PPO 见 016；HHH 与对齐税的早先测量见 017。</li>
+</ul>
+</details>
+
+<details class="ext"><summary>D · 数据与标注员的更多细节（原文 3.2、3.4 节，附录 A、B）</summary>
+<p><b>提示词的清理与划分。</b>共享长前缀的提示词去重；每个用户 ID 最多 200 条；训练、验证、测试按用户 ID 划分；训练集过滤个人隐私信息（PII）。早期冷启动让标注员写三类：Plain（任意任务，保多样性）、Few-shot（一条指令配多组示例）、User-based（按 API 候补名单申请里写的用例）。</p>
+<p><b>标注员筛选（附录 B.1）。</b>四个标准：①敏感言论标记与研究者的一致程度；②对多个回答排序与研究者的一致程度；③敏感提示词的示范写作（研究者按 1 到 7 分评）；④自述对哪些话题或文化群体敢于判断敏感言论（因法律原因不能按人口统计特征招聘）。最终选在所有标准上都表现好的人，实际是主观挑选，但有软门槛：敏感言论标记和比较的一致率 75%，示范得分 6/7。</p>
+<p><b>管理与沟通。</b>有入职培训，每个任务有书面说明，共享聊天室随时答疑（5.2 节说，标注员的偏好因此部分来自研究者）。作者有意保持团队很小，便于高带宽沟通。一致率：训练标注员之间 72.6 ± 1.5%，held-out 标注员之间 77.3 ± 1.3%（他们没有筛选测试）；对照 Stiennon 等摘要工作里研究者之间的 73 ± 4%。</p>
+<p><b>构成。</b>19 位自愿匿名回答者里，75% 在 35 岁以下，国籍以菲律宾、孟加拉国、美国为主，多数认为任务有趣、报酬公平。</p>
+<p><b>训练与评测优先级不同。</b>训练时有益优先，最终评测时真实和无害优先。训练标准与评测标准不同只影响读数；模型会听从有害请求的原因，是训练时有益优先和 5.4 节说的「允许生成」。</p>
+</details>
+
+<details class="ext"><summary>E · 训练设置与超参数（原文 3.5、5.1 节，附录 C）</summary>
+<div class="tbl"><table>
+  <thead><tr><th>项目</th><th>数字</th><th>出处</th></tr></thead>
+  <tbody>
+    <tr><td>SFT（对比基线）</td><td>16 个 epoch，余弦学习率衰减，residual dropout 0.2；用 RM 分数选模型</td><td>3.5 节、附录 C.1</td></tr>
+    <tr><td>PPO 的初始化模型</td><td>2 个 epoch 的 SFT，同时混入 10% 预训练数据</td><td>附录 C.3</td></tr>
+    <tr><td>RM</td><td>6B；1 个 epoch；批大小 64 个提示词，一批最多 64 × C(9,2) = 2,304 对；平局丢弃</td><td>3.5 节、附录 C.2</td></tr>
+    <tr><td>RM 泛化</td><td>5 折交叉验证：没见过的组 69.6 ± 0.9%，训练组内 72.4 ± 0.4%</td><td>4.1 节、附录 E.2</td></tr>
+    <tr><td>RL 回合数</td><td>256k（约 31k 个提示词）</td><td>附录 C.4</td></tr>
+    <tr><td>批大小 / 小批</td><td>512 / 64</td><td>附录 C.4</td></tr>
+    <tr><td>KL 系数 β</td><td>0.02</td><td>附录 C.4</td></tr>
+    <tr><td>PPO clip</td><td>0.2</td><td>附录 C.4</td></tr>
+    <tr><td>预训练梯度系数 γ</td><td>27.8（所有规模）</td><td>附录 C.4、E.6</td></tr>
+    <tr><td>优化器</td><td>Adam，β1 = 0.9，β2 = 0.95</td><td>附录 C</td></tr>
+    <tr><td>175B SFT 算力</td><td>4.9 petaflops/s-days</td><td>5.1 节</td></tr>
+    <tr><td>175B PPO-ptx 算力</td><td>60 petaflops/s-days</td><td>5.1 节</td></tr>
+    <tr><td>GPT-3 预训练算力</td><td>3,640 petaflops/s-days</td><td>5.1 节（引 Brown 等 2020）</td></tr>
+  </tbody>
+</table></div>
+<p>附录 E.8 到 E.11 说 PPO 的稳定性依赖大量调参（我补充）：预训练数据比例为 4 时预训练损失会上升，32 时更好但训练时间成倍增加，最终选 8。不要以为这一套开箱即用。</p>
+</details>
+
+<details class="ext"><summary>F · 泛化、简单错误与偏见的结果（原文 4.2、4.3 节）</summary>
+<p><b>泛化（定性，没有量化）：</b>模型能遵循非英语指令（虽然常用英语回答），能对代码做摘要、回答代码问题；这些在微调数据里是极小的少数。作者的解读：对齐的方法可能泛化到人类没有直接监督的输入上，但需要研究这种泛化随能力增长是否保持。GPT-3 也能做这些，但需要更仔细的提示，通常不遵从指令。</p>
+<p><b>仍会犯的简单错误：</b>顺着带假前提的指令说；简单问题也说「没有唯一答案」；多约束指令（如「列 10 部 1930 年代以法国为背景的电影」）表现下降。</p>
+<p><b>偏见：</b>作者的描述是「偏见的模式并不清楚；似乎被指令训练过的模型对自己的输出更有把握，无论输出是否带刻板印象」。要求「尊重」时熵反而更低（更偏向某一句）。</p>
+<p><b>当给模型一个「不确定时说 I have no comment」的提示：</b>PPO 模型倾向于真实但无信息，而不是自信地说错话。</p>
+</details>
+
+<details class="ext"><summary>G · 作者承认的局限与我补充的局限（原文 5.2 到 5.4 节）</summary>
+<p><b>5.3 节方法学局限：</b>约 40 名标注员显然不能代表所有使用者；大多数比较只由 1 名标注员标注，多人标注才能发现分歧大的地方；有分歧时对齐到平均标注员偏好可能并不可取，例如对少数群体影响更大的文本，也许应更看重该群体标注员的偏好。</p>
+<p><b>5.4 节开放问题（节选）：</b>对抗式数据收集；与过滤预训练数据结合；与 WebGPT 类方法结合；让模型有时拒绝指令；比较之外更高效的反馈形式；其他算法如专家迭代、更简单的行为克隆；以及对齐到指令、意图、显式意图、显示偏好、理想偏好、利益还是价值之间的差别（引 Gabriel 2020），本文为简单起见对齐「推断的用户意图」。</p>
+<p><b>我补充的局限：</b>①评委与训练信号同源：主指标是标注员偏好，和 RM 学的是同一批人的口味，虽有 held-out 标注员检验，但来自同一批供应商，且原文自己写的是「preliminary」。②只汇报平均效应，没有按用户群体、语言、领域拆分；非英文只有定性例子。③RM 本身的质量只用成对准确率（约 70%）衡量，对一个只有约 73% 标注员一致率的任务这已接近上限，但也说明 RM 的分数含有大量噪声，过度优化的风险是真实的。</p>
+</details>
+
+<details class="ext"><summary>H · 当时的背景与后来的发展（原文第 2 节；其余为后世，多数待核实）</summary>
+<p><b>当时（2022 年初）：</b>GPT-3 已通过 API 开放近两年，OpenAI 因此有了真实用户提示词，这是本文数据的独特优势。RLHF 起源于模拟机器人和 Atari 游戏（Christiano 等 2017，015 篇），随后用于文本摘要（Ziegler 等 2019、Stiennon 等 2020）。本文自述方法沿用 Ziegler 等和 Stiennon 等，是 RLHF 在广泛语言任务上的直接应用。FLAN（Wei 等 2021）和 T0（Sanh 等 2021）在本文之前不到半年（发表月份待核实）。</p>
+<p><b>后世（我凭一般知识，待核实）：</b>OpenAI 2022 年 11 月发布 ChatGPT 时称其用与 InstructGPT 相同的方法训练，只是数据收集设置略有不同；Anthropic 的有益无害 RLHF 工作、Llama 2 也采用了类似流程。DPO（2023）直接用成对偏好数据改策略，不单独训奖励模型、不跑 PPO（原文 5.4 节提到的是更简单的行为克隆，与 DPO 并非同一方法，不要当作预言）。近年的推理模型训练在数学、代码等有标准答案的任务上用程序判定的奖励。「预训练是能力，后训练是倾向」「比较比打分容易」「用与参考模型的距离作正则」「对齐税」这些思路今天仍在；但部分推理模型的强化学习已经去掉了 KL 项，所以别把 KL 当默认配置。批评的声音也有：RLHF 可能让模型迎合标注员（谄媚）、削弱输出多样性（后世争论，非本文结论）。</p>
+</details>
+
+<details class="ext"><summary>I · 前后篇衔接，以及从 001 到 018 的整条线</summary>
+<p><b>相对 011：</b>不改架构、不增参数，只改训练目标和数据，就在人类偏好评测上让 1.3B 超过 175B；把「靠提示词碰运气」变成「模型本身稳定地倾向听话」。对齐税这个概念及其测量并非本文首创，017 已测过：小模型付税，大模型几乎不付；本文是在 RLHF 的设定下量化了它，并提出 PPO-ptx 作补救。</p>
+<p><b>一句话主线（我的归纳，不是各篇原话）：</b>先学会把词变成向量并预测下一个词（001）；再学会把一个序列变成另一个序列（002），并让它回头看（003）；然后去掉循环，只留注意力（004），训练可以并行、模型可以放大；于是预训练一个大语言模型再微调（006），发现它几乎不用微调就能做事（007、011），也发现规模与算力的配置有规律（009、010）；其间有各种配套（005 优化器、008 双向、012 代码、013 检索、014 低秩适配）；最后发现能力够了、倾向不对，于是用人类偏好加强化学习（015、016、017，到 018）把它调成助手。</p>
+<div class="tbl"><table>
+  <thead><tr><th>阶段</th><th>篇目</th><th>留下的问题</th></tr></thead>
+  <tbody>
+    <tr><td>把文字变成数</td><td><a href="../001-nplm/index.html">001</a></td><td>只能看固定窗口</td></tr>
+    <tr><td>序列到序列</td><td><a href="../002-seq2seq/index.html">002</a>、<a href="../003-bahdanau-attention/index.html">003</a></td><td>RNN 串行，难并行</td></tr>
+    <tr><td>去掉循环</td><td><a href="../004-transformer/index.html">004</a>、<a href="../005-adam/index.html">005</a></td><td>每个任务都要标注数据</td></tr>
+    <tr><td>预训练范式</td><td><a href="../006-gpt-1/index.html">006</a>、<a href="../007-gpt-2/index.html">007</a>、<a href="../008-bert/index.html">008</a></td><td>仍需为每个任务微调；单向和双向的取舍</td></tr>
+    <tr><td>规模</td><td><a href="../009-scaling-laws/index.html">009</a>、<a href="../010-chinchilla/index.html">010</a>、<a href="../011-gpt-3/index.html">011</a></td><td>规模不改变目标；用起来靠写提示词</td></tr>
+    <tr><td>工程与扩展</td><td><a href="../012-codex/index.html">012</a>、<a href="../013-rag/index.html">013</a>、<a href="../014-lora/index.html">014</a></td><td>模型有能力，但不一定听话</td></tr>
+    <tr><td>对齐</td><td><a href="../015-human-preferences/index.html">015</a>、<a href="../016-ppo/index.html">016</a>、<a href="../017-alignment-lab/index.html">017</a>、018</td><td>对齐给谁？怎么评估诚实？超过人类评判能力的任务怎么办？</td></tr>
+  </tbody>
+</table></div>
+<p>最后一列里「对齐给谁」不是算法能回答的问题，这是这条线当前的终点（原文 5.2 节）。</p>
+</details>
+
+<details class="ext"><summary>J · 疑点与待核实（只记，不下结论）</summary>
+<ul>
+<li>TruthfulQA 的「约两倍」（第 1 节）和「小而显著的改善」（4.2 节）措辞不同，原文没有说明评测子集和提示词是否相同；读数请以 Figure 6 为准。</li>
+<li>「1.3B 的 InstructGPT 胜过 175B 的 GPT-3」在正文里没有给具体胜率数字，只在摘要、第 1 节、Figure 1 里说。</li>
+<li>γ = 27.8 为什么这么大，原文没解释；梯度是按样本数取平均还是求和，原文没说。</li>
+<li>后世部分的说法（ChatGPT、Llama 2、DPO、推理模型等）我没有逐条核对，已标「待核实」。</li>
+<li>论文后来是否发表于 NeurIPS 2022，我没有核对。</li>
+</ul>
+</details>
+
+
+<footer>
+  AI 论文解读 · 018 · 原文：Long Ouyang, Jeff Wu, Xu Jiang, et al. <i>Training language models to follow instructions with human feedback.</i> arXiv:2203.02155, 2022.<br>
+  图中标「示意」的数字是为了讲清机制设定的例子，都验算过。实验数字出自原文第 1、4 节与附录 C、Table 6；原文 Table 1、Figure 1、Figure 2 的图源为原文。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>

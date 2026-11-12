@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PPO 图解</title>
+<meta name="description" content="Schulman 等 2017《Proximal Policy Optimization Algorithms》图解：在目标函数里直接裁剪概率比，让同一批数据可以放心学很多轮，既比 TRPO 简单，又比普通策略梯度省数据。">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 单栏长文，像一本认真做过的笔记；正文 680px，图与正文同宽，每张图都是一张白卡片。
+   蓝 = 本文（目标里自带裁剪、同一批数据多学几轮），赭 = 要被替代的旧做法（一批数据只走一步、复杂的约束限步）。全页只用这两种颜色说话。 */
+:root{
+  --bg:#F5F6F8; --card:#FFFFFF; --soft:#ECEFF4; --ink:#141821; --mut:#5E6675; --line:#D3D8E1;
+  --new:#2F5BD3; --new-tint:#E2E9FB; --old:#C07A1E; --old-tint:#F7EAD7; --on:#FFFFFF;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1117; --card:#161A22; --soft:#1E232D; --ink:#E7EAF0; --mut:#9AA3B2; --line:#2F3644;
+  --new:#6688F0; --new-tint:#1C2746; --old:#C4852C; --old-tint:#33261A; --on:#0E1117; color-scheme:dark; }
+
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.85;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding-block:56px 96px}
+h1,h2,h3,h4{font-family:var(--serif);text-wrap:balance;margin:0;line-height:1.3}
+h1{font-size:clamp(40px,8vw,64px);font-weight:900;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:900;margin-top:88px;padding-top:24px;border-top:2px solid var(--ink)}
+h3{font-size:22px;font-weight:600;margin-top:52px}
+h4{font-size:17px;font-weight:600;margin-top:32px;font-family:var(--sans)}
+h2 .no,h3 .no{font-family:var(--mono);font-weight:600;color:var(--mut);font-size:.62em;margin-right:.6em;vertical-align:.18em}
+p{margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.lede{font-size:19px;line-height:1.8;margin-top:22px}
+.lede b{color:var(--new)}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;font-size:13.5px;color:var(--mut)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.sw.n{background:var(--new)} .sw.o{background:var(--old)}
+b.n{color:var(--new)} b.o{color:var(--old)}
+code,.mono{font-family:var(--mono);font-size:.9em}
+.formula{font-family:var(--mono);font-size:14.5px;background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:12px 16px;overflow-x:auto;white-space:nowrap;margin:16px 0}
+ul,ol{padding-left:1.3em;margin:12px 0} li{margin:6px 0}
+.toc{margin-top:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:2px 24px;font-size:14.5px}
+.toc a{color:var(--ink);text-decoration:none;display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+.toc a span{font-family:var(--mono);color:var(--mut);min-width:2em}
+.toc a:hover{color:var(--new)}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.note{border-left:3px solid var(--old);padding:4px 0 4px 16px;margin:20px 0;color:var(--ink)}
+.note .lab{font-size:12.5px;letter-spacing:.08em;color:var(--old);font-weight:700;display:block}
+.punch{font-family:var(--serif);font-weight:900;font-size:22px;line-height:1.6;margin:28px 0;text-wrap:balance}
+.punch em{font-style:normal;color:var(--new)}
+.tbl{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;line-height:1.55;min-width:520px}
+th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th:first-child,td:first-child{white-space:nowrap}
+th:first-child,td:first-child{padding-right:20px}
+th{font-weight:700;font-size:13px;color:var(--mut);border-bottom:1.5px solid var(--ink)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* figures */
+.fig{margin:28px 0;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px 18px 14px}
+.fig .sv{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:560px;height:auto}
+.fig figcaption{font-size:13.5px;color:var(--mut);line-height:1.7;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+.fig figcaption b{color:var(--ink)}
+.fig .tag{font-family:var(--mono);font-size:11.5px;color:var(--mut);letter-spacing:.08em;display:block;margin-bottom:8px}
+
+/* svg vocabulary */
+.d text{fill:var(--ink);font-family:var(--sans);font-size:13px}
+.d .m{fill:var(--mut)} .d .sm{font-size:11.5px} .d .lg{font-size:17px;font-weight:700} .d .xl{font-size:22px;font-weight:700}
+.d .mo{font-family:var(--mono)} .d .b{font-weight:700} .d .ser{font-family:var(--serif);font-weight:900}
+.d .card{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.d .soft{fill:var(--soft)} .d .softS{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.d .ln{stroke:var(--line);fill:none;stroke-width:1.2}
+.d .ink{stroke:var(--ink);fill:none;stroke-width:1.6}
+.d .inkF{fill:var(--ink)}
+.d .mutS{stroke:var(--mut);fill:none;stroke-width:1.4}
+.d .mutF{fill:var(--mut)}
+.d .new{fill:var(--new)} .d .newS{stroke:var(--new);fill:none;stroke-width:2}
+.d .newT{fill:var(--new-tint);stroke:var(--new);stroke-width:1.4}
+.d .old{fill:var(--old)} .d .oldS{stroke:var(--old);fill:none;stroke-width:2}
+.d .oldT{fill:var(--old-tint);stroke:var(--old);stroke-width:1.4}
+.d text.on{fill:var(--on)} .d text.tn{fill:var(--new)} .d text.to{fill:var(--old)}
+.d .ring{stroke:var(--card);stroke-width:2}
+.d .dash{stroke-dasharray:5 4}
+.d .ah{fill:var(--mut)} .d .ahN{fill:var(--new)} .d .ahO{fill:var(--old)}
+.d .hit:hover{opacity:.82}
+
+
+/* 📎 注解（就地解释概念）与 🧭 延伸（原文之外）：都是可跳过的旁支，用盒子圈出边界 */
+.anno,.ext{margin:26px 0;padding:14px 20px 8px;border-radius:12px}
+.anno{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--mut)}
+.ext{background:var(--soft);border:1px dashed var(--mut)}
+.alab{display:block;font-size:13px;font-weight:700;letter-spacing:.04em;color:var(--mut);margin-bottom:2px}
+.anno h4,.ext h4{margin-top:22px}
+.anno .fig{background:var(--bg)}
+.anno .formula{background:var(--bg)}
+.howto{margin-top:40px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px}
+.howto ul{margin:6px 0}
+@media (max-width:520px){ .anno,.ext,.howto{padding:12px 14px 6px} }
+pre.mono{font-family:var(--mono);font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:14px 0}
+
+.fig img.orig{display:block;max-width:100%;height:auto;margin:0 auto;background:#fff;border-radius:6px;padding:8px}
+.fig img.orig.narrow{max-width:320px}
+details.ext>summary{cursor:pointer;font-weight:700;font-size:15px;padding:2px 0 8px;color:var(--ink)}
+details.ext[open]>summary{margin-bottom:6px}
+.formula sub,.formula sup{font-size:.75em}
+.formula .fsrc{font-family:var(--sans);font-size:13px;color:var(--mut);margin-left:2em}
+@media (max-width:600px){.formula .fsrc{display:block;margin:6px 0 0}}
+
+footer{margin-top:96px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mut)}
+@media (max-width:520px){ body{font-size:15.5px} h2{font-size:26px;margin-top:64px} .lede{font-size:17px} .fig{padding:16px 12px 12px} }
+@media (prefers-reduced-motion: reduce){ *{scroll-behavior:auto!important} }
+html{scroll-behavior:smooth}
+</style>
+<link rel="stylesheet" href="../../assets/paper-toc.css?v=4">
+</head>
+<body>
+
+<!-- 共用箭头 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" class="d">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahN" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="ahO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahO" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+</svg>
+<main class="wrap">
+
+
+<header>
+  <nav class="eyebrow" aria-label="站点"><a href="../../index.html" style="color:inherit;text-decoration:none">← AI 论文解读</a>　·　016</nav>
+  <h1 style="margin-top:14px">同一批数据多学几遍，但每一步不许迈太大</h1>
+  <p class="lede">Schulman 等人 2017 年在 OpenAI 写的《Proximal Policy Optimization Algorithms》，就是 PPO。强化学习里，训练一个策略要先让它去玩、采数据，而采数据很贵。普通的策略梯度一批数据只能走一步，多走几步又会把策略学崩。PPO 的做法是：<b>把新旧策略对同一个动作的概率之比限制在 [1−ε, 1+ε] 附近，比值超出去，就不再给奖励。</b>这样同一批数据可以放心地反复训练很多轮，只用普通的一阶梯度下降，就拿到接近 TRPO 的稳定性。后来 InstructGPT 训练语言模型用的优化器，就是它。</p>
+  <div class="meta">
+    <span>John Schulman、Filip Wolski、Prafulla Dhariwal、Alec Radford、Oleg Klimov（OpenAI）· 2017 年 · arXiv 预印本</span>
+    <span class="key"><i class="sw n"></i>蓝色：本文的做法（目标里自带裁剪，同一批数据多学几轮）</span>
+    <span class="key"><i class="sw o"></i>赭色：要被替代的旧做法（一批数据只走一步，或用复杂的约束限步）</span>
+  </div>
+
+  <figure class="fig" style="margin-top:36px">
+    <span class="tag">图 0 · 旧做法一批数据一步，PPO 一批数据学很多步</span>
+    <div class="sv">
+    <svg class="d" viewBox="0 0 680 246" role="img" aria-label="上排赭色三个方框依次连接：采一批数据，走 1 步，扔掉这批数据。下排四个方框依次连接：采一批数据（N 个 actor 各跑 T 步），同一批数据反复学 K 轮，用裁剪目标（变太多就不再加分），旧策略更新为新策略；最后一个方框用虚线箭头回到第一个方框。">
+      <text class="sm m" x="20" y="18">旧做法：一批数据，一步</text>
+      <rect class="oldT" x="20" y="28" width="190" height="52" rx="8"/>
+      <text class="b to" x="115" y="51" text-anchor="middle">采一批数据</text>
+      <text class="sm" x="115" y="68" text-anchor="middle">让当前策略真的玩一遍</text>
+      <line class="oldS" x1="212" y1="54" x2="243" y2="54" marker-end="url(#ahO)"/>
+      <rect class="oldT" x="245" y="28" width="190" height="52" rx="8"/>
+      <text class="b to" x="340" y="51" text-anchor="middle">走 1 步</text>
+      <text class="sm" x="340" y="68" text-anchor="middle">沿着策略梯度</text>
+      <line class="oldS" x1="437" y1="54" x2="468" y2="54" marker-end="url(#ahO)"/>
+      <rect class="oldT" x="470" y="28" width="190" height="52" rx="8"/>
+      <text class="b to" x="565" y="51" text-anchor="middle">扔掉这批数据</text>
+      <text class="sm" x="565" y="68" text-anchor="middle">策略一变，数据就过期</text>
+
+      <text class="sm m" x="20" y="112">PPO：一批数据走几十到几百步，每一步由目标自己拦着</text>
+      <rect class="softS" x="20" y="124" width="140" height="64" rx="8"/>
+      <text class="b" x="90" y="148" text-anchor="middle">采一批数据</text>
+      <text class="sm" x="90" y="168" text-anchor="middle">N 个 actor × T 步</text>
+      <line class="mutS" x1="162" y1="156" x2="188" y2="156" marker-end="url(#ah)"/>
+      <rect class="newT" x="190" y="124" width="140" height="64" rx="8"/>
+      <text class="b tn" x="260" y="148" text-anchor="middle">同一批数据</text>
+      <text class="sm" x="260" y="168" text-anchor="middle">反复学 K 轮</text>
+      <line class="mutS" x1="332" y1="156" x2="358" y2="156" marker-end="url(#ah)"/>
+      <rect class="new" x="360" y="124" width="140" height="64" rx="8"/>
+      <text class="b on" x="430" y="148" text-anchor="middle">用裁剪目标</text>
+      <text class="sm on" x="430" y="168" text-anchor="middle">变太多就不加分</text>
+      <line class="mutS" x1="502" y1="156" x2="528" y2="156" marker-end="url(#ah)"/>
+      <rect class="softS" x="530" y="124" width="140" height="64" rx="8"/>
+      <text class="b" x="600" y="148" text-anchor="middle">旧策略 ← 新策略</text>
+      <text class="sm" x="600" y="168" text-anchor="middle">回到第一步</text>
+      <path class="mutS dash" d="M600 190 V214 H90 V192" marker-end="url(#ah)"/>
+      <text class="sm m" x="345" y="234" text-anchor="middle">下一轮</text>
+    </svg>
+    </div>
+    <figcaption>上排是普通策略梯度的流程，下排是 PPO 的流程（原文 Algorithm 1）。两者只差两处：损失换成裁剪目标，同一批数据重复学 K 轮。</figcaption>
+  </figure>
+
+  <nav class="toc" aria-label="目录">
+    <a href="#s1"><span>1</span>要解决的问题</a>
+    <a href="#s2"><span>2</span>第一步：用概率比量出策略变了多少</a>
+    <a href="#s3"><span>3</span>第二步：裁剪，变得太多就不再奖励</a>
+    <a href="#s4"><span>4</span>第三步：同一批数据学很多轮</a>
+    <a href="#s5"><span>5</span>证据：稳不稳，省不省</a>
+    <a href="#s6"><span>6</span>局限和后来</a>
+    <a href="#after"><span>→</span>附录 · 想深入再看</a>
+  </nav>
+
+  <div class="howto">
+    <span class="alab">怎么读这一页</span>
+    <ul>
+      <li><b>正文只走一条线</b>：一批数据只能走一步，多走又会崩 → 用概率比量出策略变了多少 → 超出区间就不再奖励 → 同一批数据学很多轮 → 每个结论对应哪个实验。只读每节的标题和每段第一句，也能串起来。</li>
+      <li>公式、符号表、策略梯度和优势函数的讲法、裁剪的完整算例、TRPO 和 KL 惩罚变体、GAE、超参数、完整结果表、当时的背景，都在页尾的<b>附录</b>里，默认折叠，标明对应原文第几节。</li>
+      <li>小数字例子都验算过：为讲解设定的标「示意」，按原文规格估算的标「推算」。</li>
+      <li>强化学习的基本概念（智能体、状态、动作、奖励）在 015 <a href="../015-human-preferences/index.html">Human Preferences</a> 讲过，本篇用的 Adam 在 005 <a href="../005-adam/index.html">Adam</a>；PPO 怎么用到语言模型上，见 018 <a href="../018-instructgpt/index.html">InstructGPT</a>。</li>
+    </ul>
+  </div>
+</header>
+
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="no">1</span>要解决的问题</h2>
+<p>先说策略梯度是什么。让当前策略去玩一批，事后看每个动作比平均水平好多少（这叫优势，记作 Â）；好的动作，把它的概率调高，差的调低，调多少看好多少。这个办法很通用，但有一个毛病：<b>每批数据只能走一步。</b>采一批数据很贵，机器人要真的跑一遍，人类标注更贵，走一步就扔掉，太浪费。精确写法见附录 A 式 1、式 2，讲法见附录 B。</p>
+
+<figure class="fig">
+  <span class="tag">图 1 · 三条路线，各卡在哪里</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 248" role="img" aria-label="三行。DQN：在许多简单问题上失灵，也没有被很好理解；在连续控制上没有被证明有效。普通策略梯度：数据效率差，不稳健；一批数据只走一步，走完就扔。TRPO：实现相对复杂；不兼容 dropout，也不兼容策略和价值函数共享参数。底部一行蓝字：作者想要的是可扩展、数据高效、稳健。">
+    <rect class="oldT" x="20" y="30" width="150" height="50" rx="8"/>
+    <text class="b to" x="95" y="60" text-anchor="middle">DQN</text>
+    <text x="190" y="52">在许多简单问题上失灵，也没被很好理解</text>
+    <text class="sm m" x="190" y="70">连续控制上没有被证明有效（原文脚注）</text>
+    <rect class="oldT" x="20" y="94" width="150" height="50" rx="8"/>
+    <text class="b to" x="95" y="124" text-anchor="middle">普通策略梯度</text>
+    <text x="190" y="116">数据效率差，不稳健</text>
+    <text class="sm m" x="190" y="134">一批数据只走一步，走完就扔</text>
+    <rect class="oldT" x="20" y="158" width="150" height="50" rx="8"/>
+    <text class="b to" x="95" y="188" text-anchor="middle">TRPO</text>
+    <text x="190" y="180">实现相对复杂</text>
+    <text class="sm m" x="190" y="198">不兼容 dropout，也不兼容策略和价值共享参数</text>
+    <text class="tn b" x="20" y="238">作者想要的：可扩展，数据高效，稳健（不用为每个任务调超参数）</text>
+  </svg>
+  </div>
+  <figcaption>原文第 1 节开头盘点的三条路线和各自的毛病，引号里的措辞按原文意思转写。</figcaption>
+</figure>
+
+<h3>同一批数据多走几步，策略会崩</h3>
+<p>最直觉的补救是在同一批数据上多走几步。原文说这样做缺乏依据，实践中往往带来过大的策略更新。原因有三层。第一，优势 Â 只对采数据的那个旧策略有效，策略走远之后，它就不准了。第二，一次采样的运气会被反复放大：下图里一个样本被推了四次。第三，强化学习里数据是策略自己产生的，策略变坏，采到的数据更差，学到的更差，没有回头路。</p>
+
+<figure class="fig">
+  <span class="tag">图 2 · 同一个样本反复推，运气被当成了真理（示意，我算的）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 252" role="img" aria-label="五根柱子，表示一个有三个动作的状态里，动作 2 的概率。采样时 0.200；用同一个样本推一步后 0.336；两步 0.473；三步 0.583；四步 0.663。第一根是灰色，后四根是赭色。">
+    <text class="sm m" x="20" y="20">同一个样本（Â 固定为 +1，学习率 0.5）一次次推动作 2 的概率</text>
+    <line class="ln" x1="120" y1="190" x2="640" y2="190"/>
+    <rect class="softS" x="150" y="150" width="50" height="40" rx="3"/>
+    <rect class="old" x="240" y="123" width="50" height="67" rx="3"/>
+    <rect class="old" x="330" y="95" width="50" height="95" rx="3"/>
+    <rect class="old" x="420" y="73" width="50" height="117" rx="3"/>
+    <rect class="old" x="510" y="57" width="50" height="133" rx="3"/>
+    <text class="sm mo" x="175" y="144" text-anchor="middle">0.200</text>
+    <text class="sm mo to" x="265" y="117" text-anchor="middle">0.336</text>
+    <text class="sm mo to" x="355" y="89" text-anchor="middle">0.473</text>
+    <text class="sm mo to" x="445" y="67" text-anchor="middle">0.583</text>
+    <text class="sm mo to" x="535" y="51" text-anchor="middle">0.663</text>
+    <text class="sm m" x="175" y="210" text-anchor="middle">采样时</text>
+    <text class="sm m" x="265" y="210" text-anchor="middle">推 1 步</text>
+    <text class="sm m" x="355" y="210" text-anchor="middle">推 2 步</text>
+    <text class="sm m" x="445" y="210" text-anchor="middle">推 3 步</text>
+    <text class="sm m" x="535" y="210" text-anchor="middle">推 4 步</text>
+    <text class="sm m" x="20" y="240">起点是三个动作的概率 (0.7, 0.2, 0.1)，采到了动作 2。其余两个动作一路被压下去。</text>
+  </svg>
+  </div>
+  <figcaption>怎么看：每根柱子是动作 2 的概率。这个动作只是这一次运气好，用同一个样本再推，噪声就被一遍遍当成信号。</figcaption>
+</figure>
+
+<p>如果干脆把「概率比乘优势」直接最大化（原文式 6，下一节讲），也会这样：优势为正的样本，目标随比值线性增长，没有上限，优化器会一直把比值往上推。原文 Table 1 里，不加任何限制的这一行平均归一化得分是 −0.39，比随机策略还差（见第 5 节）。</p>
+
+<h3>TRPO 管得住，但太复杂</h3>
+<p>此前的解法是 TRPO：要求新旧策略的平均 KL 散度不超过 δ，在这个「信赖域」里最大化目标。它有理论支撑，效果也好。代价是要把目标做线性近似、把约束做二次近似，再用共轭梯度解方程，代码量大，不能直接套 Adam 这类一阶优化器，原文还说它不兼容 dropout 和策略与价值函数共享参数的网络。细节见附录 D。</p>
+
+<figure class="fig">
+  <span class="tag">图 3 · 同样是限步：TRPO 写成约束，PPO 写进目标</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 254" role="img" aria-label="左列赭色，TRPO：目标做线性近似，KL 约束做二次近似，用共轭梯度解方程 F x = g，再做一次线搜索（来自 TRPO 原文）。右列蓝色，PPO：目标里自带裁剪，越界的样本梯度为 0，用普通 SGD 或 Adam 就能解，只比普通策略梯度多几行代码。底部一行说明：两边都想要同一件事，新旧策略不要差太多。">
+    <text class="b to" x="20" y="24">TRPO：把限制写成约束</text>
+    <rect class="oldT" x="20" y="38" width="300" height="34" rx="6"/><text x="170" y="60" text-anchor="middle">目标：在旧策略处做线性近似</text>
+    <line class="oldS" x1="170" y1="74" x2="170" y2="84" marker-end="url(#ahO)"/>
+    <rect class="oldT" x="20" y="86" width="300" height="34" rx="6"/><text x="170" y="108" text-anchor="middle">KL 约束：做二次近似</text>
+    <line class="oldS" x1="170" y1="122" x2="170" y2="132" marker-end="url(#ahO)"/>
+    <rect class="oldT" x="20" y="134" width="300" height="34" rx="6"/><text x="170" y="156" text-anchor="middle">共轭梯度解 F x = g（百万维，存不下 F）</text>
+    <line class="oldS" x1="170" y1="170" x2="170" y2="180" marker-end="url(#ahO)"/>
+    <rect class="softS" x="20" y="182" width="300" height="34" rx="6"/><text class="sm m" x="170" y="204" text-anchor="middle">再做一次线搜索（TRPO 原文，非本文）</text>
+    <text class="b tn" x="360" y="24">PPO：把限制写进目标</text>
+    <rect class="newT" x="360" y="38" width="300" height="34" rx="6"/><text x="510" y="60" text-anchor="middle">目标里自带裁剪</text>
+    <line class="newS" x1="510" y1="74" x2="510" y2="84" marker-end="url(#ahN)"/>
+    <rect class="newT" x="360" y="86" width="300" height="34" rx="6"/><text x="510" y="108" text-anchor="middle">越界的样本，梯度为 0</text>
+    <line class="newS" x1="510" y1="122" x2="510" y2="132" marker-end="url(#ahN)"/>
+    <rect class="new" x="360" y="134" width="300" height="34" rx="6"/><text class="on" x="510" y="156" text-anchor="middle">普通 SGD / Adam 就能解</text>
+    <text class="sm m" x="510" y="192" text-anchor="middle">只比普通策略梯度多几行代码（原文第 7 节）</text>
+    <text class="sm m" x="20" y="240">两边想要的是同一件事：新旧策略别差太多。</text>
+  </svg>
+  </div>
+  <figcaption>左边的前三步出自原文 2.2 节；线搜索来自 TRPO 原文，本文没有写，只作背景。</figcaption>
+</figure>
+
+<p class="punch">所以要的是：<em>只用一阶优化，实现只比普通策略梯度多几行，同时有「别走太远」的稳定性。</em></p>
+
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="no">2</span>第一步：用概率比量出策略变了多少</h2>
+<p>要限制「走多远」，先要一个便宜的读数。办法是看新策略给同一个动作的概率，是旧策略给的多少倍：<b>r = 新概率 ÷ 旧概率</b>。r = 1 表示没变，r = 1.5 表示新策略更爱选它了，涨了一半，r = 0.5 表示砍掉了一半。旧概率在采样时顺手存下来就行，不用额外计算。</p>
+
+<figure class="fig">
+  <span class="tag">图 4 · 概率比 r：策略变了多少的读数（示意）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 206" role="img" aria-label="一条横轴表示概率比 r。蓝色底的区间是 0.8 到 1.2。轴上五个点：r 等于 0.5 时新概率 0.05，砍掉一半；r 等于 0.8 时新概率 0.08；r 等于 1 时新概率 0.10，没变；r 等于 1.2 时新概率 0.12；r 等于 1.5 时新概率 0.15，涨了一半。旧概率设为 0.10。">
+    <text class="sm m" x="20" y="22">r = 新策略给这个动作的概率 ÷ 旧策略给的概率。旧概率设为 0.10。</text>
+    <rect class="newT" x="284" y="64" width="112" height="46" rx="4"/>
+    <text class="b tn" x="340" y="54" text-anchor="middle">裁剪区间 [0.8, 1.2]（ε = 0.2）</text>
+    <line class="mutS" x1="60" y1="110" x2="640" y2="110" marker-end="url(#ah)"/>
+    <circle class="mutF" cx="200" cy="110" r="6"/><circle class="new" cx="284" cy="110" r="6"/><circle class="new" cx="340" cy="110" r="6"/><circle class="new" cx="396" cy="110" r="6"/><circle class="mutF" cx="480" cy="110" r="6"/>
+    <text class="sm m" x="20" y="136">倍数 r</text>
+    <text class="mo b" x="200" y="136" text-anchor="middle">0.5</text><text class="mo b" x="284" y="136" text-anchor="middle">0.8</text><text class="mo b" x="340" y="136" text-anchor="middle">1</text><text class="mo b" x="396" y="136" text-anchor="middle">1.2</text><text class="mo b" x="480" y="136" text-anchor="middle">1.5</text>
+    <text class="sm m" x="20" y="158">新概率</text>
+    <text class="sm mo" x="200" y="158" text-anchor="middle">0.05</text><text class="sm mo" x="284" y="158" text-anchor="middle">0.08</text><text class="sm mo" x="340" y="158" text-anchor="middle">0.10</text><text class="sm mo" x="396" y="158" text-anchor="middle">0.12</text><text class="sm mo" x="480" y="158" text-anchor="middle">0.15</text>
+    <text class="sm m" x="200" y="184" text-anchor="middle">砍掉一半</text><text class="sm m" x="340" y="184" text-anchor="middle">没变</text><text class="sm m" x="480" y="184" text-anchor="middle">涨了一半</text>
+  </svg>
+  </div>
+  <figcaption>怎么看：越靠近 1，说明新旧策略越接近。下一节要做的事，就是不让 r 的好处在区间之外继续累加。</figcaption>
+</figure>
+
+<p>为什么用比值就能在旧数据上评价新策略？数据是旧策略采的，想知道新策略的期望，给每个样本乘上 r 来纠偏就行，这叫重要性采样。于是目标写成 L<sup>CPI</sup> = 各样本 r × Â 的平均（原文式 6）。在 r = 1 处，它的梯度恰好等于策略梯度；离开之后，纠偏只在新旧策略接近时才可靠，比值太大时，少数样本的权重会压倒一切。所以必须把 r 管在 1 附近。精确写法见附录 A 式 6，小数字例子见附录 B。</p>
+<p>这一步对着上一节的毛病：多走几步会崩，是因为没有一个读数告诉优化器「你已经走远了」。r 就是这个读数。</p>
+
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="no">3</span>第二步：裁剪，变得太多就不再奖励</h2>
+<p>做法是把 r 夹在 [1−ε, 1+ε] 里，原文建议 ε = 0.2，也就是 [0.8, 1.2]。目标取「原来的 r × Â」和「夹过的 r × Â」<b>两者中较小的那个</b>（原文式 7）。结果是：</p>
+<ul>
+  <li>好动作（Â &gt; 0）：概率涨到旧的 1.2 倍为止，再涨目标也不增加，梯度为 0，优化器没有动力继续推。</li>
+  <li>坏动作（Â &lt; 0）：概率降到旧的 0.8 倍为止，再降也不再奖励。</li>
+</ul>
+
+<figure class="fig">
+  <span class="tag">图 5 · 裁剪目标随 r 变化（示意，旧概率 0.10，Â = ±2）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 252" role="img" aria-label="两个小图。左图 Â 等于 2 的好动作：赭色虚线是不裁剪的 r 乘 Â，一直向上；蓝线在 r 等于 1.2 之前和它重合，之后变成水平线，值 2.4，梯度为 0。右图 Â 等于 负 2 的坏动作，值向下画：蓝线在 r 小于 0.8 时是水平线，值负 1.6，梯度为 0；r 大于 0.8 之后沿着虚线向下。灰点是起点 r 等于 1。">
+    <text class="b" x="20" y="16">Â = +2（好动作）</text>
+    <line class="mutS" x1="50" y1="200" x2="310" y2="200" marker-end="url(#ah)"/>
+    <line class="mutS" x1="50" y1="200" x2="50" y2="36"/>
+    <line class="oldS dash" x1="50" y1="200" x2="297" y2="48"/>
+    <polyline class="newS" style="stroke-width:3" points="50,200 206,104 297,104"/>
+    <circle class="mutF" cx="180" cy="120" r="5"/>
+    <text class="sm tn b" x="228" y="94">r &gt; 1.2：梯度为 0</text>
+    <text class="sm m" x="58" y="46">目标值</text>
+    <text class="sm mo" x="50" y="218" text-anchor="middle">0</text><text class="sm mo" x="180" y="218" text-anchor="middle">1</text><text class="sm mo" x="214" y="218" text-anchor="middle">1.2</text><text class="sm mo m" x="306" y="218">r</text>
+    <text class="b" x="380" y="14">Â = −2（坏动作，值向下画）</text>
+    <line class="mutS" x1="390" y1="36" x2="650" y2="36" marker-end="url(#ah)"/>
+    <line class="mutS" x1="390" y1="36" x2="390" y2="200"/>
+    <line class="oldS dash" x1="390" y1="36" x2="637" y2="188"/>
+    <polyline class="newS" style="stroke-width:3" points="390,100 494,100 637,188"/>
+    <circle class="mutF" cx="520" cy="116" r="5"/>
+    <text class="sm tn b" x="396" y="92">r &lt; 0.8：梯度为 0</text>
+    <text class="sm m" x="396" y="196">目标值</text>
+    <text class="sm mo" x="390" y="30" text-anchor="middle">0</text><text class="sm mo" x="494" y="30" text-anchor="middle">0.8</text><text class="sm mo" x="528" y="30" text-anchor="middle">1</text><text class="sm mo m" x="644" y="30">r</text>
+    <line class="oldS dash" x1="20" y1="238" x2="52" y2="238"/><text class="sm m" x="58" y="242">不裁剪的 r × Â（一直变）</text>
+    <line class="newS" style="stroke-width:3" x1="250" y1="238" x2="282" y2="238"/><text class="sm m" x="288" y="242">取较小者（L<tspan dy="-4" style="font-size:9px">CLIP</tspan><tspan dy="4">）</tspan></text>
+    <circle class="mutF" cx="420" cy="238" r="5"/><text class="sm m" x="430" y="242">起点 r = 1</text>
+  </svg>
+  </div>
+  <figcaption>怎么看：左边好动作，蓝线涨到 r = 1.2 就拐平；右边坏动作（值向下画），蓝线在 r = 0.8 之前是平的。手画的简化版，形状和原文 Figure 1 一致，坐标是我设的示意值。</figcaption>
+</figure>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 1 · L<sup>CLIP</sup> 随 r 的变化</span>
+  <img class="orig" src="orig-fig1.png" alt="原文 Figure 1：两个小图。左图 A 大于 0，横轴 r，纵轴 L CLIP，折线从 0 斜向上升到 1 加 epsilon 处变为水平，灰点在 r 等于 1。右图 A 小于 0，纵轴向下，折线在 1 减 epsilon 之前水平，之后向下延伸，灰点在 r 等于 1。">
+  <figcaption>原文这张图在说什么：<b>好动作涨过 1+ε、坏动作降过 1−ε，就不再有梯度。</b>怎么看：折线是 L<sup>CLIP</sup> 对单个样本的值，灰点是起点 r = 1，虚线标出 1+ε 和 1−ε。图源：Schulman 等 2017 原文。</figcaption>
+</figure>
+
+<p>为什么要取较小者，而不只是把 r 夹住？看一个例子：好动作被策略不小心压低了一半（r = 0.5）。只夹不取较小者，夹过的值是 1.6，比原来的 1.0 还高，r &lt; 0.8 的区域梯度为 0，这个错误就没人管了。取较小者之后，选的是 1.0，梯度保留，会把 r 拉回来。原文的概括是：<b>目标变好的方向，越界就不计功劳；目标变差的方向，一分不少地计入。</b></p>
+
+<figure class="fig">
+  <span class="tag">图 6 · 同一个好动作的四种情形（示意：Â = +2，旧概率 0.10）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 246" role="img" aria-label="表格四行。r 等于 1.1，新概率 0.11：不裁剪 2.2，夹过 2.2，取较小者 2.2，有梯度，继续推高 r。r 等于 1.2，新概率 0.12：2.4，2.4，2.4，有梯度，刚到边界。r 等于 1.5，新概率 0.15：不裁剪 3.0，夹过 2.4，取较小者 2.4，梯度为 0。r 等于 0.5，新概率 0.05：不裁剪 1.0，夹过 1.6，取较小者 1.0，有梯度，把 r 拉回来。">
+    <text class="sm m" x="20" y="18">每行是新概率不同时，这一个样本对目标的贡献</text>
+    <text class="sm m" x="20" y="44">r</text><text class="sm m" x="80" y="44">新概率</text><text class="sm m" x="160" y="44">不裁剪 r·Â</text><text class="sm m" x="290" y="44">夹过 clip(r)·Â</text><text class="sm m" x="420" y="44">取较小者</text><text class="sm m" x="520" y="44">梯度</text>
+    <line class="ln" x1="20" y1="52" x2="660" y2="52"/>
+    <text class="mo" x="20" y="76">1.1</text><text class="mo" x="80" y="76">0.11</text><text class="mo" x="160" y="76">2.2</text><text class="mo" x="290" y="76">2.2</text><text class="mo b tn" x="420" y="76">2.2</text><text x="520" y="76">有，继续推高 r</text>
+    <line class="ln" x1="20" y1="88" x2="660" y2="88"/>
+    <text class="mo" x="20" y="108">1.2</text><text class="mo" x="80" y="108">0.12</text><text class="mo" x="160" y="108">2.4</text><text class="mo" x="290" y="108">2.4</text><text class="mo b tn" x="420" y="108">2.4</text><text x="520" y="108">有，刚到边界</text>
+    <rect class="newT" x="14" y="120" width="652" height="32" rx="4"/>
+    <text class="mo" x="20" y="142">1.5</text><text class="mo" x="80" y="142">0.15</text><text class="mo" x="160" y="142">3.0</text><text class="mo" x="290" y="142">2.4</text><text class="mo b tn" x="420" y="142">2.4</text><text class="b tn" x="520" y="142">0（被夹住）</text>
+    <rect class="newT" x="14" y="156" width="652" height="32" rx="4"/>
+    <text class="mo" x="20" y="178">0.5</text><text class="mo" x="80" y="178">0.05</text><text class="mo" x="160" y="178">1.0</text><text class="mo" x="290" y="178">1.6</text><text class="mo b tn" x="420" y="178">1.0</text><text class="b tn" x="520" y="178">有，把 r 拉回来</text>
+    <text class="sm m" x="20" y="212">第 3 行：好动作已涨过 20%，再涨不加分，梯度为 0。</text>
+    <text class="sm m" x="20" y="232">第 4 行：好动作被压低一半，较小者是未裁剪的 1.0，梯度保留，错误会被纠正。</text>
+  </svg>
+  </div>
+  <figcaption>两个数都算过：min(3.0, 2.4) = 2.4，min(1.0, 1.6) = 1.0。坏动作（Â = −2）的对称算例见附录 C。</figcaption>
+</figure>
+
+<h3>作者给的一个直观证据</h3>
+<p>原文 Figure 2 取的是 Hopper-v1 第一次策略更新：从旧参数出发，沿着「旧参数到 PPO 一次迭代后的新参数」这条线做线性插值，把几个目标和 KL 都画出来。</p>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 2 · 沿着更新方向，各个目标怎么变</span>
+  <img class="orig" src="orig-fig2.png" alt="原文 Figure 2：横轴是线性插值系数，0 是旧策略，1 是一次 PPO 迭代后的新策略。四条曲线：蓝色 KL 一直上升，最后达到约 0.115；橙色 L CPI 一直上升到约 0.13；绿色只有裁剪项，到 1 附近后趋于水平，约 0.04；红色 L CLIP 先上升，在插值系数约 1 处达到最大约 0.034，之后下降到约 0.009。">
+  <figcaption>这张图在说什么：<b>L<sup>CPI</sup> 沿着更新方向一路涨，会诱使你走到很远；L<sup>CLIP</sup> 涨到插值系数约 1 就见顶、再往后下降，目标自己给了一个刹车。</b>怎么看：横轴 0 是旧策略，1 是 PPO 一次迭代后的新策略；原文说，新策略和旧策略的 KL 约为 0.02，正是 L<sup>CLIP</sup> 的最大值点。图源：Schulman 等 2017 原文。</figcaption>
+</figure>
+
+<p>这里有两点我补充的，原文没有证明：第一，裁剪只是让越界的样本自己没有梯度，其他样本的梯度仍会带着共享参数一起动，所以 r 并不保证留在 [0.8, 1.2] 里。「近端」是启发式，不是硬约束，原文也没有单调改进的理论保证，它靠实验说明管用。第二，为什么逐样本地管 r，就能近似管住整体的 KL？我的直觉是：KL 本质上是各动作概率差的累加，每个样本的 r 都不能偏太远，整体分布也就变不了太多。这是我的推测，原文没有给出。精确写法见附录 A 式 7，完整算例见附录 C。</p>
+<p>这一步对着两个毛病：一批数据多走几步会崩，现在到了边界就没有梯度；TRPO 太复杂，现在只是换了一个目标函数。</p>
+
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="no">4</span>第三步：同一批数据学很多轮</h2>
+<p>有了裁剪，同一批数据就可以反复学了。原文 Algorithm 1：N 个并行的 actor，各用旧策略在环境里跑 T 步，算好每一步的优势估计；再对这 N·T 个样本构造裁剪目标，分成小批，用 SGD 或 Adam（005）走 K 个 epoch；最后把旧策略更新成新策略，回到第一步。和普通策略梯度相比，代码只改两处：损失换成裁剪目标，同一批数据重复 K 轮。</p>
+
+<figure class="fig">
+  <span class="tag">图 7 · 一轮的流程，和每批数据能走多少步</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 358" role="img" aria-label="上方流程四个方框：N 个 actor 用旧策略各跑 T 步；算每一步的优势估计；同一批 N 乘 T 个样本，K 个 epoch，每次一个小批，用裁剪目标走；旧策略更新为新策略；最后用虚线箭头回到第一个方框。下方是横向条形图：每批数据走的梯度步数。普通策略梯度 1 步；PPO 在 Atari 上 12 步；在 Roboschool 上 60 步；在 MuJoCo 上 320 步。">
+    <rect class="softS" x="20" y="20" width="140" height="64" rx="8"/>
+    <text class="b" x="90" y="44" text-anchor="middle">N 个 actor</text><text class="sm" x="90" y="64" text-anchor="middle">各跑 T 步采数据</text>
+    <line class="mutS" x1="162" y1="52" x2="188" y2="52" marker-end="url(#ah)"/>
+    <rect class="softS" x="190" y="20" width="140" height="64" rx="8"/>
+    <text class="b" x="260" y="44" text-anchor="middle">算优势估计</text><text class="sm" x="260" y="64" text-anchor="middle">截断的 GAE</text>
+    <line class="mutS" x1="332" y1="52" x2="358" y2="52" marker-end="url(#ah)"/>
+    <rect class="new" x="360" y="20" width="140" height="64" rx="8"/>
+    <text class="b on" x="430" y="44" text-anchor="middle">学 K 个 epoch</text><text class="sm on" x="430" y="64" text-anchor="middle">一次一个小批</text>
+    <line class="mutS" x1="502" y1="52" x2="528" y2="52" marker-end="url(#ah)"/>
+    <rect class="softS" x="530" y="20" width="140" height="64" rx="8"/>
+    <text class="b" x="600" y="44" text-anchor="middle">旧策略 ← 新策略</text><text class="sm" x="600" y="64" text-anchor="middle">回到第一步</text>
+    <path class="mutS dash" d="M600 86 V104 H90 V88" marker-end="url(#ah)"/>
+
+    <text class="sm m" x="20" y="142">每批数据能走多少梯度步 = 小批个数 × K 个 epoch</text>
+    <text class="sm" x="20" y="170">普通策略梯度</text>
+    <rect class="old" x="170" y="158" width="1.1" height="16"/><text class="sm mo to" x="182" y="171">1</text>
+    <text class="sm" x="20" y="200">PPO · Atari</text>
+    <rect class="new" x="170" y="188" width="13.2" height="16"/><text class="sm mo tn" x="192" y="201">12</text>
+    <text class="sm" x="20" y="230">PPO · Roboschool</text>
+    <rect class="new" x="170" y="218" width="66" height="16"/><text class="sm mo tn" x="245" y="231">60</text>
+    <text class="sm" x="20" y="260">PPO · MuJoCo</text>
+    <rect class="new" x="170" y="248" width="352" height="16"/><text class="sm mo tn" x="531" y="261">320</text>
+    <text class="sm m" x="20" y="292">MuJoCo：2048 个样本 ÷ 小批 64 = 32 个小批，× 10 轮 = 320。</text>
+    <text class="sm m" x="20" y="310">Atari：8×128 = 1024 个样本，小批 256，4 个，× 3 轮 = 12。</text>
+    <text class="sm m" x="20" y="328">Roboschool（locomotion）：32×512 = 16384，小批 4096，4 个，× 15 轮 = 60。</text>
+    <text class="sm m" x="20" y="346">推算：MuJoCo 的 actor 数原文没写，按一批 T = 2048 个样本算。</text>
+  </svg>
+  </div>
+  <figcaption>步数是我按原文 Table 3、4、5 的超参数推算的，原文没有直接给。没有裁剪的话，MuJoCo 上这 320 步就是第 1 节说的灾难。</figcaption>
+</figure>
+
+<p>完整的训练目标还要加两项（策略和价值网络共享参数时）：价值函数的平方误差，和鼓励探索的熵奖励（原文式 9）。优势用截断版的广义优势估计 GAE 算（原文式 10 到 12）。这些是已有的做法，不是本文的新东西，写在附录 A 和附录 F。原文还给了一个对照用的变体：自适应调整 KL 惩罚系数，附录 E 有讲；作者自己说它的效果不如裁剪，放进来是因为它是重要的基线。</p>
+<p>这一步对着的毛病：一批数据只走一步，太浪费。现在每批走几十到几百步，用的还是普通的一阶优化器。精确写法见附录 A 式 9。</p>
+
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="no">5</span>证据：稳不稳，省不省</h2>
+<h3>不加限制就崩，加了任何一种限制都好得多</h3>
+<p>原文 6.1 用 7 个 MuJoCo 机器人任务（HalfCheetah、Hopper、InvertedDoublePendulum、InvertedPendulum、Reacher、Swimmer、Walker2d），每个训练 100 万步。每种算法和超参数的组合在每个环境跑 3 个随机种子，共 21 次运行。每次用最后 100 局的平均总奖励打分，再归一化：随机策略记 0，该环境里所有结果中最好的记 1。所以它是相对分，只能在这张表里横向比较。</p>
+
+<figure class="fig">
+  <span class="tag">图 8 · 不同目标的平均归一化得分（原文 Table 1）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 372" role="img" aria-label="十一根横向柱子，零线在中间偏左。不加限制：负 0.39，灰色，向左。裁剪 ε 等于 0.1：0.76；ε 等于 0.2：0.82，最高；ε 等于 0.3：0.70，都是蓝色。自适应 KL，目标 0.003：0.68；0.01：0.74；0.03：0.71。固定 KL，β 等于 0.3：0.62；1：0.71；3：0.72；10：0.69，都是赭色。">
+    <text class="sm m" x="20" y="20">7 个任务 × 3 个种子 = 21 次运行的平均；随机策略 = 0，所有结果中最好 = 1</text>
+    <line class="ln" x1="300" y1="32" x2="300" y2="334"/>
+    <text class="sm" x="20" y="53">不加限制</text><rect class="mutF" x="183" y="40" width="117" height="16"/><text class="sm mo m" x="308" y="53">−0.39</text>
+    <text class="sm" x="20" y="79">裁剪 ε = 0.1</text><rect class="new" x="300" y="66" width="228" height="16"/><text class="sm mo tn" x="536" y="79">0.76</text>
+    <text class="sm b" x="20" y="105">裁剪 ε = 0.2</text><rect class="new" x="300" y="92" width="246" height="16"/><text class="sm mo tn b" x="554" y="105">0.82</text>
+    <text class="sm" x="20" y="131">裁剪 ε = 0.3</text><rect class="new" x="300" y="118" width="210" height="16"/><text class="sm mo tn" x="518" y="131">0.70</text>
+    <text class="sm" x="20" y="157">自适应 KL d = 0.003</text><rect class="old" x="300" y="144" width="204" height="16"/><text class="sm mo to" x="512" y="157">0.68</text>
+    <text class="sm" x="20" y="183">自适应 KL d = 0.01</text><rect class="old" x="300" y="170" width="222" height="16"/><text class="sm mo to" x="530" y="183">0.74</text>
+    <text class="sm" x="20" y="209">自适应 KL d = 0.03</text><rect class="old" x="300" y="196" width="213" height="16"/><text class="sm mo to" x="521" y="209">0.71</text>
+    <text class="sm" x="20" y="235">固定 KL β = 0.3</text><rect class="old" x="300" y="222" width="186" height="16"/><text class="sm mo to" x="494" y="235">0.62</text>
+    <text class="sm" x="20" y="261">固定 KL β = 1</text><rect class="old" x="300" y="248" width="213" height="16"/><text class="sm mo to" x="521" y="261">0.71</text>
+    <text class="sm" x="20" y="287">固定 KL β = 3</text><rect class="old" x="300" y="274" width="216" height="16"/><text class="sm mo to" x="524" y="287">0.72</text>
+    <text class="sm" x="20" y="313">固定 KL β = 10</text><rect class="old" x="300" y="300" width="207" height="16"/><text class="sm mo to" x="515" y="313">0.69</text>
+    <rect class="mutF" x="20" y="344" width="12" height="12" rx="2"/><text class="sm m" x="38" y="355">不加限制</text>
+    <rect class="new" x="120" y="344" width="12" height="12" rx="2"/><text class="sm m" x="138" y="355">裁剪（本文）</text>
+    <rect class="old" x="240" y="344" width="12" height="12" rx="2"/><text class="sm m" x="258" y="355">KL 惩罚（对照）</text>
+  </svg>
+  </div>
+  <figcaption>每个变体都在自己的超参数网格里搜过（ε、β、d<sub>targ</sub>），不是只调 PPO。β 初值为 1。</figcaption>
+</figure>
+
+<p>读法：第一，不限制的一行是 −0.39，其余全是正数。原文说，原因是 HalfCheetah 上它得了很差的分，比最初的随机策略还差。这就是第 1 节的灾难，任何一种限制都远好于没有限制。第二，裁剪里 ε = 0.2 最好（0.82），ε = 0.1 是 0.76，ε = 0.3 是 0.70。第三，KL 惩罚全落在 0.62 到 0.74，都低于最好的裁剪，作者的结论是裁剪版表现最好。</p>
+<p>这里有几点要注意（我补充的）：并不是处处碾压，ε = 0.3 的裁剪（0.70）低于自适应 KL（d = 0.01，0.74）；21 次运行没有给方差或误差条，0.02 到 0.05 的差距，我认为不宜过度解读。</p>
+
+<h3>和其他算法比：连续控制</h3>
+<p>原文 6.2 把 PPO（裁剪，ε = 0.2）和 TRPO、CEM（不用梯度的随机搜索）、带自适应步长的普通策略梯度、A2C、带信赖域的 A2C 放在同样的 7 个环境、100 万步上比。原文只给学习曲线，没有表格，文字结论是 PPO 在<b>几乎所有</b>连续控制环境里更好。</p>
+
+<figure class="fig">
+  <span class="tag">原文 Figure 3 · 七个 MuJoCo 任务上的学习曲线</span>
+  <img class="orig" src="orig-fig3.png" alt="原文 Figure 3：七个小图，横轴 0 到 100 万步，纵轴是回报，分别是 HalfCheetah、Hopper、InvertedDoublePendulum、InvertedPendulum、Reacher、Swimmer、Walker2d。紫色线是 PPO（Clip），在 HalfCheetah、Reacher、Walker2d 上明显最高；Swimmer 上蓝绿色的 TRPO 最高；InvertedPendulum 上多条线都接近满分。右下角是图例：A2C、A2C 加信赖域、CEM、PPO、自适应步长的普通策略梯度、TRPO。">
+  <figcaption>这张图在说什么：<b>PPO（紫线）在多数环境里学得又快又高。</b>怎么看：横轴是训练步数，纵轴是回报，阴影是多次运行的范围。我从图上读到的几处例外：Swimmer 上 TRPO 最终更高，InvertedPendulum 上多种方法都接近满分，这对应原文说的「几乎所有」，具体数字原文没给。图源：Schulman 等 2017 原文。</figcaption>
+</figure>
+
+<h3>和 ACER、A2C 比：Atari</h3>
+<p>原文 6.4 在 49 个 Atari 游戏上比 PPO、A2C 和 ACER（带经验回放的 off-policy 方法），三者用同样的策略网络。每个游戏取 3 次试验的平均，谁高谁「赢」一场，按两种打分各数一遍：一种是全程的平均每局奖励，偏爱学得快；一种是最后 100 局的平均奖励，偏爱最终水平。</p>
+
+<figure class="fig">
+  <span class="tag">图 9 · 49 个游戏各赢多少场（原文 Table 2）</span>
+  <div class="sv">
+  <svg class="d" viewBox="0 0 680 212" role="img" aria-label="两根横向堆叠条，每根总长代表 49 个游戏。按全程平均奖励：PPO 赢 30 场，ACER 赢 18 场，A2C 赢 1 场，平局 0 场。按最后 100 局平均奖励：PPO 赢 19 场，ACER 赢 28 场，A2C 赢 1 场，平局 1 场。">
+    <text class="sm m" x="60" y="26">（1）全程平均每局奖励，偏爱学得快</text>
+    <rect class="new" x="60" y="36" width="342.9" height="34"/><text class="mo on b" x="231" y="58" text-anchor="middle">PPO 30</text>
+    <rect class="old" x="402.9" y="36" width="205.7" height="34"/><text class="mo on b" x="505" y="58" text-anchor="middle">ACER 18</text>
+    <rect class="mutF" x="608.6" y="36" width="11.4" height="34"/><text class="sm mo m" x="614" y="30" text-anchor="middle">1</text>
+    <text class="sm m" x="60" y="106">（2）最后 100 局平均每局奖励，偏爱最终水平</text>
+    <rect class="new" x="60" y="116" width="217.1" height="34"/><text class="mo on b" x="168" y="138" text-anchor="middle">PPO 19</text>
+    <rect class="old" x="277.1" y="116" width="320" height="34"/><text class="mo on b" x="437" y="138" text-anchor="middle">ACER 28</text>
+    <rect class="mutF" x="597.1" y="116" width="11.4" height="34"/><text class="sm mo m" x="603" y="110" text-anchor="middle">1</text>
+    <rect class="softS" x="608.6" y="116" width="11.4" height="34"/><text class="sm mo m" x="614" y="168" text-anchor="middle">平 1</text>
+    <rect class="new" x="60" y="186" width="12" height="12" rx="2"/><text class="sm m" x="78" y="197">PPO</text>
+    <rect class="old" x="130" y="186" width="12" height="12" rx="2"/><text class="sm m" x="148" y="197">ACER</text>
+    <rect class="mutF" x="215" y="186" width="12" height="12" rx="2"/><text class="sm m" x="233" y="197">A2C（上方小数字：1 场）</text>
+  </svg>
+  </div>
+  <figcaption>每根条总长是 49 个游戏。第一行 A2C 赢 1 场，平局 0 场；第二行 A2C 赢 1 场，平局 1 场。</figcaption>
+</figure>
+
+<p>读法：PPO 明显强过 A2C（A2C 一批数据只走一步，符合预期）。按「学得快」，PPO 赢最多（30 场），说明样本效率高；按「最终成绩」，ACER 赢得更多（28 对 19）。所以不是全面胜出，原文引言写的是「和 ACER 类似，但简单得多」。我猜原因是：ACER 是 off-policy，能榨更多旧数据，最终水平更高；PPO 是 on-policy，靠每批多学几轮换来速度。这个解释原文没有分析。</p>
+<p>另外，原文 6.3 还有一个展示性的实验：用 PPO 训练 3D 人形机器人跑、转向追目标、被方块砸后爬起来（Roboschool 的三个任务）。它没有对比基线，作用是说明 PPO 能处理高维连续控制。</p>
+
+<p class="punch">原文的结论：PPO 有信赖域方法的<em>稳定和可靠</em>，但实现简单得多，只需在普通策略梯度上改几行，适用于更一般的设置（比如策略和价值共享网络），整体表现更好。</p>
+
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="no">6</span>局限和后来</h2>
+<ul>
+  <li><b>没有理论保证。</b>裁剪是启发式，r 可以越界，ε 是调出来的；原文没有收敛或单调改进的证明（我补充的）。</li>
+  <li><b>基准较窄。</b>连续控制用的是 100 万步的便宜基准，7 个任务、3 个种子，差距小的比较缺少显著性说明；Atari 上最终成绩不及 ACER（原文自己写了）。</li>
+  <li><b>奖励现成。</b>实验都在模拟器里，奖励由环境给；奖励从哪来，是 015 的事。</li>
+  <li><b>后来：</b>018 <a href="../018-instructgpt/index.html">InstructGPT</a> 用 PPO 优化语言模型，奖励来自人类偏好训练的奖励模型（见 015），再加上对初始模型的 KL 惩罚。这是后世的用法，不在本文里。更多见附录 J。</li>
+</ul>
+
+
+<!-- ================= 附录 ================= -->
+<h2 id="after"><span class="no">+</span>附录 · 想深入再看</h2>
+<p>下面每一块都是可跳过的，默认折叠，标明对应原文第几节。</p>
+
+<details class="ext"><summary>A · 公式与符号表（原文第 2 到 5 节）</summary>
+<p>下面的式号是原文的式号。</p>
+<div class="formula">ĝ = Ê<sub>t</sub> [ ∇<sub>θ</sub> log π<sub>θ</sub>(a<sub>t</sub> | s<sub>t</sub>) · Â<sub>t</sub> ]<span class="fsrc">式 1：策略梯度的估计</span></div>
+<div class="formula">L<sup>PG</sup>(θ) = Ê<sub>t</sub> [ log π<sub>θ</sub>(a<sub>t</sub> | s<sub>t</sub>) · Â<sub>t</sub> ]<span class="fsrc">式 2：它的梯度恰好是式 1，自动求导框架对它做梯度上升</span></div>
+<div class="formula">maximize<sub>θ</sub> Ê<sub>t</sub> [ r<sub>t</sub>(θ) · Â<sub>t</sub> ]　subject to　Ê<sub>t</sub> [ KL[π<sub>θold</sub>(·|s<sub>t</sub>), π<sub>θ</sub>(·|s<sub>t</sub>)] ] ≤ δ<span class="fsrc">式 3、式 4：TRPO</span></div>
+<div class="formula">maximize<sub>θ</sub> Ê<sub>t</sub> [ r<sub>t</sub>(θ) · Â<sub>t</sub> − β · KL[π<sub>θold</sub>, π<sub>θ</sub>] ]<span class="fsrc">式 5：TRPO 的惩罚版</span></div>
+<div class="formula">L<sup>CPI</sup>(θ) = Ê<sub>t</sub> [ r<sub>t</sub>(θ) · Â<sub>t</sub> ]，　r<sub>t</sub>(θ) = π<sub>θ</sub>(a<sub>t</sub>|s<sub>t</sub>) / π<sub>θold</sub>(a<sub>t</sub>|s<sub>t</sub>)<span class="fsrc">式 6：代理目标；r(θ<sub>old</sub>) = 1</span></div>
+<div class="formula">L<sup>CLIP</sup>(θ) = Ê<sub>t</sub> [ min( r<sub>t</sub>(θ)·Â<sub>t</sub>，clip(r<sub>t</sub>(θ), 1−ε, 1+ε)·Â<sub>t</sub> ) ]<span class="fsrc">式 7：本文的主要目标，ε = 0.2</span></div>
+<div class="formula">L<sup>KLPEN</sup>(θ) = Ê<sub>t</sub> [ r<sub>t</sub>(θ)·Â<sub>t</sub> − β · KL[π<sub>θold</sub>(·|s<sub>t</sub>), π<sub>θ</sub>(·|s<sub>t</sub>)] ]<span class="fsrc">式 8：自适应 KL 惩罚</span></div>
+<div class="formula">L<sup>CLIP+VF+S</sup><sub>t</sub>(θ) = Ê<sub>t</sub> [ L<sup>CLIP</sup><sub>t</sub>(θ) − c<sub>1</sub>·L<sup>VF</sup><sub>t</sub>(θ) + c<sub>2</sub>·S[π<sub>θ</sub>](s<sub>t</sub>) ]<span class="fsrc">式 9：L<sup>VF</sup> = (V<sub>θ</sub>(s<sub>t</sub>) − V<sup>targ</sup><sub>t</sub>)²</span></div>
+<div class="formula">Â<sub>t</sub> = −V(s<sub>t</sub>) + r<sub>t</sub> + γr<sub>t+1</sub> + … + γ<sup>T−t+1</sup>r<sub>T−1</sub> + γ<sup>T−t</sup>V(s<sub>T</sub>)<span class="fsrc">式 10：A3C 用的估计（原文印法，见附录 K）</span></div>
+<div class="formula">Â<sub>t</sub> = δ<sub>t</sub> + (γλ)δ<sub>t+1</sub> + … + (γλ)<sup>T−t+1</sup>δ<sub>T−1</sub>，　δ<sub>t</sub> = r<sub>t</sub> + γV(s<sub>t+1</sub>) − V(s<sub>t</sub>)<span class="fsrc">式 11、式 12：截断版 GAE；λ = 1 时退化为式 10</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>符号</th><th>白话</th></tr></thead>
+  <tbody>
+    <tr><td>π<sub>θ</sub>(a|s)</td><td>策略：在状态 s 下选动作 a 的概率</td></tr>
+    <tr><td>Ê<sub>t</sub>[…]</td><td>在这一批采到的时间步上取平均（hat 表示用样本估计）</td></tr>
+    <tr><td>Â<sub>t</sub></td><td>优势估计：这个动作比平均水平好多少</td></tr>
+    <tr><td>r<sub>t</sub>(θ)</td><td>概率比：新策略给这个动作的概率 ÷ 旧策略给的</td></tr>
+    <tr><td>ε</td><td>裁剪区间的半宽，建议 0.2</td></tr>
+    <tr><td>β，d<sub>targ</sub></td><td>KL 惩罚系数；每次更新想要的目标 KL</td></tr>
+    <tr><td>c<sub>1</sub>，c<sub>2</sub></td><td>价值损失、熵奖励的系数</td></tr>
+    <tr><td>γ，λ</td><td>折扣因子；GAE 的插值参数</td></tr>
+    <tr><td>N，T，K，M</td><td>actor 数；每个 actor 跑的步数；epoch 数；小批大小</td></tr>
+  </tbody>
+</table></div>
+</details>
+
+<details class="ext"><summary>B · 读懂主线用到的概念（原文第 2 节；讲法和算例是我补充的）</summary>
+<p><b>策略</b>：输入状态，输出每个动作的概率（离散动作）或动作分布的均值和方差（连续动作）。放到语言模型里，状态是已有的文字，动作是下一个 token，策略就是 softmax 输出的下一词概率分布。所以 PPO 里的 π<sub>θ</sub>(a<sub>t</sub>|s<sub>t</sub>)，在语言模型里就是 P(下一个 token | 前文)。</p>
+<p><b>策略梯度的直觉</b>：奖励来自环境，是黑盒，没法对它求导。但策略的输出是概率，可以直接调：某个动作之后结果好，把概率调高；差，调低；调多少，看比平均好多少。为什么用 log 概率：样本是按策略自己的概率抽出来的，概率大的被抽到的次数多，直接用 ∇π 会把高概率动作多推一遍；∇π = π·∇log π，改用 ∇log π 正好抵消（标准推导的直觉，原文没有展开）。</p>
+<p>示意：一个状态下有 3 个动作，策略 π = (0.7, 0.2, 0.1)，采到动作 2，优势 +1。对 softmax 的 logits，∇log π 是 (−0.7, +0.8, −0.1)；学习率 0.5，logits 变化是 (−0.35, +0.40, −0.05)，新概率约 (0.556, 0.336, 0.107)。动作 2 从 0.2 涨到 0.336。若优势是 −1，方向相反。</p>
+<p><b>优势函数</b>：A(s,a) = Q(s,a) − V(s)。V(s) 是在状态 s 按当前策略玩下去平均能拿多少，Q(s,a) 是先做 a 再按当前策略玩下去平均能拿多少。为什么不直接用这局总奖励：总奖励里大部分是本来就容易拿的分。示意：某游戏每局普遍 100 分，三次采样 100、102、98，用总奖励当权重，三个动作的概率全被推高，方向信息被「100」淹没；减去 V = 100 后，变成 0、+2、−2，信号清楚得多。减基线不改变期望梯度（因为 Σ<sub>a</sub> π∇log π = ∇Σπ = ∇1 = 0，标准结论，不是本文内容），只降低方差。V(s) 再用一个网络估计，叫 critic，策略网络叫 actor。</p>
+<p><b>重要性采样</b>：样本来自旧策略，想算新策略下的期望，给每个样本乘新旧概率之比。示意：两个动作，优势 +1 和 −1，旧策略 (0.5, 0.5)，新策略 (0.7, 0.3)。新策略下的期望优势直接算：0.7×1 + 0.3×(−1) = 0.4。只用旧策略的样本：0.5×(1.4×1) + 0.5×(0.6×(−1)) = 0.7 − 0.3 = 0.4，一致。</p>
+<p><b>L<sup>CPI</sup></b>（原文式 6，来自 Kakade 和 Langford 2002 的 conservative policy iteration，所以叫 CPI）：在 θ = θ<sub>old</sub> 处 r = 1，∇r = ∇log π，所以这里的梯度正好等于策略梯度，原文说「一阶相同」。它是个「代理」：真正想要的是真实性能，没法直接算，就换一个在旧策略附近与它一阶一致、又能在样本上算出来的替身。</p>
+<p><b>KL 散度</b>：KL[p, q] = Σ p(a)·log(p(a)/q(a))，不小于 0，相同时为 0，不对称。示意：旧策略 (0.5, 0.5)，新策略 (0.6, 0.4) 时 KL = 0.0204；新策略 (0.7, 0.3) 时 KL = 0.0872。偏移翻倍，KL 约翻 4 倍，所以 0.02 级别已经是明显的一次更新，原文 Figure 2 里 PPO 一次迭代后的 KL 就是约 0.02。r 是单个动作的概率之比，KL 是整个分布的平均差距，裁剪 r 是逐样本地管，KL 约束是整体地管。</p>
+<p><b>熵与探索</b>：策略偏爱某个动作，就会越来越多地采到它，越来越有「证据」说它好，过早收敛到次优。熵 S = −Σπ log π 衡量分布有多散，示意：(0.5, 0.5) 是 0.693，(0.9, 0.1) 是 0.325，(0.99, 0.01) 是 0.056。在目标里加熵奖励，鼓励保留随机性。这是旧做法（原文引用 Williams 1992、Mnih 2016）。</p>
+<p><b>on-policy 与样本效率</b>：on-policy 要求数据由当前（或几乎当前）的策略产生，策略一变，旧数据就过期，策略梯度天然如此。off-policy（DQN、ACER 的经验回放）可以反复用旧数据，更省，但要处理修正偏差。样本效率是达到同样性能要和环境交互多少步。PPO 想要的是保持 on-policy 的简单，每批数据多榨几个 epoch。</p>
+<p><b>本文的竞争者</b>：DQN（学动作价值 Q，选 Q 最大的动作，只适合离散动作）；A3C / A2C（多个 actor 并行采样，一批一步，A2C 是同步版）；ACER（带经验回放的 actor-critic，off-policy，数据效率高但实现复杂）；CEM（交叉熵方法，不用梯度的随机搜索）。</p>
+</details>
+
+<details class="ext"><summary>C · 裁剪的完整算例（原文第 3 节；算例是我补充的）</summary>
+<p><b>情形一：Â = +2，旧概率 0.10。</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>新概率</th><th class="num">r</th><th class="num">未裁剪 r·Â</th><th class="num">clip(r)·Â</th><th class="num">取较小者</th><th>梯度</th></tr></thead>
+  <tbody>
+    <tr><td>0.11</td><td class="num">1.1</td><td class="num">2.2</td><td class="num">2.2</td><td class="num">2.2</td><td>有，继续提高 r</td></tr>
+    <tr><td>0.12</td><td class="num">1.2</td><td class="num">2.4</td><td class="num">2.4</td><td class="num">2.4</td><td>有，刚到边界</td></tr>
+    <tr><td>0.15</td><td class="num">1.5</td><td class="num">3.0</td><td class="num">2.4</td><td class="num">2.4</td><td>0（被夹住）</td></tr>
+    <tr><td>0.05</td><td class="num">0.5</td><td class="num">1.0</td><td class="num">1.6</td><td class="num">1.0</td><td>有，把 r 往回拉</td></tr>
+  </tbody>
+</table></div>
+<p><b>情形二：Â = −2，旧概率 0.10。</b></p>
+<div class="tbl"><table>
+  <thead><tr><th>新概率</th><th class="num">r</th><th class="num">未裁剪 r·Â</th><th class="num">clip(r)·Â</th><th class="num">取较小者</th><th>梯度</th></tr></thead>
+  <tbody>
+    <tr><td>0.09</td><td class="num">0.9</td><td class="num">−1.8</td><td class="num">−1.8</td><td class="num">−1.8</td><td>有，继续降低 r</td></tr>
+    <tr><td>0.08</td><td class="num">0.8</td><td class="num">−1.6</td><td class="num">−1.6</td><td class="num">−1.6</td><td>有，刚到边界</td></tr>
+    <tr><td>0.05</td><td class="num">0.5</td><td class="num">−1.0</td><td class="num">−1.6</td><td class="num">−1.6</td><td>0（被夹住）</td></tr>
+    <tr><td>0.15</td><td class="num">1.5</td><td class="num">−3.0</td><td class="num">−2.4</td><td class="num">−3.0</td><td>有，把 r 压回去</td></tr>
+  </tbody>
+</table></div>
+<div class="tbl"><table>
+  <thead><tr><th>优势</th><th>哪里有梯度</th><th>含义</th></tr></thead>
+  <tbody>
+    <tr><td>Â &gt; 0</td><td>r &lt; 1+ε 有；r &gt; 1+ε 为 0</td><td>好动作提高到 1.2 倍为止，不再奖励</td></tr>
+    <tr><td>Â &lt; 0</td><td>r &gt; 1−ε 有；r &lt; 1−ε 为 0</td><td>坏动作降到 0.8 倍为止，不再奖励</td></tr>
+  </tbody>
+</table></div>
+<p>原文还说，它试过在 log 空间里裁剪，表现没有更好（6.1）。另外，原文只证明了 L<sup>CLIP</sup> 是 L<sup>CPI</sup> 的下界（悲观估计），引言里说它是「策略性能的下界」，措辞比证明的宽松一点（我补充的）。</p>
+</details>
+
+<details class="ext"><summary>D · TRPO 是怎么做的（原文 2.2 节）</summary>
+<p>TRPO 的问题是：在新旧策略平均 KL 不超过 δ 的「信赖域」里，最大化代理目标（式 3、式 4）。原文：把目标做线性近似、约束做二次近似后，可以用共轭梯度算法高效地近似求解。</p>
+<p>拆开讲（我补充的）：线性目标加二次约束，解的方向是 F⁻¹g，其中 g 是梯度，F 是 KL 的二阶导数矩阵，要解线性方程组 F x = g。参数有百万级时 F 是百万乘百万的矩阵，存不下，更求不了逆。共轭梯度只靠「矩阵乘向量」就能解这个方程，不用显式构造 F。TRPO 原文在求出方向后还有一次线搜索，保证 KL 确实没超，这一点不在本文里。</p>
+<p><b>为什么不兼容 dropout 和共享参数</b>（原文第 1 节只写了「不兼容」，下面是我的展开）：约束要比较同一输入下新旧策略的输出，dropout 每次前向随机丢神经元，两次输出的差别里混进噪声，KL 约束就失去意义；策略和价值共享参数时，一组参数同时服务两个损失，只针对策略 KL 的约束没法自然处理价值损失。PPO 的目标是一个普通标量损失，想加什么项加什么项。</p>
+<p><b>为什么不干脆用固定的 KL 惩罚</b>：理论上 TRPO 本来就该用惩罚（式 5）。但原文说，很难找到一个在不同问题上，甚至在同一个问题的不同训练阶段，都好用的 β，所以 TRPO 才用约束；固定 β 不行，实验表明还需要额外的修改。这也是 PPO 要找另一条路的原因。</p>
+<div class="tbl"><table>
+  <thead><tr><th></th><th>普通策略梯度</th><th>TRPO</th><th>PPO</th></tr></thead>
+  <tbody>
+    <tr><td>每批数据更新</td><td>1 步</td><td>1 次（带 KL 约束的大步）</td><td>K 个 epoch × 多个小批</td></tr>
+    <tr><td>怎么防走太远</td><td>无（只靠一步小）</td><td>硬约束 KL ≤ δ</td><td>目标自带裁剪（或 KL 惩罚）</td></tr>
+    <tr><td>优化阶数</td><td>一阶</td><td>二阶近似 + 共轭梯度</td><td>一阶（SGD / Adam）</td></tr>
+    <tr><td>兼容 dropout、共享参数</td><td>是</td><td>否（原文第 1 节）</td><td>是</td></tr>
+    <tr><td>理论保证</td><td>无</td><td>有（近似，TRPO 论文）</td><td>无（靠实验）</td></tr>
+  </tbody>
+</table></div>
+</details>
+
+<details class="ext"><summary>E · 自适应 KL 惩罚变体（原文第 4 节）</summary>
+<p>不裁剪，退回 TRPO 的惩罚版，但让 β 自己调（式 8）。每次策略更新：先用若干 epoch 的小批 SGD 优化 L<sup>KLPEN</sup>，再算更新后的实际平均 KL，记为 d；如果 d &lt; d<sub>targ</sub> / 1.5，β 减半；如果 d &gt; d<sub>targ</sub> × 1.5，β 翻倍；否则不变。新 β 用于下一次更新。</p>
+<p>示意：d<sub>targ</sub> = 0.01，阈值是 0.0067 和 0.015。某次 d = 0.004，惩罚过重，β 从 1 变成 0.5；某次 d = 0.03，惩罚过轻，β 从 1 变成 2；d = 0.012 在区间内，β 不变。</p>
+<p>为什么比固定 β 好（我补充的）：最优 β 随任务、甚至随训练阶段而变；自适应把一个难选的数，换成一个有物理意义的数，即每步策略大概变多少。原文说 1.5 和 2 是启发式选的，算法对它们不敏感；β 的初值也不重要；偶尔会出现 KL 远偏离 d<sub>targ</sub> 的更新，但很少，β 会很快调整。</p>
+<p>结果：原文明说 KL 惩罚的表现不如裁剪，放进来是因为它是重要的基线（数字见附录 H Table 1）。Roboschool 的 Adam 步长也是按 KL 目标调的（原文 Table 4 标题），具体规则原文没写，是否就是这条规则不能确定；Heess 等 2017 同期用的也是 PPO 的自适应 KL 版本（原文 6.3）。</p>
+</details>
+
+<details class="ext"><summary>F · GAE 与 actor-critic 采样（原文第 5 节）</summary>
+<p>原文只用了两行（式 10 到 12），引用了 Schulman 等 2015 的 GAE，没有展开。下面的解释是我补的。</p>
+<p><b>怎么从采到的数据估计 Â</b>：两个极端。纯蒙特卡洛：用实际拿到的后续奖励 r<sub>t</sub> + γr<sub>t+1</sub> + … 减去 V(s<sub>t</sub>)，无偏，但把未来很多步的随机性都包进来，方差大。只看一步的 TD 误差 δ<sub>t</sub> = r<sub>t</sub> + γV(s<sub>t+1</sub>) − V(s<sub>t</sub>)：方差小，但依赖 V 估得准不准，V 不准就有偏。GAE 用参数 λ 在两者间插值：Â<sub>t</sub> = δ<sub>t</sub> + (γλ)δ<sub>t+1</sub> + (γλ)²δ<sub>t+2</sub> + …。λ = 0 只看一步；λ = 1 恰好是蒙特卡洛回报减 V(s<sub>t</sub>)。本文三组实验都取 γ = 0.99，λ = 0.95。</p>
+<p>示意（我算的）：三步一局，到第 3 步终止。γ = 0.99，奖励 (0, 0, 10)，价值估计 V(s₀) = 1，V(s₁) = 2，V(s₂) = 3，终止后为 0。δ₀ = 0 + 0.99×2 − 1 = 0.98，δ₁ = 0 + 0.99×3 − 2 = 0.97，δ₂ = 10 + 0 − 3 = 7.0。λ = 0：Â₀ = 0.98。λ = 0.95：γλ = 0.9405，Â₀ = 0.98 + 0.9405×0.97 + 0.9405²×7.0 ≈ 8.084。λ = 1：Â₀ = 0.98 + 0.99×0.97 + 0.99²×7.0 = 8.801，等于直接算 −1 + 0.99²×10 = 8.801。最后那个大奖励，λ = 0 时完全传不回 s₀，λ 越大传得越多，也把更多随机性带进来。</p>
+<p><b>截断</b>：每个 actor 只跑 T 步（T 远小于一整局），所以估计只能用到第 T 步为止。式 10 是 A3C / A2C 的做法（Mnih 2016），λ = 1 时式 11 退化为它。</p>
+<p><b>价值损失与熵</b>：式 9 里，L<sup>VF</sup> 让价值头预测的 V 接近目标 V<sup>targ</sup>。示意：V<sub>θ</sub> = 3.0，目标 5.0，L<sup>VF</sup> = (3−5)² = 4，c<sub>1</sub> = 1 时贡献 −4，推着价值头往 5 调；策略 (0.5, 0.5) 的熵 0.693，c<sub>2</sub> = 0.01 时贡献 +0.0069，只是轻轻推一把。Atari 取 c<sub>1</sub> = 1，c<sub>2</sub> = 0.01；MuJoCo 的对比实验不共享参数，c<sub>1</sub> 无关，也不加熵奖励（6.1）。V<sup>targ</sup> 具体怎么定，原文没写，常见做法是用采样回报（本文之外，待核实）。</p>
+</details>
+
+<details class="ext"><summary>G · 训练设置和超参数（原文 6.1 节、Appendix A，Table 3、4、5）</summary>
+<div class="tbl"><table>
+  <thead><tr><th>超参数</th><th>MuJoCo（Table 3）</th><th>Roboschool（Table 4）</th><th>Atari（Table 5）</th></tr></thead>
+  <tbody>
+    <tr><td>时间窗 T</td><td class="num">2048</td><td class="num">512</td><td class="num">128</td></tr>
+    <tr><td>Adam 步长</td><td class="num">3×10<sup>−4</sup></td><td>按 KL 目标调整</td><td class="num">2.5×10<sup>−4</sup> × α</td></tr>
+    <tr><td>epoch 数 K</td><td class="num">10</td><td class="num">15</td><td class="num">3</td></tr>
+    <tr><td>小批大小 M</td><td class="num">64</td><td class="num">4096</td><td class="num">32 × 8</td></tr>
+    <tr><td>γ / λ</td><td class="num">0.99 / 0.95</td><td class="num">0.99 / 0.95</td><td class="num">0.99 / 0.95</td></tr>
+    <tr><td>actor 数 N</td><td>未给出</td><td>32（locomotion），128（flagrun）</td><td class="num">8</td></tr>
+    <tr><td>裁剪 ε</td><td>6.1 里扫 0.1 / 0.2 / 0.3；6.2 用 0.2</td><td>表里未列</td><td class="num">0.1 × α</td></tr>
+    <tr><td>c<sub>1</sub> / c<sub>2</sub></td><td>无关 / 不加</td><td>表里未列</td><td class="num">1 / 0.01</td></tr>
+  </tbody>
+</table></div>
+<p>Atari 里的 α 从 1 线性降到 0，所以 ε 和学习率都随训练线性减小。Roboschool 表里还有「动作分布的对数标准差：LinearAnneal(−0.7, −1.6)」。MuJoCo 的策略网络是两层隐藏层、各 64 个单元、tanh 激活的 MLP，输出高斯分布的均值，标准差可变（是否与状态无关原文没写）；策略和价值不共享参数。Atari 用 Mnih 2016 的网络结构。</p>
+</details>
+
+<details class="ext"><summary>H · 完整结果表（原文 6.1、6.4 节，Table 1、2、6）</summary>
+<p><b>Table 1：</b>数字见图 8，这里不重复。归一化得分只能在表内横向比较，不能理解成「达到最优的百分之几」。</p>
+<p><b>Table 2：</b>49 个游戏各赢多少场。</p>
+<div class="tbl"><table>
+  <thead><tr><th>打分方式</th><th class="num">A2C</th><th class="num">ACER</th><th class="num">PPO</th><th class="num">平局</th></tr></thead>
+  <tbody>
+    <tr><td>（1）全程平均每局奖励</td><td class="num">1</td><td class="num">18</td><td class="num"><b>30</b></td><td class="num">0</td></tr>
+    <tr><td>（2）最后 100 局平均奖励</td><td class="num">1</td><td class="num"><b>28</b></td><td class="num">19</td><td class="num">1</td></tr>
+  </tbody>
+</table></div>
+<p><b>Table 6 里的几个单点</b>（附录 B，40M 帧即 1000 万步之后最后 100 局的均分；原文标题写「PPO and A2C」，表里实际有三列，含 ACER）：</p>
+<div class="tbl"><table>
+  <thead><tr><th>游戏</th><th class="num">A2C</th><th class="num">ACER</th><th class="num">PPO</th></tr></thead>
+  <tbody>
+    <tr><td>Kangaroo</td><td class="num">45.3</td><td class="num">50.0</td><td class="num"><b>9928.7</b></td></tr>
+    <tr><td>Zaxxon</td><td class="num">16.3</td><td class="num">29.0</td><td class="num"><b>5008.7</b></td></tr>
+    <tr><td>Enduro</td><td class="num">0.0</td><td class="num">0.0</td><td class="num"><b>758.3</b></td></tr>
+    <tr><td>Freeway</td><td class="num">0.0</td><td class="num">0.0</td><td class="num"><b>32.5</b></td></tr>
+    <tr><td>Gopher</td><td class="num">1500.9</td><td class="num"><b>37802.3</b></td><td class="num">2932.9</td></tr>
+    <tr><td>UpNDown</td><td class="num">17369.8</td><td class="num"><b>145051.4</b></td><td class="num">95445.0</td></tr>
+    <tr><td>VideoPinball</td><td class="num">19735.9</td><td class="num"><b>156225.6</b></td><td class="num">37389.0</td></tr>
+    <tr><td>DemonAttack</td><td class="num">6639.1</td><td class="num"><b>38808.3</b></td><td class="num">11378.4</td></tr>
+    <tr><td>Pong</td><td class="num">19.7</td><td class="num">20.7</td><td class="num">20.7</td></tr>
+  </tbody>
+</table></div>
+<p>前四个游戏上，A2C 和 ACER 近乎没学会，PPO 学会了；后四个游戏上，ACER 大幅领先。这几行的数字我逐格对过原文文本。</p>
+<p><b>展示实验</b>（6.3，Figure 4、5）：Roboschool 上的三个人形任务：向前跑（Humanoid）；目标每 200 步或到达时随机变（Flagrun）；被方块砸后要爬起来（FlagrunHarder）。学习曲线横轴分别到 5000 万、1 亿、1 亿步（我读自解读，原图未逐一核对）。它没有对比基线，是展示性的。</p>
+</details>
+
+<details class="ext"><summary>I · 当时的背景（原文第 1、6 节）</summary>
+<p><b>深度强化学习的三条路线并存</b>（2013 到 2017）：DQN 在 Atari 上达到超人水平，但只适合离散动作；策略梯度（A3C，2016）；信赖域方法（TRPO，2015）。三者各有缺点，原文第 1 节开头就是在盘点这个局面。</p>
+<p><b>连续控制基准</b>：OpenAI Gym（2016）加 MuJoCo 物理引擎（Todorov 2012）；Duan 等 2016 把常用算法放在统一基准上比较。这些让「不同算法放在一起比」成为可能，PPO 的实验设计就建立在它们之上。</p>
+<p><b>并行采样</b>：A3C / A2C 的并行 actor 风格已经流行，PPO 沿用 N 个 actor × T 步，Roboschool 用了 32 到 128 个 actor，Atari 用 8 个。</p>
+<p><b>同年相关工作</b>：Heess 等（DeepMind，2017）用 PPO 的自适应 KL 版本训练复杂环境里的运动行为（原文 6.3）；015 在同一年用人类偏好训练奖励模型。</p>
+<p><b>作者背景</b>（我的观察，不是原文）：Schulman 是 TRPO 的作者，Radford 是 GPT 系列（006、007）的作者之一，这个人员重叠是 PPO 后来用到语言模型上的一个背景因素。本文发表时（2017 年 8 月），004 Transformer 刚出（2017 年 6 月），GPT-1 要到 2018 年，当时强化学习和语言模型基本还是两个圈子。</p>
+</details>
+
+<details class="ext"><summary>J · 后来的发展和前后篇衔接（原文之外）</summary>
+<p>以下来自解读者的背景知识，没有逐一核对原文，拿不准的标「待核实」。</p>
+<p><b>继承自</b>：<a href="../015-human-preferences/index.html">015 Human Preferences</a>（同一年；015 提供「奖励从哪来」，016 提供「拿到奖励后怎么稳定优化」，本文自己的实验用的是环境现成的奖励）；<a href="../005-adam/index.html">005 Adam</a>（本文用 Adam 做小批优化，所以「一阶就够了」才成立）；<a href="../001-nplm/index.html">001</a>、<a href="../002-seq2seq/index.html">002</a> 的概率建模观点：策略是条件概率分布加 softmax，和语言模型的 P(下一词 | 前文) 同构，这是 PPO 后来能直接用到语言模型上的结构基础。外部前驱：REINFORCE（Williams 1992）、conservative policy iteration（Kakade 和 Langford 2002）、TRPO（Schulman 2015）、GAE（Schulman 2015）、A3C / A2C（Mnih 2016）。</p>
+<p><b>对 015 的推进</b>：015 把强化学习的「奖励」问题换成「学人类偏好」；016 把「优化」问题换成「裁剪目标加多 epoch」。两者合起来，才有了一个在大模型上可行、可规模化的「用人类反馈训练策略」的配方。016 本身不涉及语言模型，也不涉及人类偏好，是一篇纯粹的优化算法论文。</p>
+<p><b>后来</b>（后世评价，待核实）：PPO 因为简单、稳健、容易并行，2017 年之后成为 OpenAI 和许多强化学习研究的默认选择；<a href="../018-instructgpt/index.html">018 InstructGPT</a> 用 PPO 优化语言模型，语言模型是策略，奖励来自人类偏好训练的奖励模型（见 015），并有对初始模型的 KL 惩罚。在这里 KL 不再只是优化上的稳定器，还起「防止语言模型为了骗奖励模型而偏离人话」的作用，这个角色转换要到 018 才讲清（预告，待在 018 核实）。偏好数据与对齐目标的更系统研究见 <a href="../017-alignment-lab/index.html">017 Alignment Lab</a>。</p>
+<p>后来有研究（Engstrom 等 2020、Ilyas 等 2018，待核实）发现 PPO 的表现很大程度上依赖代码层面的优化，如优势归一化、价值裁剪、学习率退火、奖励缩放，且裁剪未必真的把 r 限制在区间内。这与正文说的「裁剪是启发式」一致。在语言模型对齐里，后来出现想绕开「训练奖励模型加在线强化学习」的 DPO（2023），以及去掉价值网络的 GRPO（2024），它们在不同程度上保留了「概率比加裁剪」或「相对基线的优势」的思想（待核实）。今天仍在用的有四样：概率比加裁剪；GAE；策略、价值联合训练加熵奖励；一批数据多 epoch 小批量。</p>
+</details>
+
+<details class="ext"><summary>K · 疑点和没有核实的地方</summary>
+<ul>
+  <li><b>式 10、式 11 的指数：</b>原文式 10 里最后一个奖励的折扣印作 γ<sup>T−t+1</sup>，式 11 最后一项是 (γλ)<sup>T−t+1</sup>δ<sub>T−1</sub>。按定义，第 T−1 步相对 t 隔了 T−1−t 步，指数应是 T−t−1。我判断是原文笔误：同一式里 V(s<sub>T</sub>) 的折扣是 γ<sup>T−t</sup>，它前面一步的 r<sub>T−1</sub> 不可能比它多折扣两次。式 11 里还有一处重复的省略号，是排版瑕疵。</li>
+  <li><b>Figure 3 的细节：</b>原文只给曲线，我在图 Figure 3 上读到 Swimmer 上 TRPO 更高，InvertedPendulum 上多方法接近满分，这是按图读的，没有数字。</li>
+  <li><b>Table 2 与 Table 6 不完全一致：</b>我按 Table 6 的显示值逐行比最终成绩，大致是 A2C 1 场、ACER 27 场、PPO 20 场上下、平局 2 场，和 Table 2（2）的 1 / 28 / 19 / 1 略有出入。Table 2 是按三次试验的平均判胜负，Table 6 只显示一位小数，Pong 的 ACER 和 PPO 显示值同为 20.7，我推测在更高精度下归了 ACER。我的逐行统计是自动解析 PDF 文本得到的，没有人工逐格复核，所以页面正文只用了 Table 2。</li>
+  <li><b>ε 的解释：</b>ε = 0.2 最好、0.1 和 0.3 稍差，我推测是 ε 太小则步子小、学得慢，太大则限制松、部分回到不限制的情形；原文没有给这个解释。</li>
+  <li><b>为什么逐样本裁剪能近似管住 KL：</b>是我的推测，原文没有。</li>
+  <li><b>V<sup>targ</sup> 的定法：</b>原文没写。</li>
+  <li><b>actor 数：</b>MuJoCo 的 Table 3 没有给 N，图 7 的 320 步是按一批 T = 2048 个样本推算的。</li>
+  <li><b>对 PPO 实现细节的依赖：</b>「简单」和「好用」依赖没写进公式里的实现细节，本文几乎没提，是我的判断；后来的专门研究待核实。</li>
+</ul>
+</details>
+
+
+<footer>
+  AI 论文解读 · 016 · 原文：John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, Oleg Klimov. <i>Proximal Policy Optimization Algorithms.</i> arXiv:1707.06347 (v2), OpenAI, 2017.<br>
+  图中标「示意」的数字是为了讲清机制设定的例子，都验算过；标「推算」的是我按原文规格估算的，原文没给。实验数字出自原文 Table 1、2、3、4、5、6；原文 Figure 1、2、3 的图源为原文。
+</footer>
+</main>
+
+<script src="../../assets/paper-toc.js?v=4" defer></script>
+</body>
+</html>
